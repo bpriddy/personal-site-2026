@@ -16,7 +16,7 @@ use wasm_bindgen::JsCast;
 // ─────────────────────────────────────────────────────────────────────────────
 
 const LINE1: &str = "BEN PRIDDY";
-const PHRASES: [&str; 12] = [
+const PHRASES: [&str; 14] = [
     "BUILDS TECHNOLOGY",
     "CONSULTS ON TECHNOLOGY",
     "GUIDES CREATIVE",
@@ -25,6 +25,8 @@ const PHRASES: [&str; 12] = [
     "CREATIVITIZES AI",
     "AI-IFIES PRACTICES",
     "PRACTICES AI",
+    "TALKS TO AUDIENCES",
+    "AUDIENCES TO TALKS",
     "PRACTICES CRAFT",
     "CRAFTS SYSTEMS",
     "SYSTEMIZES WONDER",
@@ -254,24 +256,30 @@ fn fs_bg(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
   // text; the glyphs are just the mask that reveals it.
   let fr = textureSampleLevel(field, fsamp, uv, 0.0);
   let shadow = fr.r * (1.0 - fr.g);
-  col *= 1.0 - 0.38 * shadow;
+  col *= 1.0 - 0.55 * shadow;
   let crisp = smoothstep(0.35, 0.62, fr.g);
   if (crisp > 0.001) {
-    let tp = vec2<f32>((uv.x - 0.5) * aspect, uv.y - 0.5) * 2.2 + vec2<f32>(7.3, 4.1);
+    // warm-spectrum relief, sliding slowly across the whole text block so the
+    // animation reads; brighter + more saturated than the ground so the type
+    // still pops, with hot speculars the bloom feeds on
+    let tt = P.time * 0.45;
+    let tp = vec2<f32>((uv.x - 0.5) * aspect, uv.y - 0.5) * 2.4
+           + vec2<f32>(7.3, 4.1) + vec2<f32>(tt * 0.35, -tt * 0.22);
     let te = 0.02;
-    let thC = bedHeight(tp, t * 0.7);
-    let tdx = thC - bedHeight(tp + vec2<f32>(te, 0.0), t * 0.7);
-    let tdy = thC - bedHeight(tp + vec2<f32>(0.0, te), t * 0.7);
+    let thC = bedHeight(tp, tt);
+    let tdx = thC - bedHeight(tp + vec2<f32>(te, 0.0), tt);
+    let tdy = thC - bedHeight(tp + vec2<f32>(0.0, te), tt);
     let n2 = normalize(vec3<f32>(tdx * 5.0, tdy * 5.0, 1.0));
     let d2 = max(dot(n2, l), 0.0);
     let s2 = pow(max(dot(reflect(-l, n2), vv), 0.0), 30.0);
     let enc2 = n2.xy * 0.5 + vec2<f32>(0.5, 0.5);
     var tcol = vec3<f32>(
-      0.92 + 0.14 * enc2.x,
-      0.90 + 0.13 * enc2.y,
-      0.82 + 0.08 * (1.0 - enc2.x)
+      0.62 + 0.52 * enc2.x,
+      0.55 + 0.48 * enc2.y,
+      0.38 + 0.16 * (1.0 - enc2.x)
     );
-    tcol = tcol * (0.97 + 0.14 * d2) + vec3<f32>(1.10, 1.04, 0.88) * s2 * 0.50;
+    tcol = tcol * (0.78 + 0.45 * d2) + vec3<f32>(1.15, 1.00, 0.78) * s2 * 0.65;
+    tcol = tcol * 1.28;
     col = mix(col, tcol, crisp);
   }
 
