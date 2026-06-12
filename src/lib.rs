@@ -87,48 +87,59 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
   let h1 = rand01(i);
   let h2 = rand01(i ^ 0x9e3779b9u);
 
-  // base stream: left→right, lanes of slightly different speed, gentle weave
+  // ── flow field: meandering current + layered turbulence + roaming eddies ──
+  // the current itself breathes: its heading tilts slowly over time and space
+  let m_ang = 0.16 * sin(P.time * 0.11 + pt.pos.y * 0.6)
+            + 0.09 * sin(P.time * 0.047 + 1.7);
+  let mdir = vec2<f32>(cos(m_ang), sin(m_ang));
   let lane = 0.5 + 0.5 * sin(pt.pos.y * 7.0 + h1 * 6.2832);
-  // "target" is a reserved word in WGSL — hence "goal"
-  let goal = vec2<f32>(
-    P.stream * (0.55 + 0.9 * lane),
-    0.05 * sin(P.time * 0.4 + pt.pos.x * 2.5 + h2 * 6.2832)
-  );
-  var v = pt.vel + (goal - pt.vel) * min(3.0 * P.dt, 1.0);
+  let goal = mdir * (P.stream * (0.55 + 0.9 * lane));
+  var v = pt.vel + (goal - pt.vel) * min(2.6 * P.dt, 1.0);
 
-  // curl-ish wander so the stream shimmers
+  // three octaves of drifting pseudo-curl: broad swells, mid eddy-chop, shimmer
   v += vec2<f32>(
-    sin(pt.pos.y * 6.0 + P.time * 0.8 + h2 * 6.2832),
-    cos(pt.pos.x * 5.0 - P.time * 0.6 + h1 * 6.2832)
-  ) * 0.18 * P.dt;
+    sin(pt.pos.y * 3.0 + P.time * 0.50 + h2 * 6.2832),
+    cos(pt.pos.x * 2.5 - P.time * 0.40 + h1 * 6.2832)
+  ) * 0.16 * P.dt;
+  v += vec2<f32>(
+    sin(pt.pos.y * 9.0 - P.time * 1.10 + h1 * 2.1),
+    cos(pt.pos.x * 8.0 + P.time * 0.90 + h2 * 4.2)
+  ) * 0.10 * P.dt;
+  v += vec2<f32>(
+    sin(pt.pos.y * 21.0 + P.time * 2.30 + h2 * 9.1),
+    cos(pt.pos.x * 19.0 - P.time * 2.00 + h1 * 7.3)
+  ) * 0.055 * P.dt;
 
-  // obstacle interaction. Most particles deflect around the glyphs; a stable
-  // ~35% (by hash) are "skimmers" that wash OVER the stone instead — a thin
-  // film that accelerates slightly on the crest and shimmers at the edges.
+  // roaming eddies: three slow vortices drift through and stir the stream
+  for (var k = 0u; k < 3u; k = k + 1u) {
+    let fk = f32(k);
+    let ph = fk * 2.094;
+    let c = vec2<f32>(
+      0.85 * sin(P.time * (0.061 + fk * 0.013) + ph),
+      0.62 * cos(P.time * (0.043 + fk * 0.017) + ph * 1.3)
+    );
+    let d = pt.pos - c;
+    let r2 = dot(d, d);
+    var w = 0.9;
+    if ((k & 1u) == 1u) { w = -0.75; }
+    v += vec2<f32>(-d.y, d.x) * w * exp(-r2 * 5.0) * P.dt;
+  }
+
+  // obstacle deflection: push away from glyphs along the field gradient
   let f = fieldAt(pt.pos);
-  let skimmer = rand01(i ^ 0x0051b3cau) < 0.22;
-  if (f > 0.045) {
-    if (skimmer) {
-      // thin-film glide: slight speedup over the glyph, gentle ripple
-      v.x += 0.22 * f * P.dt;
-      v.y += sin(P.time * 7.0 + h1 * 6.2832 + pt.pos.x * 24.0) * f * 0.30 * P.dt;
-    } else {
-      let e = 0.012;
-      let gx = fieldAt(pt.pos + vec2<f32>(e, 0.0)) - fieldAt(pt.pos - vec2<f32>(e, 0.0));
-      let gy = fieldAt(pt.pos + vec2<f32>(0.0, e)) - fieldAt(pt.pos - vec2<f32>(0.0, e));
-      let g = vec2<f32>(gx, gy);
-      let gl = length(g);
-      if (gl > 1e-5) {
-        let n = g / gl;
-        // away from the rock, stronger the deeper in the field you are
-        v -= n * P.push * (f * f * 4.0 + f * 0.6) * P.dt;
-        // slide: damp the into-rock velocity component so flow hugs the surface
-        let into = dot(v, n);
-        if (into > 0.0) { v -= n * into * min(8.0 * f * P.dt, 0.9); }
-      }
-      // deep inside (phrase just changed): strong ejection + damping
-      if (f > 0.55) { v *= 1.0 - min(3.0 * P.dt, 0.5); }
+  if (f > 0.02) {
+    let e = 0.012;
+    let gx = fieldAt(pt.pos + vec2<f32>(e, 0.0)) - fieldAt(pt.pos - vec2<f32>(e, 0.0));
+    let gy = fieldAt(pt.pos + vec2<f32>(0.0, e)) - fieldAt(pt.pos - vec2<f32>(0.0, e));
+    let g = vec2<f32>(gx, gy);
+    let gl = length(g);
+    if (gl > 1e-5) {
+      let n = g / gl;
+      v -= n * P.push * (f * f * 4.0 + f * 0.6) * P.dt;
+      let into = dot(v, n);
+      if (into > 0.0) { v -= n * into * min(8.0 * f * P.dt, 0.9); }
     }
+    if (f > 0.55) { v *= 1.0 - min(3.0 * P.dt, 0.5); }
   }
 
   // gentle mouse drag — a finger through the water
@@ -272,27 +283,16 @@ fn vs_p(
   let stag = 1.0 - clamp(speed / max(P.stream, 0.01), 0.0, 1.0);
   // sparkle concentrates where the stream stalls (accumulation). On white
   // paper a glint reads as a crisp saturated-amber fleck, not a white flash
-  let spark = min(tw * (0.03 + 1.8 * stag * stag), 1.1);
+  let spark = min(tw * (0.05 + 2.4 * stag * stag), 1.2);
   col = mix(col, vec3<f32>(1.0, 0.70, 0.15), clamp(spark, 0.0, 0.85));
   lum += spark * 1.5;
   lum = min(lum, 2.4);
 
-  // skimmers crossing the white letters transform: fine dark-sepia hairlines,
-  // like engraving strokes drawn over the stone (hash matches the sim's)
-  let fuv = vec2<f32>(ppos.x * 0.5 + 0.5, 0.5 - ppos.y * 0.5);
-  let fAt = textureSampleLevel(field, fsamp, fuv, 0.0).r;
-  let is_skimmer = select(0.0, 1.0, rand01(ii ^ 0x0051b3cau) < 0.22);
-  let over = is_skimmer * smoothstep(0.55, 0.85, fAt);
-  col = mix(col, vec3<f32>(0.26, 0.13, 0.06), over * 0.96);
-  lum = mix(lum, 1.90, over * 0.65);
-
   let px = vec2<f32>(2.0, 2.0) / P.res;
-  let size = (1.5 + h2 * 0.8 + spark * 4.0) * max(P.dpr, 1.0) * (1.0 - 0.25 * over);
+  let size = (1.7 + h2 * 1.1 + spark * 7.0) * max(P.dpr, 1.0);
   // motion-stretch: fast particles smear into silky streamlines along their
-  // velocity; stalled (sparkling) ones stay round — water silk vs. sun glints.
-  // skimmers elongate further over the glyphs: hairline engraving strokes
-  let stretch = (size + min(speed * 26.0, 11.0) * max(P.dpr, 1.0) * (1.0 - clamp(spark, 0.0, 1.0)))
-              * (1.0 + 0.9 * over);
+  // velocity; stalled (sparkling) ones stay round — water silk vs. sun glints
+  let stretch = size + min(speed * 26.0, 11.0) * max(P.dpr, 1.0) * (1.0 - clamp(spark, 0.0, 1.0));
   let along = dir * stretch;
   let perp = vec2<f32>(-dir.y, dir.x) * size;
   let off = (corners[vi].x * along + corners[vi].y * perp) * px;
@@ -300,7 +300,7 @@ fn vs_p(
   o.pos = vec4<f32>(ppos + off, 0.0, 1.0);
   // subtractive blend: output the COMPLEMENT of the ink color, scaled by
   // intensity — the blend does dst - src, leaving the warm tone on the paper
-  o.col = (vec3<f32>(1.0, 1.0, 1.0) - col) * lum * 0.115;
+  o.col = (vec3<f32>(1.0, 1.0, 1.0) - col) * lum * 0.085;
   o.quv = corners[vi];
   return o;
 }
@@ -353,7 +353,7 @@ fn raster_field(
     let y2 = hf * 0.625;
 
     // wide soft halo (the "pressure wave" ahead of the rock)
-    ctx.set_filter("blur(6px)");
+    ctx.set_filter("blur(9px)");
     ctx.set_font(&f1);
     ctx.fill_text(LINE1, wf / 2.0, y1).ok();
     ctx.set_font(&f2);
