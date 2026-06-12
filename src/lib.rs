@@ -53,6 +53,8 @@ struct Params {
     turb: f32,
     eddy: f32,
     sparkg: f32,
+    bg_freq: f32,
+    _pad2: f32,
 }
 
 // Compute: integrate particles against the obstacle field (channel R).
@@ -63,6 +65,7 @@ struct Params {
   time: f32, dt: f32, count: u32, stream: f32,
   push: f32, mousef: f32, dpr: f32, rot_speed: f32,
   rot_depth: f32, turb: f32, eddy: f32, sparkg: f32,
+  bg_freq: f32, pad2: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -146,7 +149,17 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
       let into = dot(v, n);
       if (into > 0.0) { v -= n * into * min(8.0 * f * P.dt, 0.9); }
     }
-    if (f > 0.55) { v *= 1.0 - min(3.0 * P.dt, 0.5); }
+  }
+  // never trap: inside the field particles may only SLOW, never stall — keep a
+  // minimum drift so they always wash out of the letterforms
+  if (f > 0.25) {
+    let minsp = P.stream * 0.45;
+    let sp2 = length(v);
+    if (sp2 < minsp) {
+      var dirv = mdir;
+      if (sp2 > 1e-4) { dirv = v / sp2; }
+      v = dirv * minsp;
+    }
   }
 
   // gentle mouse drag — a finger through the water
@@ -162,13 +175,15 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
 
   var pos = pt.pos + v * P.dt;
 
-  // respawn: whichever side a particle exits, it re-enters from UPSTREAM of
-  // the current global heading — so the flow origin visibly rotates with th
-  if (abs(pos.x) > 1.16 || abs(pos.y) > 1.12) {
-    let fdir = vec2<f32>(cos(th), sin(th));
+  // respawn: recycle only particles that exited DOWNSTREAM (or wandered far),
+  // and re-enter them on a spawn line beyond the viewport's corner radius
+  // (sqrt(2)≈1.41) so the origin edge is never visible at any heading/aspect
+  let fdir = vec2<f32>(cos(th), sin(th));
+  let outside = abs(pos.x) > 1.02 || abs(pos.y) > 1.02;
+  if ((outside && dot(pos, fdir) > 1.05) || length(pos) > 2.6) {
     let perp = vec2<f32>(-fdir.y, fdir.x);
-    let eta = (rand01(i + u32(P.time * 16.0) * 2659u) * 2.0 - 1.0) * 1.30;
-    pos = -fdir * 1.14 + perp * eta;
+    let eta = (rand01(i + u32(P.time * 16.0) * 2659u) * 2.0 - 1.0) * 1.65;
+    pos = -fdir * 1.55 + perp * eta;
     v = fdir * P.stream;
   }
 
@@ -186,6 +201,7 @@ struct Params {
   time: f32, dt: f32, count: u32, stream: f32,
   push: f32, mousef: f32, dpr: f32, rot_speed: f32,
   rot_depth: f32, turb: f32, eddy: f32, sparkg: f32,
+  bg_freq: f32, pad2: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -200,13 +216,14 @@ fn vs_bg(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
 fn bedHeight(p: vec2<f32>, t: f32) -> f32 {
   return sin(p.x * 3.0 + t) * 0.55 + cos(p.y * 3.6 - t * 0.8) * 0.55
        + sin(p.x * 4.6 + p.y * 1.9 + t * 0.55) * 0.30
-       + sin(p.x * 5.1 - t * 0.70) * cos(p.y * 4.3 + t * 0.45) * 0.12;
+       + sin(p.x * 5.1 - t * 0.70) * cos(p.y * 4.3 + t * 0.45) * 0.12
+       + sin((p.x * 1.7 - p.y * 2.3) * 2.6 - t * 0.9) * 0.10;
 }
 @fragment
 fn fs_bg(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
   let uv = frag.xy / P.res;
   let aspect = P.res.x / P.res.y;
-  let p = vec2<f32>((uv.x - 0.5) * aspect, uv.y - 0.5) * 3.0;
+  let p = vec2<f32>((uv.x - 0.5) * aspect, uv.y - 0.5) * 3.0 * P.bg_freq;
   let t = P.time * 0.22;
 
   // screen-space normal from a layered height field
@@ -231,13 +248,32 @@ fn fs_bg(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
   col *= 0.34 + 0.78 * diff;
   col += vec3<f32>(1.0, 0.92, 0.74) * spec * 0.35;
 
-  // the words: soft drop shadow from the blurred field (R), then crisp white
-  // type from the sharp channel (G) — slightly over 1.0 so the type blooms
+  // the words: soft drop shadow from the blurred field (R), then the type
+  // itself — a high-key normal-mapped surface in the same warm family. The
+  // map is sampled in continuous screen space, so ONE relief spans the whole
+  // text; the glyphs are just the mask that reveals it.
   let fr = textureSampleLevel(field, fsamp, uv, 0.0);
   let shadow = fr.r * (1.0 - fr.g);
   col *= 1.0 - 0.38 * shadow;
   let crisp = smoothstep(0.35, 0.62, fr.g);
-  col = mix(col, vec3<f32>(1.08, 1.07, 1.04), crisp);
+  if (crisp > 0.001) {
+    let tp = vec2<f32>((uv.x - 0.5) * aspect, uv.y - 0.5) * 2.2 + vec2<f32>(7.3, 4.1);
+    let te = 0.02;
+    let thC = bedHeight(tp, t * 0.7);
+    let tdx = thC - bedHeight(tp + vec2<f32>(te, 0.0), t * 0.7);
+    let tdy = thC - bedHeight(tp + vec2<f32>(0.0, te), t * 0.7);
+    let n2 = normalize(vec3<f32>(tdx * 5.0, tdy * 5.0, 1.0));
+    let d2 = max(dot(n2, l), 0.0);
+    let s2 = pow(max(dot(reflect(-l, n2), vv), 0.0), 30.0);
+    let enc2 = n2.xy * 0.5 + vec2<f32>(0.5, 0.5);
+    var tcol = vec3<f32>(
+      0.92 + 0.14 * enc2.x,
+      0.90 + 0.13 * enc2.y,
+      0.82 + 0.08 * (1.0 - enc2.x)
+    );
+    tcol = tcol * (0.97 + 0.14 * d2) + vec3<f32>(1.10, 1.04, 0.88) * s2 * 0.50;
+    col = mix(col, tcol, crisp);
+  }
 
   return vec4<f32>(col, 1.0);
 }
@@ -1032,6 +1068,8 @@ async fn run() {
             turb: dial("turb", 1.0),
             eddy: dial("eddy", 1.0),
             sparkg: dial("spark", 1.0),
+            bg_freq: dial("bg_freq", 1.0),
+            _pad2: 0.0,
         };
         queue.write_buffer(&param_buf, 0, bytemuck::bytes_of(&params));
 
