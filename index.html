@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ben Priddy</title>
+    <link data-trunk rel="rust" href="Cargo.toml" data-wasm-opt="z" />
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #04060c; }
+      #canvas { display: block; width: 100vw; height: 100vh; }
+      #fps {
+        position: fixed; top: 12px; left: 14px;
+        font: 13px/1.4 ui-monospace, Menlo, monospace;
+        color: #b9f6ca; background: rgba(0,0,0,.4);
+        padding: 5px 9px; border-radius: 7px; white-space: pre; pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="canvas"></canvas>
+    <div id="fps">starting…</div>
+  </body>
+</html>
