@@ -188,11 +188,14 @@ fn fs_bg(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
   let n = normalize(vec3<f32>(dx * 5.0, dy * 5.0, 1.0));
   let l = normalize(vec3<f32>(cos(t * 0.6) * 0.7, sin(t * 0.6) * 0.7, 0.75));
   let diff = max(dot(n, l), 0.0);
-  let umber = vec3<f32>(0.068, 0.046, 0.026);
-  let moss  = vec3<f32>(0.030, 0.056, 0.034);
-  var col = mix(umber, moss, clamp(hC * 0.5 + 0.5, 0.0, 1.0)) * (0.45 + 0.95 * diff);
+  // warm white paper with the faintest normal-map undulation
+  let ivory = vec3<f32>(0.978, 0.970, 0.952);
+  let cream = vec3<f32>(0.962, 0.950, 0.922);
+  var col = mix(cream, ivory, clamp(hC * 0.5 + 0.5, 0.0, 1.0));
+  col += vec3<f32>(0.022, 0.020, 0.016) * diff;
 
-  // glyph emboss: the words darken the bed and catch a warm rim at their edges
+  // the words stay PURE WHITE: lift glyph interiors to 1.0, and press a soft
+  // warm shadow rim around them so the white text reads even before the ink
   let fuv = uv;
   let f  = textureSampleLevel(field, fsamp, fuv, 0.0).r;
   let ef = 1.5 / P.res.x;
@@ -200,9 +203,9 @@ fn fs_bg(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
          - textureSampleLevel(field, fsamp, fuv - vec2<f32>(ef, 0.0), 0.0).r;
   let gy = textureSampleLevel(field, fsamp, fuv + vec2<f32>(0.0, ef), 0.0).r
          - textureSampleLevel(field, fsamp, fuv - vec2<f32>(0.0, ef), 0.0).r;
-  col *= 1.0 - 0.6 * f;
-  let rim = clamp(length(vec2<f32>(gx, gy)) * 10.0, 0.0, 1.0) * (1.0 - f);
-  col += rim * vec3<f32>(0.085, 0.062, 0.030);
+  col = mix(col, vec3<f32>(1.0, 1.0, 1.0), smoothstep(0.25, 0.7, f));
+  let rim = clamp(length(vec2<f32>(gx, gy)) * 8.0, 0.0, 1.0) * (1.0 - smoothstep(0.3, 0.7, f));
+  col -= rim * vec3<f32>(0.045, 0.060, 0.085);
 
   return vec4<f32>(col, 1.0);
 }
@@ -258,10 +261,10 @@ fn vs_p(
   let h2 = rand01(ii ^ 0x68bc21ebu);
   let tw = pow(max(sin(P.time * (2.0 + h1 * 7.0) + h2 * 6.2832), 0.0), 26.0);
   let stag = 1.0 - clamp(speed / max(P.stream, 0.01), 0.0, 1.0);
-  // sparkle concentrates where the stream stalls (accumulation), with only a
-  // faint global shimmer; clamp so trapped particles can't blow out white
+  // sparkle concentrates where the stream stalls (accumulation). On white
+  // paper a glint reads as a crisp saturated-amber fleck, not a white flash
   let spark = min(tw * (0.03 + 1.8 * stag * stag), 1.1);
-  col = mix(col, vec3<f32>(1.0, 0.96, 0.82), clamp(spark, 0.0, 0.8));
+  col = mix(col, vec3<f32>(1.0, 0.70, 0.15), clamp(spark, 0.0, 0.85));
   lum += spark * 1.5;
   lum = min(lum, 2.4);
 
@@ -275,7 +278,9 @@ fn vs_p(
   let off = (corners[vi].x * along + corners[vi].y * perp) * px;
   var o: VOut;
   o.pos = vec4<f32>(ppos + off, 0.0, 1.0);
-  o.col = col * lum * 0.14;
+  // subtractive blend: output the COMPLEMENT of the ink color, scaled by
+  // intensity — the blend does dst - src, leaving the warm tone on the paper
+  o.col = (vec3<f32>(1.0, 1.0, 1.0) - col) * lum * 0.10;
   o.quv = corners[vi];
   return o;
 }
@@ -366,6 +371,24 @@ async fn run() {
     let dpr = window.device_pixel_ratio().min(2.0);
     let css_w = window.inner_width().unwrap().as_f64().unwrap();
     let css_h = window.inner_height().unwrap().as_f64().unwrap();
+    // embedded previews can load the page while the viewport is still 0-sized;
+    // initializing against that poisons every GPU resource — retry instead
+    if css_w < 50.0 || css_h < 50.0 {
+        let retry = Closure::<dyn FnMut()>::new(move || {
+            if let Some(w) = web_sys::window() {
+                w.location().reload().ok();
+            }
+        });
+        window
+            .set_timeout_with_callback_and_timeout_and_arguments_0(
+                retry.as_ref().unchecked_ref(),
+                250,
+            )
+            .ok();
+        retry.forget();
+        set_status("waiting for viewport…");
+        return;
+    }
     let width = (css_w * dpr) as u32;
     let height = (css_h * dpr) as u32;
     canvas.set_width(width);
@@ -695,13 +718,15 @@ async fn run() {
             targets: &[Some(wgpu::ColorTargetState {
                 format,
                 blend: Some(wgpu::BlendState {
+                    // ink on paper: out = dst - src, so particles SUBTRACT the
+                    // complement of their color — warm pigment on white
                     color: wgpu::BlendComponent {
                         src_factor: wgpu::BlendFactor::One,
                         dst_factor: wgpu::BlendFactor::One,
-                        operation: wgpu::BlendOperation::Add,
+                        operation: wgpu::BlendOperation::ReverseSubtract,
                     },
                     alpha: wgpu::BlendComponent {
-                        src_factor: wgpu::BlendFactor::One,
+                        src_factor: wgpu::BlendFactor::Zero,
                         dst_factor: wgpu::BlendFactor::One,
                         operation: wgpu::BlendOperation::Add,
                     },
@@ -806,7 +831,7 @@ async fn run() {
                         depth_slice: None,
                         resolve_target: None,
                         ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
                             store: wgpu::StoreOp::Store,
                         },
                     })],
