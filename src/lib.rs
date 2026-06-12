@@ -56,7 +56,7 @@ struct Params {
     eddy: f32,
     sparkg: f32,
     bg_freq: f32,
-    _pad2: f32,
+    text_sat: f32,
 }
 
 // Compute: integrate particles against the obstacle field (channel R).
@@ -67,7 +67,7 @@ struct Params {
   time: f32, dt: f32, count: u32, stream: f32,
   push: f32, mousef: f32, dpr: f32, rot_speed: f32,
   rot_depth: f32, turb: f32, eddy: f32, sparkg: f32,
-  bg_freq: f32, pad2: f32,
+  bg_freq: f32, text_sat: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -203,7 +203,7 @@ struct Params {
   time: f32, dt: f32, count: u32, stream: f32,
   push: f32, mousef: f32, dpr: f32, rot_speed: f32,
   rot_depth: f32, turb: f32, eddy: f32, sparkg: f32,
-  bg_freq: f32, pad2: f32,
+  bg_freq: f32, text_sat: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -280,7 +280,7 @@ fn fs_bg(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
       0.45 + 0.55 * enc2.y,
       0.08 + 0.22 * (1.0 - enc2.x)
     );
-    var tcol = mix(vec3<f32>(1.0, 1.0, 1.0), hue, 0.5);
+    var tcol = mix(vec3<f32>(1.0, 1.0, 1.0), hue, P.text_sat);
     tcol = tcol * (0.82 + 0.35 * d2) + vec3<f32>(1.15, 1.00, 0.78) * s2 * 0.55;
     tcol = tcol * 1.04;
     col = mix(col, tcol, crisp);
@@ -1080,7 +1080,7 @@ async fn run() {
             eddy: dial("eddy", 1.0),
             sparkg: dial("spark", 1.0),
             bg_freq: dial("bg_freq", 1.0),
-            _pad2: 0.0,
+            text_sat: dial("text_sat", 0.5),
         };
         queue.write_buffer(&param_buf, 0, bytemuck::bytes_of(&params));
 
