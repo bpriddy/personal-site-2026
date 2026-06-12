@@ -34,7 +34,7 @@ const PHRASES: [&str; 14] = [
 ];
 const PHRASE_SECONDS: f64 = 4.5;
 
-const PARTICLES: u32 = 380_000;
+const PARTICLES: u32 = 500_000;
 const WG: u32 = 64;
 const FIELD_W: u32 = 1536; // wider = crisper sharp-text channel
 
