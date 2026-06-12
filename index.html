@@ -47,29 +47,29 @@
         backdrop-filter: blur(4px);
       }
 
-      /* info button */
+      /* info button — sharp block chip */
       #info-btn {
         position: fixed; bottom: 18px; right: 18px;
-        width: 40px; height: 40px; border-radius: 50%;
-        border: 1px solid rgba(138, 90, 40, 0.4);
-        background: rgba(255, 255, 255, 0.6);
-        color: #8a5a28;
-        font: 600 17px/1 Georgia, serif;
+        padding: 11px 18px;
+        border: none; border-radius: 0;
+        background: #0d0b08;
+        color: #fff;
+        font: 700 11px/1 -apple-system, "Helvetica Neue", system-ui, sans-serif;
+        letter-spacing: 0.16em;
         cursor: pointer;
-        backdrop-filter: blur(6px);
-        transition: transform 0.15s ease, background 0.2s ease, border-color 0.2s ease;
+        transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
       }
       #info-btn:hover {
-        transform: scale(1.08);
-        background: rgba(138, 90, 40, 0.12);
-        border-color: rgba(138, 90, 40, 0.8);
+        background: #fff;
+        color: #0d0b08;
+        transform: translateY(-2px);
       }
 
-      /* modal */
+      /* modal — sharp, solid, editorial */
       #modal-backdrop {
         position: fixed; inset: 0;
-        background: rgba(250, 247, 240, 0.55);
-        backdrop-filter: blur(7px);
+        background: rgba(10, 8, 5, 0.45);
+        backdrop-filter: blur(10px);
         display: none;
         align-items: center; justify-content: center;
         z-index: 10;
@@ -79,37 +79,46 @@
       #modal-backdrop.open { display: flex; }
       #modal-backdrop.show { opacity: 1; }
       #modal {
-        max-width: 30rem; margin: 1.2rem;
-        padding: 2rem 2.2rem 1.6rem;
-        border-radius: 14px;
-        border: 1px solid rgba(242, 163, 94, 0.22);
-        background: linear-gradient(160deg, rgba(26, 20, 14, 0.92), rgba(14, 11, 8, 0.94));
-        color: var(--ink);
-        font: 15px/1.65 -apple-system, system-ui, sans-serif;
-        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
-        transform: translateY(10px);
+        max-width: 33rem; margin: 1.2rem;
+        padding: 2.8rem 3rem 2.4rem;
+        border: none; border-radius: 0;
+        background: #0e0c09;
+        color: #d9d2c6;
+        font: 15px/1.7 -apple-system, "Helvetica Neue", system-ui, sans-serif;
+        box-shadow: 0 40px 120px rgba(0, 0, 0, 0.55);
+        transform: translateY(12px);
         transition: transform 0.22s ease;
       }
       #modal-backdrop.show #modal { transform: translateY(0); }
       #modal h2 {
-        margin: 0 0 0.9rem;
-        font: 700 1.25rem/1.2 Georgia, serif;
-        color: var(--accent);
-        letter-spacing: 0.02em;
+        margin: 0 0 1.4rem;
+        font: 900 2rem/1.05 -apple-system, "Helvetica Neue", system-ui, sans-serif;
+        text-transform: uppercase;
+        letter-spacing: -0.01em;
+        color: #fff;
       }
-      #modal p { margin: 0 0 0.9rem; color: var(--ink); }
-      #modal p + p { color: var(--dim); }
+      #modal h2::before {
+        content: "";
+        display: block;
+        width: 44px; height: 4px;
+        margin-bottom: 1.1rem;
+        background: var(--accent);
+      }
+      #modal p { margin: 0 0 1rem; color: #d9d2c6; }
+      #modal p + p { color: #938b7d; }
       #modal-close {
-        display: block; margin: 0.6rem 0 0 auto;
-        padding: 0.45rem 1.1rem;
-        border-radius: 8px;
-        border: 1px solid rgba(242, 163, 94, 0.35);
-        background: transparent; color: var(--accent);
-        font: 600 13px/1 -apple-system, system-ui, sans-serif;
+        display: block; width: 100%;
+        margin-top: 1.8rem;
+        padding: 1rem;
+        border: none; border-radius: 0;
+        background: var(--accent); color: #0d0b08;
+        font: 700 12px/1 -apple-system, "Helvetica Neue", system-ui, sans-serif;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
         cursor: pointer;
-        transition: background 0.15s ease;
+        transition: background 0.15s ease, color 0.15s ease;
       }
-      #modal-close:hover { background: rgba(242, 163, 94, 0.14); }
+      #modal-close:hover { background: #fff; }
 
       /* debug dials */
       #dials {
@@ -160,7 +169,7 @@
       <div class="row"><label>text sat</label><input type="range" min="0" max="1" step="0.02" data-dial="text_sat"><span class="val"></span></div>
       <div class="row"><label>bg speed</label><input type="range" min="0" max="10" step="0.1" data-dial="bg_speed"><span class="val"></span></div>
     </div>
-    <button id="info-btn" aria-label="About Ben Priddy" title="About">i</button>
+    <button id="info-btn" aria-label="About Ben Priddy" title="About">INFO</button>
 
     <div id="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <div id="modal">
