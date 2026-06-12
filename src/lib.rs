@@ -221,6 +221,14 @@ fn bedHeight(p: vec2<f32>, t: f32) -> f32 {
        + sin(p.x * 5.1 - t * 0.70) * cos(p.y * 4.3 + t * 0.45) * 0.12
        + sin((p.x * 1.7 - p.y * 2.3) * 2.6 - t * 0.9) * 0.10;
 }
+// the TEXT's own relief — different octaves, phases, and speeds than the bed
+fn textHeight(p: vec2<f32>, t: f32) -> f32 {
+  return sin(p.x * 2.2 - t * 0.9) * 0.60
+       + cos(p.y * 2.8 + t * 0.7) * 0.60
+       + sin((p.x - p.y) * 4.6 + t * 1.1) * 0.35
+       + cos(p.x * 7.0 + p.y * 5.0 - t * 0.5) * 0.18;
+}
+
 @fragment
 fn fs_bg(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
   let uv = frag.xy / P.res;
@@ -264,21 +272,26 @@ fn fs_bg(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
     // still pops, with hot speculars the bloom feeds on
     let tt = P.time * 0.45;
     let tp = vec2<f32>((uv.x - 0.5) * aspect, uv.y - 0.5) * 2.4
-           + vec2<f32>(7.3, 4.1) + vec2<f32>(tt * 0.35, -tt * 0.22);
+           + vec2<f32>(tt * 0.35, -tt * 0.22);
     let te = 0.02;
-    let thC = bedHeight(tp, tt);
-    let tdx = thC - bedHeight(tp + vec2<f32>(te, 0.0), tt);
-    let tdy = thC - bedHeight(tp + vec2<f32>(0.0, te), tt);
+    let thC = textHeight(tp, tt);
+    let tdx = thC - textHeight(tp + vec2<f32>(te, 0.0), tt);
+    let tdy = thC - textHeight(tp + vec2<f32>(0.0, te), tt);
     let n2 = normalize(vec3<f32>(tdx * 5.0, tdy * 5.0, 1.0));
-    let d2 = max(dot(n2, l), 0.0);
-    let s2 = pow(max(dot(reflect(-l, n2), vv), 0.0), 30.0);
-    let enc2 = n2.xy * 0.5 + vec2<f32>(0.5, 0.5);
-    // fully saturated warm hue from the relief normal, then pulled 50% toward
-    // white — explicit 50% saturation, easy to dial
+    // the text gets its own light, phase-offset from the ground's, so the two
+    // surfaces never shade in lockstep
+    let l2 = normalize(vec3<f32>(cos(t * 0.55 + 2.4) * 0.75, sin(t * 0.55 + 2.4) * 0.75, 0.62));
+    let d2 = max(dot(n2, l2), 0.0);
+    let s2 = pow(max(dot(reflect(-l2, n2), vv), 0.0), 30.0);
+    // amplified encoding so the relief sweeps the full hue gamut instead of
+    // hovering at the yellow midpoint
+    let enc2 = clamp(n2.xy * 2.2, vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, 1.0)) * 0.5
+             + vec2<f32>(0.5, 0.5);
+    // hue spans red ↔ yellow ↔ green: x drives red, y drives green, blue low
     let hue = vec3<f32>(
-      0.75 + 0.25 * enc2.x,
-      0.45 + 0.55 * enc2.y,
-      0.08 + 0.22 * (1.0 - enc2.x)
+      0.25 + 0.75 * enc2.x,
+      0.30 + 0.70 * enc2.y,
+      0.06 + 0.10 * (1.0 - enc2.y)
     );
     var tcol = mix(vec3<f32>(1.0, 1.0, 1.0), hue, P.text_sat);
     tcol = tcol * (0.82 + 0.35 * d2) + vec3<f32>(1.15, 1.00, 0.78) * s2 * 0.55;
