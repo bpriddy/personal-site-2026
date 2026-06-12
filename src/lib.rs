@@ -48,7 +48,11 @@ struct Params {
     push: f32,
     mousef: f32,
     dpr: f32,
-    _pad: f32,
+    rot_speed: f32,
+    rot_depth: f32,
+    turb: f32,
+    eddy: f32,
+    sparkg: f32,
 }
 
 // Compute: integrate particles against the obstacle field (channel R).
@@ -57,7 +61,8 @@ struct Particle { pos: vec2<f32>, vel: vec2<f32> };
 struct Params {
   res: vec2<f32>, mouse: vec2<f32>,
   time: f32, dt: f32, count: u32, stream: f32,
-  push: f32, mousef: f32, dpr: f32, pad1: f32,
+  push: f32, mousef: f32, dpr: f32, rot_speed: f32,
+  rot_depth: f32, turb: f32, eddy: f32, sparkg: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -84,9 +89,14 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
   let h1 = rand01(i);
   let h2 = rand01(i ^ 0x9e3779b9u);
 
-  // ── flow field: meandering current + layered turbulence + roaming eddies ──
-  // the current itself breathes: its heading tilts slowly over time and space
-  let m_ang = 0.16 * sin(P.time * 0.11 + pt.pos.y * 0.6)
+  // ── flow field: rotating origin + turbulence + roaming eddies ──
+  // the global heading does a slow bounded noise-walk (two incommensurate
+  // sines), so the flow's ORIGIN itself rotates around the screen; the dials
+  // control how fast (rot_speed) and how far (rot_depth) it swings
+  let th = P.rot_depth * (0.6 * sin(P.time * P.rot_speed)
+                        + 0.4 * sin(P.time * P.rot_speed * 0.371 + 2.1));
+  // micro-wobble layered on top: the current still breathes locally
+  let m_ang = th + 0.16 * sin(P.time * 0.11 + pt.pos.y * 0.6)
             + 0.09 * sin(P.time * 0.047 + 1.7);
   let mdir = vec2<f32>(cos(m_ang), sin(m_ang));
   let lane = 0.5 + 0.5 * sin(pt.pos.y * 7.0 + h1 * 6.2832);
@@ -97,15 +107,15 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
   v += vec2<f32>(
     sin(pt.pos.y * 3.0 + P.time * 0.50 + h2 * 6.2832),
     cos(pt.pos.x * 2.5 - P.time * 0.40 + h1 * 6.2832)
-  ) * 0.16 * P.dt;
+  ) * 0.16 * P.turb * P.dt;
   v += vec2<f32>(
     sin(pt.pos.y * 9.0 - P.time * 1.10 + h1 * 2.1),
     cos(pt.pos.x * 8.0 + P.time * 0.90 + h2 * 4.2)
-  ) * 0.10 * P.dt;
+  ) * 0.10 * P.turb * P.dt;
   v += vec2<f32>(
     sin(pt.pos.y * 21.0 + P.time * 2.30 + h2 * 9.1),
     cos(pt.pos.x * 19.0 - P.time * 2.00 + h1 * 7.3)
-  ) * 0.055 * P.dt;
+  ) * 0.055 * P.turb * P.dt;
 
   // roaming eddies: three slow vortices drift through and stir the stream
   for (var k = 0u; k < 3u; k = k + 1u) {
@@ -119,7 +129,7 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
     let r2 = dot(d, d);
     var w = 0.9;
     if ((k & 1u) == 1u) { w = -0.75; }
-    v += vec2<f32>(-d.y, d.x) * w * exp(-r2 * 5.0) * P.dt;
+    v += vec2<f32>(-d.y, d.x) * w * P.eddy * exp(-r2 * 5.0) * P.dt;
   }
 
   // obstacle deflection: push away from glyphs along the field gradient
@@ -152,15 +162,15 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
 
   var pos = pt.pos + v * P.dt;
 
-  // wrap: exit right → re-enter left at a fresh lane; soft vertical wrap
-  if (pos.x > 1.12) {
-    pos.x = -1.12;
-    pos.y = rand01(i + u32(P.time * 16.0) * 2659u) * 2.0 - 1.0;
-    v = vec2<f32>(P.stream, 0.0);
+  // respawn: whichever side a particle exits, it re-enters from UPSTREAM of
+  // the current global heading — so the flow origin visibly rotates with th
+  if (abs(pos.x) > 1.16 || abs(pos.y) > 1.12) {
+    let fdir = vec2<f32>(cos(th), sin(th));
+    let perp = vec2<f32>(-fdir.y, fdir.x);
+    let eta = (rand01(i + u32(P.time * 16.0) * 2659u) * 2.0 - 1.0) * 1.30;
+    pos = -fdir * 1.14 + perp * eta;
+    v = fdir * P.stream;
   }
-  if (pos.x < -1.14) { pos.x = 1.10; }
-  if (pos.y > 1.08) { pos.y = -1.06; }
-  if (pos.y < -1.08) { pos.y = 1.06; }
 
   pt.pos = pos;
   pt.vel = v;
@@ -174,7 +184,8 @@ const DRAW_SHADER: &str = r#"
 struct Params {
   res: vec2<f32>, mouse: vec2<f32>,
   time: f32, dt: f32, count: u32, stream: f32,
-  push: f32, mousef: f32, dpr: f32, pad1: f32,
+  push: f32, mousef: f32, dpr: f32, rot_speed: f32,
+  rot_depth: f32, turb: f32, eddy: f32, sparkg: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -188,8 +199,8 @@ fn vs_bg(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
 }
 fn bedHeight(p: vec2<f32>, t: f32) -> f32 {
   return sin(p.x * 3.0 + t) * 0.55 + cos(p.y * 3.6 - t * 0.8) * 0.55
-       + sin((p.x + p.y) * 6.5 + t * 0.55) * 0.32
-       + sin((p.x * 1.7 - p.y * 2.3) * 11.0 - t * 0.9) * 0.14;
+       + sin(p.x * 4.6 + p.y * 1.9 + t * 0.55) * 0.30
+       + sin(p.x * 5.1 - t * 0.70) * cos(p.y * 4.3 + t * 0.45) * 0.12;
 }
 @fragment
 fn fs_bg(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
@@ -278,7 +289,7 @@ fn vs_p(
   let h2 = rand01(ii ^ 0x68bc21ebu);
   let tw = pow(max(sin(P.time * (2.0 + h1 * 7.0) + h2 * 6.2832), 0.0), 26.0);
   let stag = 1.0 - clamp(speed / max(P.stream, 0.01), 0.0, 1.0);
-  let spark = min(tw * (0.05 + 2.4 * stag * stag), 1.2);
+  let spark = min(tw * (0.05 + 2.4 * stag * stag) * P.sparkg, 1.4);
   col = mix(col, vec3<f32>(1.45, 1.22, 0.78), clamp(spark, 0.0, 0.9));
   lum += spark * 3.2;
 
@@ -385,6 +396,17 @@ fn rnd(s: &mut u32) -> f32 {
     *s ^= *s >> 17;
     *s ^= *s << 5;
     (*s as f32) / (u32::MAX as f32)
+}
+
+// read a live tuning value from window.__DIALS (set by the debug panel)
+fn dial(name: &str, default: f32) -> f32 {
+    web_sys::window()
+        .map(JsValue::from)
+        .and_then(|w| js_sys::Reflect::get(&w, &"__DIALS".into()).ok())
+        .and_then(|o| js_sys::Reflect::get(&o, &name.into()).ok())
+        .and_then(|v| v.as_f64())
+        .map(|v| v as f32)
+        .unwrap_or(default)
 }
 
 fn set_status(text: &str) {
@@ -1001,11 +1023,15 @@ async fn run() {
             time: ((now - t0) / 1000.0) as f32,
             dt,
             count: PARTICLES,
-            stream: 0.32,
+            stream: dial("stream", 0.32),
             push: 2.5,
             mousef: 0.5 * mact,
             dpr: dpr as f32,
-            _pad: 0.0,
+            rot_speed: dial("rot_speed", 0.10),
+            rot_depth: dial("rot_depth", 1.6),
+            turb: dial("turb", 1.0),
+            eddy: dial("eddy", 1.0),
+            sparkg: dial("spark", 1.0),
         };
         queue.write_buffer(&param_buf, 0, bytemuck::bytes_of(&params));
 

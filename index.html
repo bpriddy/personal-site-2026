@@ -110,12 +110,53 @@
         transition: background 0.15s ease;
       }
       #modal-close:hover { background: rgba(242, 163, 94, 0.14); }
+
+      /* debug dials */
+      #dials {
+        position: fixed; bottom: 18px; left: 18px; z-index: 9;
+        width: 250px; padding: 12px 14px 10px;
+        border-radius: 10px;
+        border: 1px solid rgba(138, 90, 40, 0.35);
+        background: rgba(14, 11, 8, 0.82);
+        backdrop-filter: blur(8px);
+        font: 11px/1.5 ui-monospace, Menlo, monospace;
+        color: #d8cfc0;
+      }
+      #dials.hidden { display: none; }
+      #dials h3 {
+        margin: 0 0 6px; font: 700 11px/1 ui-monospace, Menlo, monospace;
+        color: #f2a35e; letter-spacing: 0.08em;
+      }
+      #dials .row { display: flex; align-items: center; gap: 8px; margin: 3px 0; }
+      #dials label { flex: 0 0 74px; color: #b0a694; }
+      #dials input[type=range] { flex: 1; accent-color: #f2a35e; height: 14px; }
+      #dials .val { flex: 0 0 42px; text-align: right; color: #f2e9d8; }
+      #gear {
+        position: fixed; bottom: 18px; left: 18px; z-index: 8;
+        width: 34px; height: 34px; border-radius: 50%;
+        border: 1px solid rgba(138, 90, 40, 0.4);
+        background: rgba(255, 255, 255, 0.55); color: #8a5a28;
+        font: 600 15px/1 system-ui; cursor: pointer;
+        backdrop-filter: blur(6px);
+      }
+
     </style>
   </head>
   <body>
     <canvas id="canvas"></canvas>
     <div id="fps">starting…</div>
 
+
+    <button id="gear" title="tuning dials (d)">⚙</button>
+    <div id="dials" class="hidden">
+      <h3>FLOW DIALS</h3>
+      <div class="row"><label>rot speed</label><input type="range" min="0" max="0.6" step="0.005" data-dial="rot_speed"><span class="val"></span></div>
+      <div class="row"><label>rot depth</label><input type="range" min="0" max="3.2" step="0.05" data-dial="rot_depth"><span class="val"></span></div>
+      <div class="row"><label>stream</label><input type="range" min="0.05" max="0.9" step="0.01" data-dial="stream"><span class="val"></span></div>
+      <div class="row"><label>turbulence</label><input type="range" min="0" max="3" step="0.05" data-dial="turb"><span class="val"></span></div>
+      <div class="row"><label>eddies</label><input type="range" min="0" max="3" step="0.05" data-dial="eddy"><span class="val"></span></div>
+      <div class="row"><label>sparkle</label><input type="range" min="0" max="3" step="0.05" data-dial="spark"><span class="val"></span></div>
+    </div>
     <button id="info-btn" aria-label="About Ben Priddy" title="About">i</button>
 
     <div id="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-title">
@@ -143,6 +184,32 @@
     </div>
 
     <script>
+
+      // tuning dials: window.__DIALS is read by the wasm every frame
+      window.__DIALS = { rot_speed: 0.10, rot_depth: 1.6, stream: 0.32,
+                         turb: 1.0, eddy: 1.0, spark: 1.0 };
+      (function () {
+        var panel = document.getElementById("dials");
+        var gear = document.getElementById("gear");
+        function toggle() {
+          panel.classList.toggle("hidden");
+          gear.style.display = panel.classList.contains("hidden") ? "block" : "none";
+        }
+        gear.addEventListener("click", toggle);
+        document.addEventListener("keydown", function (e) {
+          if (e.key === "d" && !e.metaKey && !e.ctrlKey) toggle();
+        });
+        panel.querySelectorAll("input[type=range]").forEach(function (el) {
+          var key = el.dataset.dial;
+          el.value = window.__DIALS[key];
+          var val = el.parentElement.querySelector(".val");
+          val.textContent = Number(el.value).toFixed(2);
+          el.addEventListener("input", function () {
+            window.__DIALS[key] = Number(el.value);
+            val.textContent = Number(el.value).toFixed(2);
+          });
+        });
+      })();
       (function () {
         var backdrop = document.getElementById("modal-backdrop");
         var btn = document.getElementById("info-btn");
