@@ -50,7 +50,8 @@ struct Params {
     stream: f32,
     push: f32,
     mousef: f32,
-    _pad: [f32; 2],
+    dpr: f32,
+    _pad: f32,
 }
 
 // Compute: integrate particles against the obstacle field.
@@ -59,7 +60,7 @@ struct Particle { pos: vec2<f32>, vel: vec2<f32> };
 struct Params {
   res: vec2<f32>, mouse: vec2<f32>,
   time: f32, dt: f32, count: u32, stream: f32,
-  push: f32, mousef: f32, pad0: f32, pad1: f32,
+  push: f32, mousef: f32, dpr: f32, pad1: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -156,7 +157,7 @@ const DRAW_SHADER: &str = r#"
 struct Params {
   res: vec2<f32>, mouse: vec2<f32>,
   time: f32, dt: f32, count: u32, stream: f32,
-  push: f32, mousef: f32, pad0: f32, pad1: f32,
+  push: f32, mousef: f32, dpr: f32, pad1: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -265,10 +266,10 @@ fn vs_p(
   lum = min(lum, 2.4);
 
   let px = vec2<f32>(2.0, 2.0) / P.res;
-  let size = 1.5 + h2 * 0.8 + spark * 4.0;
+  let size = (1.5 + h2 * 0.8 + spark * 4.0) * max(P.dpr, 1.0);
   // motion-stretch: fast particles smear into silky streamlines along their
   // velocity; stalled (sparkling) ones stay round — water silk vs. sun glints
-  let stretch = size + min(speed * 26.0, 11.0) * (1.0 - clamp(spark, 0.0, 1.0));
+  let stretch = size + min(speed * 26.0, 11.0) * max(P.dpr, 1.0) * (1.0 - clamp(spark, 0.0, 1.0));
   let along = dir * stretch;
   let perp = vec2<f32>(-dir.y, dir.x) * size;
   let off = (corners[vi].x * along + corners[vi].y * perp) * px;
@@ -360,11 +361,38 @@ async fn run() {
     let document = window.document().unwrap();
     let canvas: web_sys::HtmlCanvasElement =
         document.get_element_by_id("canvas").unwrap().dyn_into().unwrap();
-    let width = window.inner_width().unwrap().as_f64().unwrap() as u32;
-    let height = window.inner_height().unwrap().as_f64().unwrap() as u32;
+    // render at device resolution (capped 2x) for retina crispness; CSS keeps
+    // the canvas at viewport size
+    let dpr = window.device_pixel_ratio().min(2.0);
+    let css_w = window.inner_width().unwrap().as_f64().unwrap();
+    let css_h = window.inner_height().unwrap().as_f64().unwrap();
+    let width = (css_w * dpr) as u32;
+    let height = (css_h * dpr) as u32;
     canvas.set_width(width);
     canvas.set_height(height);
     let aspect = width as f32 / height as f32;
+
+    // a fully procedural page can simply reload on resize (debounced)
+    {
+        let win2 = window.clone();
+        let pending = Rc::new(Cell::new(0i32));
+        let pend2 = pending.clone();
+        let reload = Closure::<dyn FnMut()>::new(move || {
+            if let Some(w) = web_sys::window() { w.location().reload().ok(); }
+        });
+        let cb = Closure::<dyn FnMut(web_sys::Event)>::new(move |_e: web_sys::Event| {
+            let id = win2
+                .set_timeout_with_callback_and_timeout_and_arguments_0(
+                    reload.as_ref().unchecked_ref(), 350)
+                .unwrap_or(0);
+            let prev = pend2.replace(id);
+            if prev != 0 { win2.clear_timeout_with_handle(prev); }
+        });
+        window
+            .add_event_listener_with_callback("resize", cb.as_ref().unchecked_ref())
+            .unwrap();
+        cb.forget();
+    }
 
     // offscreen 2D canvas for the obstacle field (reused on every phrase swap)
     let field_w = FIELD_W;
@@ -380,7 +408,7 @@ async fn run() {
     let mouse = Rc::new(Cell::new((0.0f32, 0.0f32, 0.0f32))); // x, y, active
     {
         let m = mouse.clone();
-        let (w, h) = (width as f32, height as f32);
+        let (w, h) = (css_w as f32, css_h as f32);
         let cb = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |e: web_sys::MouseEvent| {
             let x = (e.client_x() as f32 / w) * 2.0 - 1.0;
             let y = -((e.client_y() as f32 / h) * 2.0 - 1.0);
@@ -743,7 +771,8 @@ async fn run() {
             stream: 0.32,
             push: 2.3,
             mousef: 0.5 * mact,
-            _pad: [0.0; 2],
+            dpr: dpr as f32,
+            _pad: 0.0,
         };
         queue.write_buffer(&param_buf, 0, bytemuck::bytes_of(&params));
 
