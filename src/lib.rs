@@ -294,6 +294,10 @@ fn fs_bg(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
       0.06 + 0.10 * (1.0 - enc2.y)
     );
     var tcol = mix(vec3<f32>(1.0, 1.0, 1.0), hue, P.text_sat);
+    // saturated hues are darker than white — lift toward equal luminance so
+    // the type keeps its brightness wherever the sat dial sits
+    let tlum = dot(tcol, vec3<f32>(0.2126, 0.7152, 0.0722));
+    tcol = tcol * mix(1.0, 0.95 / max(tlum, 0.30), 0.7);
     tcol = tcol * (0.80 + 0.55 * d2) + vec3<f32>(1.15, 1.00, 0.78) * s2 * 0.85;
     tcol = tcol * 1.10;
     col = mix(col, tcol, crisp);
@@ -393,6 +397,7 @@ fn vs_full(@builtin(vertex_index) i: u32) -> VOut {
 
 @group(0) @binding(0) var src: texture_2d<f32>;
 @group(0) @binding(1) var samp: sampler;
+@group(0) @binding(3) var fieldtex: texture_2d<f32>;
 
 const W0: f32 = 0.227027;
 const W1: f32 = 0.194595;
@@ -402,10 +407,12 @@ const W4: f32 = 0.016216;
 
 fn bright(uv: vec2<f32>) -> vec3<f32> {
   let c = textureSampleLevel(src, samp, uv, 0.0).rgb;
-  // soft-knee bright pass: keep what exceeds the threshold
+  // soft-knee bright pass: keep what exceeds the threshold — but the TEXT
+  // contributes nothing, so it never grows a halo over its own edges
   let lum = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
   let k = smoothstep(0.78, 1.15, lum);
-  return c * k;
+  let crisp = smoothstep(0.42, 0.55, textureSampleLevel(fieldtex, samp, uv, 0.0).g);
+  return c * k * (1.0 - crisp);
 }
 
 @fragment
@@ -435,7 +442,6 @@ fn fs_blur_v(in: VOut) -> @location(0) vec4<f32> {
 }
 
 @group(0) @binding(2) var bloom: texture_2d<f32>;
-@group(0) @binding(3) var fieldtex: texture_2d<f32>;
 
 fn aces(x: vec3<f32>) -> vec3<f32> {
   return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14),
@@ -448,7 +454,7 @@ fn fs_comp(in: VOut) -> @location(0) vec4<f32> {
   let glow = textureSampleLevel(bloom, samp, in.uv, 0.0).rgb;
   // the type sits ABOVE the bloom: suppress glow where the sharp text mask is,
   // so haze never overlaps the letter edges
-  let crisp = smoothstep(0.35, 0.62, textureSampleLevel(fieldtex, samp, in.uv, 0.0).g);
+  let crisp = smoothstep(0.42, 0.55, textureSampleLevel(fieldtex, samp, in.uv, 0.0).g);
   var c = scene + glow * 1.25 * (1.0 - crisp);
   c = aces(c * 0.92);
   return vec4<f32>(c, 1.0);
@@ -872,6 +878,7 @@ async fn run() {
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 count: None,
             },
+            tex_entry(3),
         ],
     });
     // scene + sampler + bloom (composite)
@@ -910,6 +917,7 @@ async fn run() {
         entries: &[
             wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&scene_view) },
             wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&lin_samp) },
+            wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&field_view) },
         ],
     });
     let blurv_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -918,6 +926,7 @@ async fn run() {
         entries: &[
             wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&bloom_a_view) },
             wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&lin_samp) },
+            wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&field_view) },
         ],
     });
     let comp_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
