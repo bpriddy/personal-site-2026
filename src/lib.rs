@@ -273,13 +273,16 @@ fn fs_bg(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
     let d2 = max(dot(n2, l), 0.0);
     let s2 = pow(max(dot(reflect(-l, n2), vv), 0.0), 30.0);
     let enc2 = n2.xy * 0.5 + vec2<f32>(0.5, 0.5);
-    var tcol = vec3<f32>(
-      0.62 + 0.52 * enc2.x,
-      0.55 + 0.48 * enc2.y,
-      0.38 + 0.16 * (1.0 - enc2.x)
+    // fully saturated warm hue from the relief normal, then pulled 50% toward
+    // white — explicit 50% saturation, easy to dial
+    let hue = vec3<f32>(
+      0.75 + 0.25 * enc2.x,
+      0.45 + 0.55 * enc2.y,
+      0.08 + 0.22 * (1.0 - enc2.x)
     );
-    tcol = tcol * (0.78 + 0.45 * d2) + vec3<f32>(1.15, 1.00, 0.78) * s2 * 0.65;
-    tcol = tcol * 1.28;
+    var tcol = mix(vec3<f32>(1.0, 1.0, 1.0), hue, 0.5);
+    tcol = tcol * (0.82 + 0.35 * d2) + vec3<f32>(1.15, 1.00, 0.78) * s2 * 0.55;
+    tcol = tcol * 1.04;
     col = mix(col, tcol, crisp);
   }
 
