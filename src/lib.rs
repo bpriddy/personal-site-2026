@@ -294,8 +294,8 @@ fn fs_bg(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
       0.06 + 0.10 * (1.0 - enc2.y)
     );
     var tcol = mix(vec3<f32>(1.0, 1.0, 1.0), hue, P.text_sat);
-    tcol = tcol * (0.82 + 0.35 * d2) + vec3<f32>(1.15, 1.00, 0.78) * s2 * 0.55;
-    tcol = tcol * 1.04;
+    tcol = tcol * (0.80 + 0.55 * d2) + vec3<f32>(1.15, 1.00, 0.78) * s2 * 0.85;
+    tcol = tcol * 1.10;
     col = mix(col, tcol, crisp);
   }
 
@@ -435,6 +435,7 @@ fn fs_blur_v(in: VOut) -> @location(0) vec4<f32> {
 }
 
 @group(0) @binding(2) var bloom: texture_2d<f32>;
+@group(0) @binding(3) var fieldtex: texture_2d<f32>;
 
 fn aces(x: vec3<f32>) -> vec3<f32> {
   return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14),
@@ -445,7 +446,10 @@ fn aces(x: vec3<f32>) -> vec3<f32> {
 fn fs_comp(in: VOut) -> @location(0) vec4<f32> {
   let scene = textureSampleLevel(src, samp, in.uv, 0.0).rgb;
   let glow = textureSampleLevel(bloom, samp, in.uv, 0.0).rgb;
-  var c = scene + glow * 1.25;
+  // the type sits ABOVE the bloom: suppress glow where the sharp text mask is,
+  // so haze never overlaps the letter edges
+  let crisp = smoothstep(0.35, 0.62, textureSampleLevel(fieldtex, samp, in.uv, 0.0).g);
+  var c = scene + glow * 1.25 * (1.0 - crisp);
   c = aces(c * 0.92);
   return vec4<f32>(c, 1.0);
 }
@@ -882,6 +886,7 @@ async fn run() {
                 count: None,
             },
             tex_entry(2),
+            tex_entry(3),
         ],
     });
 
@@ -922,6 +927,7 @@ async fn run() {
             wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&scene_view) },
             wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&lin_samp) },
             wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&bloom_b_view) },
+            wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&field_view) },
         ],
     });
 
