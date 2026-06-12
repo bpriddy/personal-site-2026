@@ -223,14 +223,6 @@ fn bedHeight(p: vec2<f32>, t: f32) -> f32 {
        + sin(p.x * 5.1 - t * 0.70) * cos(p.y * 4.3 + t * 0.45) * 0.12
        + sin((p.x * 1.7 - p.y * 2.3) * 2.6 - t * 0.9) * 0.10;
 }
-// the TEXT's own relief — different octaves, phases, and speeds than the bed
-fn textHeight(p: vec2<f32>, t: f32) -> f32 {
-  return sin(p.x * 2.2 - t * 0.9) * 0.60
-       + cos(p.y * 2.8 + t * 0.7) * 0.60
-       + sin((p.x - p.y) * 4.6 + t * 1.1) * 0.35
-       + cos(p.x * 7.0 + p.y * 5.0 - t * 0.5) * 0.18;
-}
-
 @fragment
 fn fs_bg(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
   let uv = frag.xy / P.res;
@@ -267,51 +259,12 @@ fn fs_bg(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
   col *= 0.34 + 0.78 * diff;
   col += vec3<f32>(1.0, 0.92, 0.74) * spec * 0.35;
 
-  // the words: soft drop shadow from the blurred field (R), then the type
-  // itself — a high-key normal-mapped surface in the same warm family. The
-  // map is sampled in continuous screen space, so ONE relief spans the whole
-  // text; the glyphs are just the mask that reveals it.
+  // soft drop shadow from the blurred field (R). The type itself is NOT in
+  // the scene — it's composited ABOVE the bloom in the final pass, so glow
+  // can never overlap the letter edges.
   let fr = textureSampleLevel(field, fsamp, uv, 0.0);
   let shadow = fr.r * (1.0 - fr.g);
   col *= 1.0 - 0.55 * shadow;
-  let crisp = smoothstep(0.35, 0.62, fr.g);
-  if (crisp > 0.001) {
-    // warm-spectrum relief, sliding slowly across the whole text block so the
-    // animation reads; brighter + more saturated than the ground so the type
-    // still pops, with hot speculars the bloom feeds on
-    let tt = P.time * 0.45;
-    let tp = vec2<f32>((uv.x - 0.5) * aspect, uv.y - 0.5) * 2.4
-           + vec2<f32>(tt * 0.35, -tt * 0.22);
-    let te = 0.02;
-    let thC = textHeight(tp, tt);
-    let tdx = thC - textHeight(tp + vec2<f32>(te, 0.0), tt);
-    let tdy = thC - textHeight(tp + vec2<f32>(0.0, te), tt);
-    let n2 = normalize(vec3<f32>(tdx * 5.0, tdy * 5.0, 1.0));
-    // the text gets its own light, phase-offset from the ground's, so the two
-    // surfaces never shade in lockstep
-    let tl = P.time * 0.19;
-    let l2 = normalize(vec3<f32>(cos(tl + 2.4) * 0.75, sin(tl + 2.4) * 0.75, 0.62));
-    let d2 = max(dot(n2, l2), 0.0);
-    let s2 = pow(max(dot(reflect(-l2, n2), vv), 0.0), 30.0);
-    // amplified encoding so the relief sweeps the full hue gamut instead of
-    // hovering at the yellow midpoint
-    let enc2 = clamp(n2.xy * 2.2, vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, 1.0)) * 0.5
-             + vec2<f32>(0.5, 0.5);
-    // hue spans red ↔ yellow ↔ green: x drives red, y drives green, blue low
-    let hue = vec3<f32>(
-      0.25 + 0.75 * enc2.x,
-      0.30 + 0.70 * enc2.y,
-      0.06 + 0.10 * (1.0 - enc2.y)
-    );
-    var tcol = mix(vec3<f32>(1.0, 1.0, 1.0), hue, P.text_sat);
-    // saturated hues are darker than white — lift toward equal luminance so
-    // the type keeps its brightness wherever the sat dial sits
-    let tlum = dot(tcol, vec3<f32>(0.2126, 0.7152, 0.0722));
-    tcol = tcol * mix(1.0, 1.02 / max(tlum, 0.30), 0.7);
-    tcol = tcol * (0.92 + 0.55 * d2) + vec3<f32>(1.15, 1.00, 0.78) * s2 * 0.90;
-    tcol = tcol * 1.18;
-    col = mix(col, tcol, crisp);
-  }
 
   return vec4<f32>(col, 1.0);
 }
@@ -417,12 +370,11 @@ const W4: f32 = 0.016216;
 
 fn bright(uv: vec2<f32>) -> vec3<f32> {
   let c = textureSampleLevel(src, samp, uv, 0.0).rgb;
-  // soft-knee bright pass: keep what exceeds the threshold — but the TEXT
-  // contributes nothing, so it never grows a halo over its own edges
+  // soft-knee bright pass: keep what exceeds the threshold. The text isn't in
+  // the scene at all, so the bloom needs no masking anywhere.
   let lum = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
   let k = smoothstep(0.78, 1.15, lum);
-  let crisp = smoothstep(0.42, 0.55, textureSampleLevel(fieldtex, samp, uv, 0.0).g);
-  return c * k * (1.0 - crisp);
+  return c * k;
 }
 
 @fragment
@@ -452,6 +404,23 @@ fn fs_blur_v(in: VOut) -> @location(0) vec4<f32> {
 }
 
 @group(0) @binding(2) var bloom: texture_2d<f32>;
+struct Params {
+  res: vec2<f32>, mouse: vec2<f32>,
+  time: f32, dt: f32, count: u32, stream: f32,
+  push: f32, mousef: f32, dpr: f32, rot_speed: f32,
+  rot_depth: f32, turb: f32, eddy: f32, sparkg: f32,
+  bg_freq: f32, text_sat: f32, bg_speed: f32, pad3: f32,
+};
+@group(0) @binding(4) var<uniform> P: Params;
+
+// the TEXT's own relief — sampled in continuous screen space so one surface
+// spans the whole text block; rendered here, ABOVE scene + bloom
+fn textHeight(p: vec2<f32>, t: f32) -> f32 {
+  return sin(p.x * 2.2 - t * 0.9) * 0.60
+       + cos(p.y * 2.8 + t * 0.7) * 0.60
+       + sin((p.x - p.y) * 4.6 + t * 1.1) * 0.35
+       + cos(p.x * 7.0 + p.y * 5.0 - t * 0.5) * 0.18;
+}
 
 fn aces(x: vec3<f32>) -> vec3<f32> {
   return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14),
@@ -462,11 +431,41 @@ fn aces(x: vec3<f32>) -> vec3<f32> {
 fn fs_comp(in: VOut) -> @location(0) vec4<f32> {
   let scene = textureSampleLevel(src, samp, in.uv, 0.0).rgb;
   let glow = textureSampleLevel(bloom, samp, in.uv, 0.0).rgb;
-  // the type sits ABOVE the bloom: suppress glow where the sharp text mask is,
-  // so haze never overlaps the letter edges
+  // full, untouched bloom everywhere
+  var c = aces((scene + glow * 1.25) * 0.92);
+
+  // the type, rendered LAST, above everything: one alpha (crisp) both draws
+  // the glyph and occludes whatever glow lies beneath it
   let crisp = smoothstep(0.42, 0.55, textureSampleLevel(fieldtex, samp, in.uv, 0.0).g);
-  var c = scene + glow * 1.25 * (1.0 - crisp);
-  c = aces(c * 0.92);
+  if (crisp > 0.001) {
+    let aspect = P.res.x / P.res.y;
+    let tt = P.time * 0.45;
+    let tp = vec2<f32>((in.uv.x - 0.5) * aspect, in.uv.y - 0.5) * 2.4
+           + vec2<f32>(tt * 0.35, -tt * 0.22);
+    let te = 0.02;
+    let thC = textHeight(tp, tt);
+    let tdx = thC - textHeight(tp + vec2<f32>(te, 0.0), tt);
+    let tdy = thC - textHeight(tp + vec2<f32>(0.0, te), tt);
+    let n2 = normalize(vec3<f32>(tdx * 5.0, tdy * 5.0, 1.0));
+    let tl = P.time * 0.19;
+    let l2 = normalize(vec3<f32>(cos(tl + 2.4) * 0.75, sin(tl + 2.4) * 0.75, 0.62));
+    let vv = vec3<f32>(0.0, 0.0, 1.0);
+    let d2 = max(dot(n2, l2), 0.0);
+    let s2 = pow(max(dot(reflect(-l2, n2), vv), 0.0), 30.0);
+    let enc2 = clamp(n2.xy * 2.2, vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, 1.0)) * 0.5
+             + vec2<f32>(0.5, 0.5);
+    let hue = vec3<f32>(
+      0.25 + 0.75 * enc2.x,
+      0.30 + 0.70 * enc2.y,
+      0.06 + 0.10 * (1.0 - enc2.y)
+    );
+    var tcol = mix(vec3<f32>(1.0, 1.0, 1.0), hue, P.text_sat);
+    let tlum = dot(tcol, vec3<f32>(0.2126, 0.7152, 0.0722));
+    tcol = tcol * mix(1.0, 1.02 / max(tlum, 0.30), 0.7);
+    tcol = tcol * (0.92 + 0.55 * d2) + vec3<f32>(1.15, 1.00, 0.78) * s2 * 0.90;
+    tcol = tcol * 1.18;
+    c = mix(c, aces(tcol * 0.92), crisp);
+  }
   return vec4<f32>(c, 1.0);
 }
 "#;
@@ -904,6 +903,16 @@ async fn run() {
             },
             tex_entry(2),
             tex_entry(3),
+            wgpu::BindGroupLayoutEntry {
+                binding: 4,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
         ],
     });
 
@@ -947,6 +956,7 @@ async fn run() {
             wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&lin_samp) },
             wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&bloom_b_view) },
             wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&field_view) },
+            wgpu::BindGroupEntry { binding: 4, resource: param_buf.as_entire_binding() },
         ],
     });
 
