@@ -236,8 +236,13 @@ fn fs_bg(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
   let uv = frag.xy / P.res;
   let aspect = P.res.x / P.res.y;
   let t = P.time * 0.35 * P.bg_speed;
-  // drift fast enough to SEE: the pattern crosses the view in ~30s
-  let p = vec2<f32>((uv.x - 0.5) * aspect, uv.y - 0.5) * 3.0 * P.bg_freq
+  // the pattern slowly ROTATES on a simple noise walk (two incommensurate
+  // sines — bounded, non-repeating), plus a visible drift; both ride bg_speed
+  let ba = 0.8 * sin(t * 0.17) + 0.5 * sin(t * 0.063 + 1.3);
+  let ca = cos(ba);
+  let sa = sin(ba);
+  let p0 = vec2<f32>((uv.x - 0.5) * aspect, uv.y - 0.5) * 3.0 * P.bg_freq;
+  let p = vec2<f32>(p0.x * ca - p0.y * sa, p0.x * sa + p0.y * ca)
         + vec2<f32>(t * 0.55, -t * 0.34);
 
   // screen-space normal from a layered height field
