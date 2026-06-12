@@ -507,22 +507,52 @@ fn raster_field(
     line2: &str,
 ) -> Vec<u8> {
     let (wf, hf) = (w as f64, h as f64);
-    let f1 = format!("900 {:.0}px -apple-system, system-ui, sans-serif", wf * 0.118);
-    let f2 = format!("800 {:.0}px -apple-system, system-ui, sans-serif", wf * 0.064);
-    // portrait viewports get tighter line spacing — the 40%/62.5% positions
-    // assume landscape; in a tall field they'd drift a screen apart
     let portrait = hf > wf * 0.85;
-    let (y1, y2) = if portrait {
-        (hf * 0.455, hf * 0.545)
+
+    // layout: a list of (text, font-px, y) entries. Landscape: two lines.
+    // Portrait: the phrase STACKS into two balanced lines at a larger size,
+    // instead of shrinking to fit one line.
+    let mut entries: Vec<(String, f64, f64)> = Vec::new();
+    if portrait {
+        let f1px = wf * 0.118;
+        let words: Vec<&str> = line2.split(' ').collect();
+        if words.len() >= 2 {
+            // balanced split: minimize the length difference of the halves
+            let mut best = 1usize;
+            let mut bestdiff = usize::MAX;
+            for k in 1..words.len() {
+                let a = words[..k].join(" ").len();
+                let b = words[k..].join(" ").len();
+                let d = a.abs_diff(b);
+                if d < bestdiff {
+                    bestdiff = d;
+                    best = k;
+                }
+            }
+            let la = words[..best].join(" ");
+            let lb = words[best..].join(" ");
+            let f2px = wf * 0.088;
+            entries.push((LINE1.to_string(), f1px, hf * 0.5 - f2px * 1.55));
+            entries.push((la, f2px, hf * 0.5 + f2px * 0.45));
+            entries.push((lb, f2px, hf * 0.5 + f2px * 1.75));
+        } else {
+            let f2px = wf * 0.072;
+            entries.push((LINE1.to_string(), f1px, hf * 0.455));
+            entries.push((line2.to_string(), f2px, hf * 0.545));
+        }
     } else {
-        (hf * 0.40, hf * 0.625)
-    };
+        entries.push((LINE1.to_string(), wf * 0.118, hf * 0.40));
+        entries.push((line2.to_string(), wf * 0.064, hf * 0.625));
+    }
 
     let draw_lines = |ctx: &web_sys::CanvasRenderingContext2d| {
-        ctx.set_font(&f1);
-        ctx.fill_text(LINE1, wf / 2.0, y1).ok();
-        ctx.set_font(&f2);
-        ctx.fill_text(line2, wf / 2.0, y2).ok();
+        for (text, px, y) in &entries {
+            ctx.set_font(&format!(
+                "900 {:.0}px -apple-system, system-ui, sans-serif",
+                px
+            ));
+            ctx.fill_text(text, wf / 2.0, *y).ok();
+        }
     };
     let clear = |ctx: &web_sys::CanvasRenderingContext2d| {
         ctx.set_filter("none");
