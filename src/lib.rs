@@ -102,24 +102,33 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
     cos(pt.pos.x * 5.0 - P.time * 0.6 + h1 * 6.2832)
   ) * 0.18 * P.dt;
 
-  // obstacle deflection: push away from glyphs along the field gradient.
+  // obstacle interaction. Most particles deflect around the glyphs; a stable
+  // ~35% (by hash) are "skimmers" that wash OVER the stone instead — a thin
+  // film that accelerates slightly on the crest and shimmers at the edges.
   let f = fieldAt(pt.pos);
-  if (f > 0.004) {
-    let e = 0.012;
-    let gx = fieldAt(pt.pos + vec2<f32>(e, 0.0)) - fieldAt(pt.pos - vec2<f32>(e, 0.0));
-    let gy = fieldAt(pt.pos + vec2<f32>(0.0, e)) - fieldAt(pt.pos - vec2<f32>(0.0, e));
-    let g = vec2<f32>(gx, gy);
-    let gl = length(g);
-    if (gl > 1e-5) {
-      let n = g / gl;
-      // away from the rock, stronger the deeper in the field you are
-      v -= n * P.push * (f * f * 4.0 + f * 0.6) * P.dt;
-      // slide: damp the into-rock velocity component so flow hugs the surface
-      let into = dot(v, n);
-      if (into > 0.0) { v -= n * into * min(8.0 * f * P.dt, 0.9); }
+  let skimmer = rand01(i ^ 0x0051b3cau) < 0.22;
+  if (f > 0.045) {
+    if (skimmer) {
+      // thin-film glide: slight speedup over the glyph, gentle ripple
+      v.x += 0.22 * f * P.dt;
+      v.y += sin(P.time * 7.0 + h1 * 6.2832 + pt.pos.x * 24.0) * f * 0.30 * P.dt;
+    } else {
+      let e = 0.012;
+      let gx = fieldAt(pt.pos + vec2<f32>(e, 0.0)) - fieldAt(pt.pos - vec2<f32>(e, 0.0));
+      let gy = fieldAt(pt.pos + vec2<f32>(0.0, e)) - fieldAt(pt.pos - vec2<f32>(0.0, e));
+      let g = vec2<f32>(gx, gy);
+      let gl = length(g);
+      if (gl > 1e-5) {
+        let n = g / gl;
+        // away from the rock, stronger the deeper in the field you are
+        v -= n * P.push * (f * f * 4.0 + f * 0.6) * P.dt;
+        // slide: damp the into-rock velocity component so flow hugs the surface
+        let into = dot(v, n);
+        if (into > 0.0) { v -= n * into * min(8.0 * f * P.dt, 0.9); }
+      }
+      // deep inside (phrase just changed): strong ejection + damping
+      if (f > 0.55) { v *= 1.0 - min(3.0 * P.dt, 0.5); }
     }
-    // deep inside (phrase just changed): strong ejection + damping
-    if (f > 0.55) { v *= 1.0 - min(3.0 * P.dt, 0.5); }
   }
 
   // gentle mouse drag — a finger through the water
@@ -204,8 +213,8 @@ fn fs_bg(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
   let gy = textureSampleLevel(field, fsamp, fuv + vec2<f32>(0.0, ef), 0.0).r
          - textureSampleLevel(field, fsamp, fuv - vec2<f32>(0.0, ef), 0.0).r;
   col = mix(col, vec3<f32>(1.0, 1.0, 1.0), smoothstep(0.25, 0.7, f));
-  let rim = clamp(length(vec2<f32>(gx, gy)) * 8.0, 0.0, 1.0) * (1.0 - smoothstep(0.3, 0.7, f));
-  col -= rim * vec3<f32>(0.045, 0.060, 0.085);
+  let rim = clamp(length(vec2<f32>(gx, gy)) * 11.0, 0.0, 1.0) * (1.0 - smoothstep(0.3, 0.7, f));
+  col -= rim * vec3<f32>(0.075, 0.095, 0.130);
 
   return vec4<f32>(col, 1.0);
 }
@@ -268,11 +277,22 @@ fn vs_p(
   lum += spark * 1.5;
   lum = min(lum, 2.4);
 
+  // skimmers crossing the white letters transform: fine dark-sepia hairlines,
+  // like engraving strokes drawn over the stone (hash matches the sim's)
+  let fuv = vec2<f32>(ppos.x * 0.5 + 0.5, 0.5 - ppos.y * 0.5);
+  let fAt = textureSampleLevel(field, fsamp, fuv, 0.0).r;
+  let is_skimmer = select(0.0, 1.0, rand01(ii ^ 0x0051b3cau) < 0.22);
+  let over = is_skimmer * smoothstep(0.55, 0.85, fAt);
+  col = mix(col, vec3<f32>(0.26, 0.13, 0.06), over * 0.96);
+  lum = mix(lum, 1.90, over * 0.65);
+
   let px = vec2<f32>(2.0, 2.0) / P.res;
-  let size = (1.5 + h2 * 0.8 + spark * 4.0) * max(P.dpr, 1.0);
+  let size = (1.5 + h2 * 0.8 + spark * 4.0) * max(P.dpr, 1.0) * (1.0 - 0.25 * over);
   // motion-stretch: fast particles smear into silky streamlines along their
-  // velocity; stalled (sparkling) ones stay round — water silk vs. sun glints
-  let stretch = size + min(speed * 26.0, 11.0) * max(P.dpr, 1.0) * (1.0 - clamp(spark, 0.0, 1.0));
+  // velocity; stalled (sparkling) ones stay round — water silk vs. sun glints.
+  // skimmers elongate further over the glyphs: hairline engraving strokes
+  let stretch = (size + min(speed * 26.0, 11.0) * max(P.dpr, 1.0) * (1.0 - clamp(spark, 0.0, 1.0)))
+              * (1.0 + 0.9 * over);
   let along = dir * stretch;
   let perp = vec2<f32>(-dir.y, dir.x) * size;
   let off = (corners[vi].x * along + corners[vi].y * perp) * px;
@@ -280,7 +300,7 @@ fn vs_p(
   o.pos = vec4<f32>(ppos + off, 0.0, 1.0);
   // subtractive blend: output the COMPLEMENT of the ink color, scaled by
   // intensity — the blend does dst - src, leaving the warm tone on the paper
-  o.col = (vec3<f32>(1.0, 1.0, 1.0) - col) * lum * 0.10;
+  o.col = (vec3<f32>(1.0, 1.0, 1.0) - col) * lum * 0.115;
   o.quv = corners[vi];
   return o;
 }
@@ -328,12 +348,12 @@ fn raster_field(
     ctx.set_text_baseline("middle");
 
     let f1 = format!("900 {:.0}px -apple-system, system-ui, sans-serif", wf * 0.118);
-    let f2 = format!("800 {:.0}px -apple-system, system-ui, sans-serif", wf * 0.054);
+    let f2 = format!("800 {:.0}px -apple-system, system-ui, sans-serif", wf * 0.064);
     let y1 = hf * 0.40;
     let y2 = hf * 0.625;
 
     // wide soft halo (the "pressure wave" ahead of the rock)
-    ctx.set_filter("blur(10px)");
+    ctx.set_filter("blur(6px)");
     ctx.set_font(&f1);
     ctx.fill_text(LINE1, wf / 2.0, y1).ok();
     ctx.set_font(&f2);
@@ -343,6 +363,9 @@ fn raster_field(
     ctx.set_font(&f1);
     ctx.fill_text(LINE1, wf / 2.0, y1).ok();
     ctx.set_font(&f2);
+    ctx.fill_text(line2, wf / 2.0, y2).ok();
+    // small type needs an extra-solid core or its field never saturates
+    ctx.set_filter("blur(1px)");
     ctx.fill_text(line2, wf / 2.0, y2).ok();
     ctx.set_filter("none");
 
@@ -611,7 +634,9 @@ async fn run() {
             },
             wgpu::BindGroupLayoutEntry {
                 binding: 1,
-                visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
+                visibility: wgpu::ShaderStages::COMPUTE
+                    | wgpu::ShaderStages::FRAGMENT
+                    | wgpu::ShaderStages::VERTEX,
                 ty: wgpu::BindingType::Texture {
                     sample_type: wgpu::TextureSampleType::Float { filterable: true },
                     view_dimension: wgpu::TextureViewDimension::D2,
@@ -621,7 +646,9 @@ async fn run() {
             },
             wgpu::BindGroupLayoutEntry {
                 binding: 2,
-                visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
+                visibility: wgpu::ShaderStages::COMPUTE
+                    | wgpu::ShaderStages::FRAGMENT
+                    | wgpu::ShaderStages::VERTEX,
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 count: None,
             },
@@ -794,7 +821,7 @@ async fn run() {
             dt,
             count: PARTICLES,
             stream: 0.32,
-            push: 2.3,
+            push: 2.5,
             mousef: 0.5 * mact,
             dpr: dpr as f32,
             _pad: 0.0,
