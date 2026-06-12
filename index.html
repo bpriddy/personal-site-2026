@@ -151,13 +151,14 @@
     <div id="dials" class="hidden">
       <h3>FLOW DIALS</h3>
       <div class="row"><label>rot speed</label><input type="range" min="0" max="0.6" step="0.005" data-dial="rot_speed"><span class="val"></span></div>
-      <div class="row"><label>rot depth</label><input type="range" min="0" max="3.2" step="0.05" data-dial="rot_depth"><span class="val"></span></div>
+      <div class="row"><label>rot depth</label><input type="range" min="0" max="6.4" step="0.05" data-dial="rot_depth"><span class="val"></span></div>
       <div class="row"><label>stream</label><input type="range" min="0.05" max="0.9" step="0.01" data-dial="stream"><span class="val"></span></div>
       <div class="row"><label>turbulence</label><input type="range" min="0" max="3" step="0.05" data-dial="turb"><span class="val"></span></div>
       <div class="row"><label>eddies</label><input type="range" min="0" max="3" step="0.05" data-dial="eddy"><span class="val"></span></div>
       <div class="row"><label>sparkle</label><input type="range" min="0" max="3" step="0.05" data-dial="spark"><span class="val"></span></div>
-      <div class="row"><label>bg scale</label><input type="range" min="0.4" max="5" step="0.05" data-dial="bg_freq"><span class="val"></span></div>
+      <div class="row"><label>bg scale</label><input type="range" min="0.4" max="10" step="0.1" data-dial="bg_freq"><span class="val"></span></div>
       <div class="row"><label>text sat</label><input type="range" min="0" max="1" step="0.02" data-dial="text_sat"><span class="val"></span></div>
+      <div class="row"><label>bg speed</label><input type="range" min="0" max="8" step="0.1" data-dial="bg_speed"><span class="val"></span></div>
     </div>
     <button id="info-btn" aria-label="About Ben Priddy" title="About">i</button>
 
@@ -190,7 +191,7 @@
       // tuning dials: window.__DIALS is read by the wasm every frame.
       // values persist in localStorage so reloads (every rebuild) keep them.
       window.__DIALS = { rot_speed: 0.10, rot_depth: 1.6, stream: 0.32,
-                         turb: 1.0, eddy: 1.0, spark: 1.0, bg_freq: 1.0, text_sat: 0.5 };
+                         turb: 1.0, eddy: 1.0, spark: 1.0, bg_freq: 1.0, text_sat: 0.5, bg_speed: 1.0 };
       (function () {
         try {
           var saved = JSON.parse(localStorage.getItem("dials") || "{}");

@@ -57,6 +57,8 @@ struct Params {
     sparkg: f32,
     bg_freq: f32,
     text_sat: f32,
+    bg_speed: f32,
+    _pad3: f32,
 }
 
 // Compute: integrate particles against the obstacle field (channel R).
@@ -67,7 +69,7 @@ struct Params {
   time: f32, dt: f32, count: u32, stream: f32,
   push: f32, mousef: f32, dpr: f32, rot_speed: f32,
   rot_depth: f32, turb: f32, eddy: f32, sparkg: f32,
-  bg_freq: f32, text_sat: f32,
+  bg_freq: f32, text_sat: f32, bg_speed: f32, pad3: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -203,7 +205,7 @@ struct Params {
   time: f32, dt: f32, count: u32, stream: f32,
   push: f32, mousef: f32, dpr: f32, rot_speed: f32,
   rot_depth: f32, turb: f32, eddy: f32, sparkg: f32,
-  bg_freq: f32, text_sat: f32,
+  bg_freq: f32, text_sat: f32, bg_speed: f32, pad3: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -233,7 +235,7 @@ fn textHeight(p: vec2<f32>, t: f32) -> f32 {
 fn fs_bg(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
   let uv = frag.xy / P.res;
   let aspect = P.res.x / P.res.y;
-  let t = P.time * 0.35;
+  let t = P.time * 0.35 * P.bg_speed;
   // drift fast enough to SEE: the pattern crosses the view in ~30s
   let p = vec2<f32>((uv.x - 0.5) * aspect, uv.y - 0.5) * 3.0 * P.bg_freq
         + vec2<f32>(t * 0.55, -t * 0.34);
@@ -282,7 +284,8 @@ fn fs_bg(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
     let n2 = normalize(vec3<f32>(tdx * 5.0, tdy * 5.0, 1.0));
     // the text gets its own light, phase-offset from the ground's, so the two
     // surfaces never shade in lockstep
-    let l2 = normalize(vec3<f32>(cos(t * 0.55 + 2.4) * 0.75, sin(t * 0.55 + 2.4) * 0.75, 0.62));
+    let tl = P.time * 0.19;
+    let l2 = normalize(vec3<f32>(cos(tl + 2.4) * 0.75, sin(tl + 2.4) * 0.75, 0.62));
     let d2 = max(dot(n2, l2), 0.0);
     let s2 = pow(max(dot(reflect(-l2, n2), vv), 0.0), 30.0);
     // amplified encoding so the relief sweeps the full hue gamut instead of
@@ -1111,6 +1114,8 @@ async fn run() {
             sparkg: dial("spark", 1.0),
             bg_freq: dial("bg_freq", 1.0),
             text_sat: dial("text_sat", 0.5),
+            bg_speed: dial("bg_speed", 1.0),
+            _pad3: 0.0,
         };
         queue.write_buffer(&param_buf, 0, bytemuck::bytes_of(&params));
 
