@@ -233,8 +233,9 @@ fn textHeight(p: vec2<f32>, t: f32) -> f32 {
 fn fs_bg(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
   let uv = frag.xy / P.res;
   let aspect = P.res.x / P.res.y;
-  let p = vec2<f32>((uv.x - 0.5) * aspect, uv.y - 0.5) * 3.0 * P.bg_freq;
   let t = P.time * 0.22;
+  let p = vec2<f32>((uv.x - 0.5) * aspect, uv.y - 0.5) * 3.0 * P.bg_freq
+        + vec2<f32>(t * 0.16, -t * 0.10);
 
   // screen-space normal from a layered height field
   let e = 0.018;
