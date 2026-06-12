@@ -4,20 +4,165 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Ben Priddy</title>
+    <script>
+      // debug shim: surface WebGPU uncaptured errors through console.error
+      (function () {
+        if (!navigator.gpu) return;
+        const ra = navigator.gpu.requestAdapter.bind(navigator.gpu);
+        navigator.gpu.requestAdapter = function () {
+          return ra.apply(null, arguments).then((ad) => {
+            if (!ad) return ad;
+            const rd = ad.requestDevice.bind(ad);
+            ad.requestDevice = function () {
+              return rd.apply(null, arguments).then((dev) => {
+                dev.addEventListener("uncapturederror", (e) =>
+                  console.error("[gpu-uncaptured]", e.error && e.error.message)
+                );
+                dev.lost.then((i) => console.error("[gpu-lost]", i.reason, i.message));
+                return dev;
+              });
+            };
+            return ad;
+          });
+        };
+      })();
+    </script>
     <link data-trunk rel="rust" href="Cargo.toml" data-wasm-opt="z" />
     <style>
-      html, body { margin: 0; height: 100%; overflow: hidden; background: #04060c; }
+      :root {
+        --ink: #e8e2d6;
+        --dim: #9a948a;
+        --accent: #f2a35e;
+      }
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #060504; }
       #canvas { display: block; width: 100vw; height: 100vh; }
+
       #fps {
         position: fixed; top: 12px; left: 14px;
-        font: 13px/1.4 ui-monospace, Menlo, monospace;
-        color: #b9f6ca; background: rgba(0,0,0,.4);
-        padding: 5px 9px; border-radius: 7px; white-space: pre; pointer-events: none;
+        font: 11px/1.4 ui-monospace, Menlo, monospace;
+        color: rgba(232, 226, 214, 0.4);
+        background: rgba(0, 0, 0, 0.25);
+        padding: 4px 8px; border-radius: 6px;
+        white-space: pre; pointer-events: none;
+        backdrop-filter: blur(4px);
       }
+
+      /* info button */
+      #info-btn {
+        position: fixed; bottom: 18px; right: 18px;
+        width: 40px; height: 40px; border-radius: 50%;
+        border: 1px solid rgba(242, 163, 94, 0.35);
+        background: rgba(10, 8, 6, 0.55);
+        color: var(--accent);
+        font: 600 17px/1 Georgia, serif;
+        cursor: pointer;
+        backdrop-filter: blur(6px);
+        transition: transform 0.15s ease, background 0.2s ease, border-color 0.2s ease;
+      }
+      #info-btn:hover {
+        transform: scale(1.08);
+        background: rgba(242, 163, 94, 0.16);
+        border-color: rgba(242, 163, 94, 0.7);
+      }
+
+      /* modal */
+      #modal-backdrop {
+        position: fixed; inset: 0;
+        background: rgba(4, 3, 2, 0.6);
+        backdrop-filter: blur(7px);
+        display: none;
+        align-items: center; justify-content: center;
+        z-index: 10;
+        opacity: 0;
+        transition: opacity 0.22s ease;
+      }
+      #modal-backdrop.open { display: flex; }
+      #modal-backdrop.show { opacity: 1; }
+      #modal {
+        max-width: 30rem; margin: 1.2rem;
+        padding: 2rem 2.2rem 1.6rem;
+        border-radius: 14px;
+        border: 1px solid rgba(242, 163, 94, 0.22);
+        background: linear-gradient(160deg, rgba(26, 20, 14, 0.92), rgba(14, 11, 8, 0.94));
+        color: var(--ink);
+        font: 15px/1.65 -apple-system, system-ui, sans-serif;
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+        transform: translateY(10px);
+        transition: transform 0.22s ease;
+      }
+      #modal-backdrop.show #modal { transform: translateY(0); }
+      #modal h2 {
+        margin: 0 0 0.9rem;
+        font: 700 1.25rem/1.2 Georgia, serif;
+        color: var(--accent);
+        letter-spacing: 0.02em;
+      }
+      #modal p { margin: 0 0 0.9rem; color: var(--ink); }
+      #modal p + p { color: var(--dim); }
+      #modal-close {
+        display: block; margin: 0.6rem 0 0 auto;
+        padding: 0.45rem 1.1rem;
+        border-radius: 8px;
+        border: 1px solid rgba(242, 163, 94, 0.35);
+        background: transparent; color: var(--accent);
+        font: 600 13px/1 -apple-system, system-ui, sans-serif;
+        cursor: pointer;
+        transition: background 0.15s ease;
+      }
+      #modal-close:hover { background: rgba(242, 163, 94, 0.14); }
     </style>
   </head>
   <body>
     <canvas id="canvas"></canvas>
     <div id="fps">starting…</div>
+
+    <button id="info-btn" aria-label="About Ben Priddy" title="About">i</button>
+
+    <div id="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div id="modal">
+        <h2 id="modal-title">Ben Priddy</h2>
+        <p>
+          Ben Priddy is a builder at the seam of creative practice and emerging
+          technology. For the better part of two decades he has moved between
+          studios, startups, and stages — shipping interactive work, leading
+          small teams, and prototyping the kinds of ideas that usually live on
+          whiteboards a little too long. His current obsession is what becomes
+          possible when AI absorbs the grind of software, leaving the
+          interesting decisions — speed, security, beauty — to people.
+        </p>
+        <p>
+          Today he consults with teams who want their tools to feel as good as
+          they function: GPU-driven interfaces, Rust and WebAssembly where it
+          counts, and AI woven into the practice rather than bolted on. He
+          guides creative organizations through technology decisions, and
+          technology organizations through creative ones — and he builds things
+          like this page to prove the point.
+        </p>
+        <button id="modal-close">Close</button>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        var backdrop = document.getElementById("modal-backdrop");
+        var btn = document.getElementById("info-btn");
+        function open() {
+          backdrop.classList.add("open");
+          requestAnimationFrame(function () { backdrop.classList.add("show"); });
+        }
+        function close() {
+          backdrop.classList.remove("show");
+          setTimeout(function () { backdrop.classList.remove("open"); }, 220);
+        }
+        btn.addEventListener("click", open);
+        document.getElementById("modal-close").addEventListener("click", close);
+        backdrop.addEventListener("click", function (e) {
+          if (e.target === backdrop) close();
+        });
+        document.addEventListener("keydown", function (e) {
+          if (e.key === "Escape") close();
+        });
+      })();
+    </script>
   </body>
 </html>

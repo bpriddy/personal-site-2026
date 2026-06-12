@@ -15,6 +15,9 @@ web-sys = { version = "0.3", features = [
   # 2D canvas — used to rasterize the text and sample opaque pixels into
   # particle attraction points.
   "CanvasRenderingContext2d", "ImageData",
+  # mouse tracking
+  "MouseEvent", "EventTarget",
+  "console",
 ] }
 wgpu = "29"
 bytemuck = { version = "1", features = ["derive"] }
