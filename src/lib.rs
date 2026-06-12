@@ -509,8 +509,14 @@ fn raster_field(
     let (wf, hf) = (w as f64, h as f64);
     let f1 = format!("900 {:.0}px -apple-system, system-ui, sans-serif", wf * 0.118);
     let f2 = format!("800 {:.0}px -apple-system, system-ui, sans-serif", wf * 0.064);
-    let y1 = hf * 0.40;
-    let y2 = hf * 0.625;
+    // portrait viewports get tighter line spacing — the 40%/62.5% positions
+    // assume landscape; in a tall field they'd drift a screen apart
+    let portrait = hf > wf * 0.85;
+    let (y1, y2) = if portrait {
+        (hf * 0.455, hf * 0.545)
+    } else {
+        (hf * 0.40, hf * 0.625)
+    };
 
     let draw_lines = |ctx: &web_sys::CanvasRenderingContext2d| {
         ctx.set_font(&f1);
