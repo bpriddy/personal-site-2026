@@ -307,9 +307,9 @@ fn fs_bg(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
     // saturated hues are darker than white — lift toward equal luminance so
     // the type keeps its brightness wherever the sat dial sits
     let tlum = dot(tcol, vec3<f32>(0.2126, 0.7152, 0.0722));
-    tcol = tcol * mix(1.0, 0.95 / max(tlum, 0.30), 0.7);
-    tcol = tcol * (0.80 + 0.55 * d2) + vec3<f32>(1.15, 1.00, 0.78) * s2 * 0.85;
-    tcol = tcol * 1.10;
+    tcol = tcol * mix(1.0, 1.02 / max(tlum, 0.30), 0.7);
+    tcol = tcol * (0.92 + 0.55 * d2) + vec3<f32>(1.15, 1.00, 0.78) * s2 * 0.90;
+    tcol = tcol * 1.18;
     col = mix(col, tcol, crisp);
   }
 
