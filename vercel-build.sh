@@ -9,7 +9,7 @@ TRUNK_VERSION=v0.21.14
 rustup target add wasm32-unknown-unknown
 
 mkdir -p "$PWD/.build-bin"
-curl -fsSL "https://github.com/trunk-rs/trunk/releases/download/${TRUNK_VERSION}/trunk-x86_64-unknown-linux-gnu.tar.gz" \
+curl -fsSL "https://github.com/trunk-rs/trunk/releases/download/${TRUNK_VERSION}/trunk-x86_64-unknown-linux-musl.tar.gz" \
   | tar -xz -C "$PWD/.build-bin"
 export PATH="$PWD/.build-bin:$PATH"
 
