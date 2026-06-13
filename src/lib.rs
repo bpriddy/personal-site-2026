@@ -58,7 +58,7 @@ struct Params {
     bg_freq: f32,
     text_sat: f32,
     bg_speed: f32,
-    _pad3: f32,
+    mobile: f32,
 }
 
 // Compute: integrate particles against the obstacle field (channel R).
@@ -69,7 +69,7 @@ struct Params {
   time: f32, dt: f32, count: u32, stream: f32,
   push: f32, mousef: f32, dpr: f32, rot_speed: f32,
   rot_depth: f32, turb: f32, eddy: f32, sparkg: f32,
-  bg_freq: f32, text_sat: f32, bg_speed: f32, pad3: f32,
+  bg_freq: f32, text_sat: f32, bg_speed: f32, mobile: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -205,7 +205,7 @@ struct Params {
   time: f32, dt: f32, count: u32, stream: f32,
   push: f32, mousef: f32, dpr: f32, rot_speed: f32,
   rot_depth: f32, turb: f32, eddy: f32, sparkg: f32,
-  bg_freq: f32, text_sat: f32, bg_speed: f32, pad3: f32,
+  bg_freq: f32, text_sat: f32, bg_speed: f32, mobile: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -316,12 +316,14 @@ fn vs_p(
   let h2 = rand01(ii ^ 0x68bc21ebu);
   let tw = pow(max(sin(P.time * (2.0 + h1 * 7.0) + h2 * 6.2832), 0.0), 26.0);
   let stag = 1.0 - clamp(speed / max(P.stream, 0.01), 0.0, 1.0);
-  let spark = min(tw * (0.05 + 2.4 * stag * stag) * P.sparkg, 1.4);
+  let spark = min(tw * (0.05 + 2.4 * stag * stag) * P.sparkg, 1.4)
+            * (1.0 - P.mobile * 0.5);
   col = mix(col, vec3<f32>(1.45, 1.22, 0.78), clamp(spark, 0.0, 0.9));
   lum += spark * 3.2;
 
   let px = vec2<f32>(2.0, 2.0) / P.res;
-  let size = (1.7 + h2 * 1.1 + spark * 7.0) * max(P.dpr, 1.0);
+  let size = (1.7 + h2 * 1.1 + spark * 7.0) * max(P.dpr, 1.0)
+           * (1.0 - P.mobile * 0.3);
   // motion-stretch: fast particles smear into silky streamlines along their
   // velocity; stalled (sparkling) ones stay round — water silk vs. sun glints
   let stretch = size + min(speed * 26.0, 11.0) * max(P.dpr, 1.0) * (1.0 - clamp(spark, 0.0, 1.0));
@@ -409,7 +411,7 @@ struct Params {
   time: f32, dt: f32, count: u32, stream: f32,
   push: f32, mousef: f32, dpr: f32, rot_speed: f32,
   rot_depth: f32, turb: f32, eddy: f32, sparkg: f32,
-  bg_freq: f32, text_sat: f32, bg_speed: f32, pad3: f32,
+  bg_freq: f32, text_sat: f32, bg_speed: f32, mobile: f32,
 };
 @group(0) @binding(4) var<uniform> P: Params;
 
@@ -650,7 +652,7 @@ async fn run() {
     let width = (css_w * dpr) as u32;
     let height = (css_h * dpr) as u32;
     // phones get a calmer stream: 500k reads as overwhelming at that scale
-    let particle_count: u32 = if css_w < 700.0 { 300_000 } else { PARTICLES };
+    let particle_count: u32 = if css_w < 700.0 { 200_000 } else { PARTICLES };
     canvas.set_width(width);
     canvas.set_height(height);
     let aspect = width as f32 / height as f32;
@@ -1181,19 +1183,19 @@ async fn run() {
             time: ((now - t0) / 1000.0) as f32,
             dt,
             count: particle_count,
-            stream: dial("stream", 0.33),
+            stream: dial("stream", 0.28),
             push: 2.5,
             mousef: 0.5 * mact,
             dpr: dpr as f32,
-            rot_speed: dial("rot_speed", 0.365),
+            rot_speed: dial("rot_speed", 0.27),
             rot_depth: dial("rot_depth", 3.2),
             turb: dial("turb", 0.6),
-            eddy: dial("eddy", 2.3),
-            sparkg: dial("spark", 1.6),
+            eddy: dial("eddy", 0.7),
+            sparkg: dial("spark", 1.05),
             bg_freq: dial("bg_freq", 2.6),
-            text_sat: dial("text_sat", 1.0),
-            bg_speed: dial("bg_speed", 5.1),
-            _pad3: 0.0,
+            text_sat: dial("text_sat", 0.72),
+            bg_speed: dial("bg_speed", 2.5),
+            mobile: if particle_count < PARTICLES { 1.0 } else { 0.0 },
         };
         queue.write_buffer(&param_buf, 0, bytemuck::bytes_of(&params));
 

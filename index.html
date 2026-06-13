@@ -236,8 +236,8 @@
 
       // tuning dials: window.__DIALS is read by the wasm every frame.
       // values persist in localStorage so reloads (every rebuild) keep them.
-      window.__DIALS = { rot_speed: 0.365, rot_depth: 3.2, stream: 0.33,
-                         turb: 0.6, eddy: 2.3, spark: 1.6, bg_freq: 2.6, text_sat: 1.0, bg_speed: 5.1 };
+      window.__DIALS = { rot_speed: 0.27, rot_depth: 3.2, stream: 0.28,
+                         turb: 0.6, eddy: 0.7, spark: 1.05, bg_freq: 2.6, text_sat: 0.72, bg_speed: 2.5 };
       (function () {
         try {
           var saved = JSON.parse(localStorage.getItem("dials") || "{}");
