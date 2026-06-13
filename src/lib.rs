@@ -505,16 +505,42 @@ fn raster_field(
     w: u32,
     h: u32,
     line2: &str,
+    css_w: f64,
 ) -> Vec<u8> {
     let (wf, hf) = (w as f64, h as f64);
-    let portrait = hf > wf * 0.85;
+    let phone = hf > wf * 1.6; // aspect < ~0.62: phones
+    let portrait = hf > wf * 0.85; // tablets upright
 
-    // layout: a list of (text, font-px, y) entries. Landscape: two lines.
-    // Portrait: the phrase STACKS into two balanced lines at a larger size,
-    // instead of shrinking to fit one line.
+    // desktop font cap: the field maps to the full viewport, so a max SCREEN
+    // size converts to field units via wf/css_w. ~96px/52px CSS keeps large
+    // monitors close to the tablet look instead of billboard type.
+    let f1 = (wf * 0.118).min(wf * 96.0 / css_w.max(1.0));
+    let f2 = (wf * 0.064).min(wf * 52.0 / css_w.max(1.0));
+
+    // layout: a list of (text, font-px, y) entries
     let mut entries: Vec<(String, f64, f64)> = Vec::new();
-    if portrait {
-        let f1px = wf * 0.118;
+    if phone {
+        // stack EVERY word — the name too — as a centered column
+        let f1p = wf * 0.185;
+        let f2p = wf * 0.095;
+        let gap1 = f1p * 1.08;
+        let gap2 = f2p * 1.3;
+        let name_words: Vec<&str> = LINE1.split(' ').collect();
+        let phrase_words: Vec<&str> = line2.split(' ').collect();
+        let block = gap1 * name_words.len() as f64
+            + gap2 * phrase_words.len() as f64
+            + f2p * 0.6; // breathing room between name and phrase
+        let mut y = hf * 0.5 - block / 2.0 + gap1 * 0.5;
+        for wd in &name_words {
+            entries.push((wd.to_string(), f1p, y));
+            y += gap1;
+        }
+        y += f2p * 0.6;
+        for wd in &phrase_words {
+            entries.push((wd.to_string(), f2p, y));
+            y += gap2;
+        }
+    } else if portrait {
         let words: Vec<&str> = line2.split(' ').collect();
         if words.len() >= 2 {
             // balanced split: minimize the length difference of the halves
@@ -531,18 +557,17 @@ fn raster_field(
             }
             let la = words[..best].join(" ");
             let lb = words[best..].join(" ");
-            let f2px = wf * 0.088;
-            entries.push((LINE1.to_string(), f1px, hf * 0.5 - f2px * 1.55));
-            entries.push((la, f2px, hf * 0.5 + f2px * 0.45));
-            entries.push((lb, f2px, hf * 0.5 + f2px * 1.75));
+            let f2s = wf * 0.088;
+            entries.push((LINE1.to_string(), f1, hf * 0.5 - f2s * 1.55));
+            entries.push((la, f2s, hf * 0.5 + f2s * 0.45));
+            entries.push((lb, f2s, hf * 0.5 + f2s * 1.75));
         } else {
-            let f2px = wf * 0.072;
-            entries.push((LINE1.to_string(), f1px, hf * 0.455));
-            entries.push((line2.to_string(), f2px, hf * 0.545));
+            entries.push((LINE1.to_string(), f1, hf * 0.455));
+            entries.push((line2.to_string(), wf * 0.072, hf * 0.545));
         }
     } else {
-        entries.push((LINE1.to_string(), wf * 0.118, hf * 0.40));
-        entries.push((line2.to_string(), wf * 0.064, hf * 0.625));
+        entries.push((LINE1.to_string(), f1, hf * 0.40));
+        entries.push((line2.to_string(), f2, hf * 0.625));
     }
 
     let draw_lines = |ctx: &web_sys::CanvasRenderingContext2d| {
@@ -624,6 +649,8 @@ async fn run() {
     }
     let width = (css_w * dpr) as u32;
     let height = (css_h * dpr) as u32;
+    // phones get a calmer stream: 500k reads as overwhelming at that scale
+    let particle_count: u32 = if css_w < 700.0 { 300_000 } else { PARTICLES };
     canvas.set_width(width);
     canvas.set_height(height);
     let aspect = width as f32 / height as f32;
@@ -747,8 +774,8 @@ async fn run() {
 
     // ---- buffers & textures ----
     let mut rng = 0x9e3779b9u32;
-    let mut init: Vec<f32> = Vec::with_capacity(PARTICLES as usize * 4);
-    for _ in 0..PARTICLES {
+    let mut init: Vec<f32> = Vec::with_capacity(particle_count as usize * 4);
+    for _ in 0..particle_count {
         init.push(rnd(&mut rng) * 2.2 - 1.1);
         init.push(rnd(&mut rng) * 2.0 - 1.0);
         init.push(0.25 + rnd(&mut rng) * 0.2);
@@ -756,7 +783,7 @@ async fn run() {
     }
     let particle_buf = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("particles"),
-        size: (PARTICLES as u64) * 16,
+        size: (particle_count as u64) * 16,
         usage: wgpu::BufferUsages::STORAGE
             | wgpu::BufferUsages::VERTEX
             | wgpu::BufferUsages::COPY_DST,
@@ -852,7 +879,7 @@ async fn run() {
         &field_tex,
         field_w,
         field_h,
-        &raster_field(&fctx, field_w, field_h, PHRASES[0]),
+        &raster_field(&fctx, field_w, field_h, PHRASES[0], css_w),
     );
 
     // ---- bind group layouts ----
@@ -1104,7 +1131,7 @@ async fn run() {
     });
 
     // ---- frame loop ----
-    let groups = (PARTICLES + WG - 1) / WG;
+    let groups = (particle_count + WG - 1) / WG;
     let perf = window.performance().unwrap();
     let t0 = perf.now();
     let mut last = t0;
@@ -1128,7 +1155,7 @@ async fn run() {
             set_status(&format!(
                 "{:.0} fps · {}k particles",
                 frames as f64 * 1000.0 / acc,
-                PARTICLES / 1000
+                particle_count / 1000
             ));
             frames = 0;
             acc = 0.0;
@@ -1143,7 +1170,7 @@ async fn run() {
                 &field_tex,
                 field_w,
                 field_h,
-                &raster_field(&fctx, field_w, field_h, PHRASES[phrase_idx]),
+                &raster_field(&fctx, field_w, field_h, PHRASES[phrase_idx], css_w),
             );
         }
 
@@ -1153,7 +1180,7 @@ async fn run() {
             mouse: [mx, my],
             time: ((now - t0) / 1000.0) as f32,
             dt,
-            count: PARTICLES,
+            count: particle_count,
             stream: dial("stream", 0.33),
             push: 2.5,
             mousef: 0.5 * mact,
@@ -1221,7 +1248,7 @@ async fn run() {
                 rp.draw(0..3, 0..1);
                 rp.set_pipeline(&p_pipeline);
                 rp.set_vertex_buffer(0, particle_buf.slice(..));
-                rp.draw(0..6, 0..PARTICLES);
+                rp.draw(0..6, 0..particle_count);
             }
             {
                 // bloom: bright-extract + horizontal blur into half-res A
