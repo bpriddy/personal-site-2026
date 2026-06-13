@@ -245,9 +245,22 @@
         } catch (e) {}
         var panel = document.getElementById("dials");
         var gear = document.getElementById("gear");
+        var fps = document.getElementById("fps");
+        // dev tooling is visible locally only; on the deployed site the 'd'
+        // key remains as a hidden door to the dials + fps readout
+        var isDev = ["localhost", "127.0.0.1"].indexOf(location.hostname) !== -1;
+        if (!isDev) {
+          fps.style.display = "none";
+          gear.style.display = "none";
+        }
         function toggle() {
           panel.classList.toggle("hidden");
-          gear.style.display = panel.classList.contains("hidden") ? "block" : "none";
+          var open = !panel.classList.contains("hidden");
+          if (isDev) {
+            gear.style.display = open ? "none" : "block";
+          } else {
+            fps.style.display = open ? "block" : "none";
+          }
         }
         gear.addEventListener("click", toggle);
         document.addEventListener("keydown", function (e) {
