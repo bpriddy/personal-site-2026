@@ -46,6 +46,18 @@ trunk serve
 # open http://127.0.0.1:8099  (foreground tab for full FPS)
 ```
 
+## Deploy
+
+CI/CD via GitHub Actions (`.github/workflows/deploy.yml`): every push to
+`main` runs `trunk build --release` and publishes `dist/` to GitHub Pages.
+The workflow feeds Pages' `base_path` to trunk's `--public-url`, so it works
+at a project URL (`user.github.io/repo/`) or a custom domain unchanged.
+One-time setup after pushing to GitHub: repo Settings → Pages → Source =
+"GitHub Actions". Release size: ~240 KB total (wasm + js + html).
+
+Note: WebGPU requires HTTPS (Pages provides it) and a current browser;
+unsupported browsers see the status chip's adapter message.
+
 ## Files
 
 | File | Role |
