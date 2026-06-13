@@ -1,0 +1,11 @@
+{
+  "rot_speed": 0.27,
+  "rot_depth": 3.2,
+  "stream": 0.28,
+  "turb": 0.6,
+  "eddy": 0.7,
+  "spark": 1.05,
+  "bg_freq": 2.6,
+  "text_sat": 0.72,
+  "bg_speed": 2.5
+}

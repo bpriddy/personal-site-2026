@@ -516,15 +516,15 @@ fn raster_field(
     // desktop font cap: the field maps to the full viewport, so a max SCREEN
     // size converts to field units via wf/css_w. ~96px/52px CSS keeps large
     // monitors close to the tablet look instead of billboard type.
-    let f1 = (wf * 0.118).min(wf * 96.0 / css_w.max(1.0));
-    let f2 = (wf * 0.064).min(wf * 52.0 / css_w.max(1.0));
+    let f1 = (wf * 0.118).min(wf * 118.0 / css_w.max(1.0));
+    let f2 = (wf * 0.064).min(wf * 62.0 / css_w.max(1.0));
 
     // layout: a list of (text, font-px, y) entries
     let mut entries: Vec<(String, f64, f64)> = Vec::new();
     if phone {
         // stack EVERY word — the name too — as a centered column
-        let f1p = wf * 0.185;
-        let f2p = wf * 0.095;
+        let f1p = wf * 0.205;
+        let f2p = wf * 0.108;
         let gap1 = f1p * 1.08;
         let gap2 = f2p * 1.3;
         let name_words: Vec<&str> = LINE1.split(' ').collect();
@@ -568,8 +568,10 @@ fn raster_field(
             entries.push((line2.to_string(), wf * 0.072, hf * 0.545));
         }
     } else {
-        entries.push((LINE1.to_string(), f1, hf * 0.40));
-        entries.push((line2.to_string(), f2, hf * 0.625));
+        // spacing follows the FONT, not the viewport — on capped big screens
+        // the name and phrase stay a tight lockup instead of drifting apart
+        entries.push((LINE1.to_string(), f1, hf * 0.5 - f1 * 0.46));
+        entries.push((line2.to_string(), f2, hf * 0.5 + f2 * 1.05));
     }
 
     let draw_lines = |ctx: &web_sys::CanvasRenderingContext2d| {
@@ -623,6 +625,26 @@ pub fn start() {
 
 async fn run() {
     let window = web_sys::window().unwrap();
+    // dials.json is the single source of truth for tuned defaults: embedded at
+    // compile time (cargo rebuilds when it changes), parsed once here, pushed
+    // to the panel (which overlays localStorage), and used as dial() fallbacks
+    let baked = js_sys::JSON::parse(include_str!("../dials.json"))
+        .unwrap_or(wasm_bindgen::JsValue::NULL);
+    let bk = {
+        let baked = baked.clone();
+        move |name: &str, fallback: f32| -> f32 {
+            js_sys::Reflect::get(&baked, &name.into())
+                .ok()
+                .and_then(|v| v.as_f64())
+                .map(|v| v as f32)
+                .unwrap_or(fallback)
+        }
+    };
+    if let Ok(f) = js_sys::Reflect::get(&window, &"__initDials".into()) {
+        if let Some(func) = f.dyn_ref::<js_sys::Function>() {
+            func.call1(&wasm_bindgen::JsValue::NULL, &baked).ok();
+        }
+    }
     let document = window.document().unwrap();
     let canvas: web_sys::HtmlCanvasElement =
         document.get_element_by_id("canvas").unwrap().dyn_into().unwrap();
@@ -1183,18 +1205,18 @@ async fn run() {
             time: ((now - t0) / 1000.0) as f32,
             dt,
             count: particle_count,
-            stream: dial("stream", 0.28),
+            stream: dial("stream", bk("stream", 0.28)),
             push: 2.5,
             mousef: 0.5 * mact,
             dpr: dpr as f32,
-            rot_speed: dial("rot_speed", 0.27),
-            rot_depth: dial("rot_depth", 3.2),
-            turb: dial("turb", 0.6),
-            eddy: dial("eddy", 0.7),
-            sparkg: dial("spark", 1.05),
-            bg_freq: dial("bg_freq", 2.6),
-            text_sat: dial("text_sat", 0.72),
-            bg_speed: dial("bg_speed", 2.5),
+            rot_speed: dial("rot_speed", bk("rot_speed", 0.27)),
+            rot_depth: dial("rot_depth", bk("rot_depth", 3.2)),
+            turb: dial("turb", bk("turb", 0.6)),
+            eddy: dial("eddy", bk("eddy", 0.7)),
+            sparkg: dial("spark", bk("spark", 1.05)),
+            bg_freq: dial("bg_freq", bk("bg_freq", 2.6)),
+            text_sat: dial("text_sat", bk("text_sat", 0.72)),
+            bg_speed: dial("bg_speed", bk("bg_speed", 2.5)),
             mobile: if particle_count < PARTICLES { 1.0 } else { 0.0 },
         };
         queue.write_buffer(&param_buf, 0, bytemuck::bytes_of(&params));

@@ -141,6 +141,14 @@
       #dials label { flex: 0 0 74px; color: #b0a694; }
       #dials input[type=range] { flex: 1; accent-color: #f2a35e; height: 14px; }
       #dials .val { flex: 0 0 42px; text-align: right; color: #f2e9d8; }
+      #dial-save {
+        display: block; width: 100%; margin-top: 8px; padding: 7px;
+        border: 1px solid rgba(242, 163, 94, 0.4); border-radius: 0;
+        background: transparent; color: #f2a35e;
+        font: 700 10px/1 ui-monospace, Menlo, monospace;
+        letter-spacing: 0.12em; cursor: pointer;
+      }
+      #dial-save:hover { background: rgba(242, 163, 94, 0.15); }
       #gear {
         position: fixed; bottom: 18px; left: 18px; z-index: 8;
         width: 34px; height: 34px; border-radius: 50%;
@@ -189,6 +197,7 @@
       <div class="row"><label>bg scale</label><input type="range" min="0.4" max="10" step="0.1" data-dial="bg_freq"><span class="val"></span></div>
       <div class="row"><label>text sat</label><input type="range" min="0" max="1" step="0.02" data-dial="text_sat"><span class="val"></span></div>
       <div class="row"><label>bg speed</label><input type="range" min="0" max="10" step="0.1" data-dial="bg_speed"><span class="val"></span></div>
+      <button id="dial-save" title="download dials.json for the repo">SAVE DIALS.JSON</button>
     </div>
     <button id="info-btn" aria-label="About Ben Priddy" title="About">INFO</button>
 
@@ -235,13 +244,15 @@
     <script>
 
       // tuning dials: window.__DIALS is read by the wasm every frame.
-      // values persist in localStorage so reloads (every rebuild) keep them.
-      window.__DIALS = { rot_speed: 0.27, rot_depth: 3.2, stream: 0.28,
-                         turb: 0.6, eddy: 0.7, spark: 1.05, bg_freq: 2.6, text_sat: 0.72, bg_speed: 2.5 };
+      // values come from dials.json (embedded in the wasm, pushed here via
+      // __initDials) overlaid with this browser's localStorage tweaks. The
+      // SAVE button downloads dials.json — drop it in the repo root and the
+      // next build ships exactly these values.
+      window.__DIALS = {};
       (function () {
         try {
           var saved = JSON.parse(localStorage.getItem("dials") || "{}");
-          for (var k in saved) if (k in window.__DIALS) window.__DIALS[k] = saved[k];
+          for (var k in saved) window.__DIALS[k] = saved[k];
         } catch (e) {}
         var panel = document.getElementById("dials");
         var gear = document.getElementById("gear");
@@ -266,16 +277,38 @@
         document.addEventListener("keydown", function (e) {
           if (e.key === "d" && !e.metaKey && !e.ctrlKey) toggle();
         });
+        function syncSliders() {
+          panel.querySelectorAll("input[type=range]").forEach(function (el) {
+            var key = el.dataset.dial;
+            if (key in window.__DIALS) {
+              el.value = window.__DIALS[key];
+              el.parentElement.querySelector(".val").textContent =
+                Number(el.value).toFixed(2);
+            }
+          });
+        }
+        // the wasm calls this once with the baked dials.json; localStorage wins
+        window.__initDials = function (defaults) {
+          for (var k in defaults)
+            if (!(k in window.__DIALS)) window.__DIALS[k] = defaults[k];
+          syncSliders();
+        };
         panel.querySelectorAll("input[type=range]").forEach(function (el) {
-          var key = el.dataset.dial;
-          el.value = window.__DIALS[key];
-          var val = el.parentElement.querySelector(".val");
-          val.textContent = Number(el.value).toFixed(2);
           el.addEventListener("input", function () {
-            window.__DIALS[key] = Number(el.value);
-            val.textContent = Number(el.value).toFixed(2);
+            window.__DIALS[el.dataset.dial] = Number(el.value);
+            el.parentElement.querySelector(".val").textContent =
+              Number(el.value).toFixed(2);
             try { localStorage.setItem("dials", JSON.stringify(window.__DIALS)); } catch (e) {}
           });
+        });
+        syncSliders();
+        document.getElementById("dial-save").addEventListener("click", function () {
+          var json = JSON.stringify(window.__DIALS, null, 2) + "\n";
+          try { navigator.clipboard.writeText(json); } catch (e) {}
+          var a = document.createElement("a");
+          a.href = URL.createObjectURL(new Blob([json], { type: "application/json" }));
+          a.download = "dials.json";
+          a.click();
         });
       })();
       (function () {
