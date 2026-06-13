@@ -4,3 +4,4 @@
 # Claude Preview launch config — machine-specific absolute paths, regenerated
 # per-machine by the wasm-renderer skill. Run standalone with `trunk serve`.
 /.claude
+/.build-bin
