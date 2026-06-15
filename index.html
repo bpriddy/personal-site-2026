@@ -186,6 +186,14 @@
         letter-spacing: 0.12em; cursor: pointer;
       }
       #phrase-save:hover { background: rgba(242, 163, 94, 0.15); }
+      #phrase-close {
+        position: absolute; top: 6px; right: 8px;
+        width: 22px; height: 22px;
+        display: flex; align-items: center; justify-content: center;
+        border: none; background: transparent; color: #d8cfc0;
+        font: 300 20px/1 -apple-system, system-ui, sans-serif; cursor: pointer;
+      }
+      #phrase-close:hover { color: #f2a35e; }
       #phrase-btn {
         position: fixed; bottom: 60px; left: 18px; z-index: 8;
         width: 34px; height: 34px; border-radius: 50%;
@@ -222,10 +230,11 @@
 
     <button id="phrase-btn" title="edit phrases (p)">✎</button>
     <div id="phrases" class="hidden">
+      <button id="phrase-close" aria-label="Close">×</button>
       <h3>PHRASES</h3>
       <p class="hint">one per line · the running line below your name</p>
       <textarea id="phrase-text" spellcheck="false"></textarea>
-      <button id="phrase-save" title="download phrases.json for the repo">SAVE PHRASES.JSON</button>
+      <button id="phrase-save" title="write phrases.json in place">SAVE PHRASES.JSON</button>
     </div>
     <button id="gear" title="tuning dials (d)">⚙</button>
     <div id="dials" class="hidden">
@@ -365,13 +374,68 @@
           try { localStorage.setItem("phrases", JSON.stringify(window.__PHRASES)); } catch (e) {}
         });
         fillPhrases();
-        document.getElementById("phrase-save").addEventListener("click", function () {
+        // SAVE writes phrases.json IN PLACE via the File System Access API:
+        // pick the repo's phrases.json once (handle persisted in IndexedDB),
+        // then every later save overwrites it silently — no download dialog.
+        // Falls back to a download where the API is unavailable.
+        function idbHandle(method, val) {
+          return new Promise(function (resolve) {
+            var op = indexedDB.open("bp-fs", 1);
+            op.onupgradeneeded = function () { op.result.createObjectStore("h"); };
+            op.onsuccess = function () {
+              var tx = op.result.transaction("h", method === "get" ? "readonly" : "readwrite");
+              var st = tx.objectStore("h");
+              var rq = method === "get" ? st.get("phrases") : st.put(val, "phrases");
+              rq.onsuccess = function () { resolve(method === "get" ? rq.result : true); };
+              rq.onerror = function () { resolve(null); };
+            };
+            op.onerror = function () { resolve(null); };
+          });
+        }
+        function flashSave(msg) {
+          var b = document.getElementById("phrase-save");
+          if (!b.dataset.label) b.dataset.label = b.textContent;
+          b.textContent = msg;
+          setTimeout(function () { b.textContent = b.dataset.label; }, 1300);
+        }
+        var phrasesHandle = null;
+        async function savePhrases() {
           var json = JSON.stringify(window.__PHRASES || [], null, 2) + "\n";
           try { navigator.clipboard.writeText(json); } catch (e) {}
+          if (window.showSaveFilePicker) {
+            try {
+              if (!phrasesHandle) phrasesHandle = await idbHandle("get");
+              if (phrasesHandle) {
+                var perm = await phrasesHandle.queryPermission({ mode: "readwrite" });
+                if (perm !== "granted") perm = await phrasesHandle.requestPermission({ mode: "readwrite" });
+                if (perm !== "granted") phrasesHandle = null;
+              }
+              if (!phrasesHandle) {
+                phrasesHandle = await window.showSaveFilePicker({
+                  suggestedName: "phrases.json",
+                  types: [{ description: "JSON", accept: { "application/json": [".json"] } }]
+                });
+                await idbHandle("put", phrasesHandle);
+              }
+              var w = await phrasesHandle.createWritable();
+              await w.write(json);
+              await w.close();
+              flashSave("saved \u2713");
+              return;
+            } catch (e) {
+              if (e && e.name === "AbortError") return;
+            }
+          }
           var a = document.createElement("a");
           a.href = URL.createObjectURL(new Blob([json], { type: "application/json" }));
           a.download = "phrases.json";
           a.click();
+          flashSave("downloaded");
+        }
+        document.getElementById("phrase-save").addEventListener("click", savePhrases);
+        document.getElementById("phrase-close").addEventListener("click", function () {
+          phrasePanel.classList.add("hidden");
+          if (isDev) phraseBtn.style.display = "block";
         });
         function syncSliders() {
           panel.querySelectorAll("input[type=range]").forEach(function (el) {
