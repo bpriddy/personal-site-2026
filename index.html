@@ -146,6 +146,14 @@
         letter-spacing: 0.12em; cursor: pointer;
       }
       #dial-save:hover { background: rgba(242, 163, 94, 0.15); }
+      #dial-close {
+        position: absolute; top: 6px; right: 8px;
+        width: 22px; height: 22px;
+        display: flex; align-items: center; justify-content: center;
+        border: none; background: transparent; color: #d8cfc0;
+        font: 300 20px/1 -apple-system, system-ui, sans-serif; cursor: pointer;
+      }
+      #dial-close:hover { color: #f2a35e; }
       #gear {
         position: fixed; bottom: 18px; left: 18px; z-index: 8;
         width: 34px; height: 34px; border-radius: 50%;
@@ -238,6 +246,7 @@
     </div>
     <button id="gear" title="tuning dials (d)">⚙</button>
     <div id="dials" class="hidden">
+      <button id="dial-close" aria-label="Close">×</button>
       <h3>FLOW DIALS</h3>
       <div class="row"><label>rot speed</label><input type="range" min="0" max="0.6" step="0.005" data-dial="rot_speed"><span class="val"></span></div>
       <div class="row"><label>rot depth</label><input type="range" min="0" max="6.4" step="0.05" data-dial="rot_depth"><span class="val"></span></div>
@@ -333,6 +342,7 @@
           }
         }
         gear.addEventListener("click", toggle);
+        document.getElementById("dial-close").addEventListener("click", toggle);
         document.addEventListener("keydown", function (e) {
           var t = e.target && e.target.tagName;
           if (t === "TEXTAREA" || t === "INPUT") return;
