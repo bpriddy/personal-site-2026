@@ -16,22 +16,8 @@ use wasm_bindgen::JsCast;
 // ─────────────────────────────────────────────────────────────────────────────
 
 const LINE1: &str = "BEN PRIDDY";
-const PHRASES: [&str; 14] = [
-    "BUILDS TECHNOLOGY",
-    "CONSULTS ON TECHNOLOGY",
-    "GUIDES CREATIVE",
-    "TECHNOLOGIZES CREATIVE",
-    "CREATIVIZES TECHNOLOGY",
-    "CREATIVITIZES AI",
-    "AI-IFIES PRACTICES",
-    "PRACTICES AI",
-    "TALKS TO AUDIENCES",
-    "AUDIENCES TO TALKS",
-    "PRACTICES CRAFT",
-    "CRAFTS SYSTEMS",
-    "SYSTEMIZES WONDER",
-    "WONDERS, THEN BUILDS",
-];
+// The phrase list lives in phrases.json (baked at build time, editable live via
+// the hidden phrase panel → window.__PHRASES). PHRASE_SECONDS sets the cycle.
 const PHRASE_SECONDS: f64 = 4.5;
 
 const PARTICLES: u32 = 500_000;
@@ -514,6 +500,25 @@ fn dial(name: &str, default: f32) -> f32 {
         .unwrap_or(default)
 }
 
+// the live phrase list from window.__PHRASES (editor panel); falls back to the
+// baked phrases.json when unset or empty so the viz never breaks
+fn current_phrases(fallback: &[String]) -> Vec<String> {
+    let arr = web_sys::window()
+        .and_then(|w| js_sys::Reflect::get(&w, &"__PHRASES".into()).ok())
+        .and_then(|v| v.dyn_into::<js_sys::Array>().ok());
+    if let Some(a) = arr {
+        let mut out = Vec::new();
+        for i in 0..a.length() {
+            if let Some(t) = a.get(i).as_string() {
+                let t = t.trim().to_string();
+                if !t.is_empty() { out.push(t); }
+            }
+        }
+        if !out.is_empty() { return out; }
+    }
+    fallback.to_vec()
+}
+
 fn set_status(text: &str) {
     if let Some(el) = web_sys::window()
         .and_then(|w| w.document())
@@ -686,6 +691,25 @@ async fn run() {
             func.call1(&wasm_bindgen::JsValue::NULL, &baked).ok();
         }
     }
+    // phrases.json: baked phrase list, pushed to the editor panel; runtime edits
+    // (window.__PHRASES) override it. Parse to a Vec for the fallback.
+    let baked_phrases: Vec<String> = {
+        let v = js_sys::JSON::parse(include_str!("../phrases.json"))
+            .unwrap_or(wasm_bindgen::JsValue::NULL);
+        if let Ok(f) = js_sys::Reflect::get(&window, &"__initPhrases".into()) {
+            if let Some(func) = f.dyn_ref::<js_sys::Function>() {
+                func.call1(&wasm_bindgen::JsValue::NULL, &v).ok();
+            }
+        }
+        let mut out = Vec::new();
+        if let Ok(arr) = v.dyn_into::<js_sys::Array>() {
+            for i in 0..arr.length() {
+                if let Some(t) = arr.get(i).as_string() { out.push(t); }
+            }
+        }
+        if out.is_empty() { out.push("BUILDS TECHNOLOGY".to_string()); }
+        out
+    };
     let document = window.document().unwrap();
     let canvas: web_sys::HtmlCanvasElement =
         document.get_element_by_id("canvas").unwrap().dyn_into().unwrap();
@@ -945,7 +969,11 @@ async fn run() {
     // on each swap and interleaved with the cached name channels
     let name_entries = name_layout(field_w, field_h, css_w);
     let (name_blur, name_sharp) = raster_layer(&fctx, field_w, field_h, &name_entries);
-    let (p_entries0, phrase_cy0) = phrase_layout(field_w, field_h, css_w, PHRASES[0]);
+    let first_phrase = current_phrases(&baked_phrases)
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| baked_phrases[0].clone());
+    let (p_entries0, phrase_cy0) = phrase_layout(field_w, field_h, css_w, &first_phrase);
     let (pb0, ps0) = raster_layer(&fctx, field_w, field_h, &p_entries0);
     upload_field(
         &queue,
@@ -1254,8 +1282,9 @@ async fn run() {
             let e = (el / exit_dur).min(1.0);
             phrase_tt = e * e * (3.0 - 2.0 * e);
             if el >= exit_dur {
-                phrase_idx = (phrase_idx + 1) % PHRASES.len();
-                let (pe, cy) = phrase_layout(field_w, field_h, css_w, PHRASES[phrase_idx]);
+                let phrases = current_phrases(&baked_phrases);
+                phrase_idx = (phrase_idx + 1) % phrases.len();
+                let (pe, cy) = phrase_layout(field_w, field_h, css_w, &phrases[phrase_idx]);
                 let (pb, ps) = raster_layer(&fctx, field_w, field_h, &pe);
                 upload_field(
                     &queue,
