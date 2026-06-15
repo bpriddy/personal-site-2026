@@ -34,8 +34,16 @@
         --dim: #9a948a;
         --accent: #f2a35e;
       }
-      html, body { margin: 0; height: 100%; overflow: hidden; background: #f5f1e8; }
-      #canvas { display: block; width: 100vw; height: 100vh; }
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #f5f1e8; overscroll-behavior: none; }
+      /* touch-action:none keeps mobile from claiming a finger-drag as a
+         scroll/zoom/URL-bar gesture (which fires touchcancel and kills the
+         stream perturbance); scoped to the canvas so the modal still scrolls */
+      #canvas {
+        display: block; width: 100vw; height: 100vh;
+        touch-action: none;
+        -webkit-user-select: none; user-select: none;
+        -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+      }
 
       #fps {
         position: fixed; top: 12px; left: 14px;
