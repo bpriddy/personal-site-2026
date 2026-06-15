@@ -802,6 +802,33 @@ async fn run() {
             .unwrap();
         cb.forget();
     }
+    // touch: a finger dragged through the stream perturbs it like the mouse
+    {
+        let m = mouse.clone();
+        let (w, h) = (css_w as f32, css_h as f32);
+        let set = Closure::<dyn FnMut(web_sys::TouchEvent)>::new(move |e: web_sys::TouchEvent| {
+            if let Some(t) = e.touches().get(0) {
+                let x = (t.client_x() as f32 / w) * 2.0 - 1.0;
+                let y = -((t.client_y() as f32 / h) * 2.0 - 1.0);
+                m.set((x, y, 1.0));
+            }
+        });
+        let r = set.as_ref().unchecked_ref();
+        window.add_event_listener_with_callback("touchstart", r).unwrap();
+        window.add_event_listener_with_callback("touchmove", r).unwrap();
+        set.forget();
+    }
+    {
+        let m = mouse.clone();
+        let clear = Closure::<dyn FnMut(web_sys::TouchEvent)>::new(move |_e: web_sys::TouchEvent| {
+            let (x, y, _) = m.get();
+            m.set((x, y, 0.0));
+        });
+        let r = clear.as_ref().unchecked_ref();
+        window.add_event_listener_with_callback("touchend", r).unwrap();
+        window.add_event_listener_with_callback("touchcancel", r).unwrap();
+        clear.forget();
+    }
 
     // ---- wgpu ----
     let instance = wgpu::Instance::default();
@@ -1318,7 +1345,7 @@ async fn run() {
             count: particle_count,
             stream: dial("stream", bk("stream", 0.28)),
             push: 2.5,
-            mousef: 0.5 * mact,
+            mousef: dial("perturb", bk("perturb", 0.5)) * mact,
             dpr: dpr as f32,
             rot_speed: dial("rot_speed", bk("rot_speed", 0.27)),
             rot_depth: dial("rot_depth", bk("rot_depth", 3.2)),

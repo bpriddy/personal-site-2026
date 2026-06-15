@@ -7,5 +7,6 @@
   "spark": 1.05,
   "bg_freq": 2.6,
   "text_sat": 0.72,
-  "bg_speed": 2.5
+  "bg_speed": 2.5,
+  "perturb": 0.5
 }
