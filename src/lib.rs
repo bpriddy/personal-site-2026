@@ -541,7 +541,7 @@ fn name_layout(w: u32, h: u32, css_w: f64) -> Vec<(String, f64, f64)> {
     if phone {
         let f1p = wf * 0.205;
         let gap1 = f1p * 1.08;
-        let mut y = hf * 0.30;
+        let mut y = hf * 0.27;
         for wd in LINE1.split(' ') {
             e.push((wd.to_string(), f1p, y));
             y += gap1;
@@ -564,7 +564,7 @@ fn phrase_layout(w: u32, h: u32, css_w: f64, phrase: &str) -> (Vec<(String, f64,
     if phone {
         let f2p = wf * 0.108;
         let gap2 = f2p * 1.25;
-        let top = hf * 0.52;
+        let top = hf * 0.58;
         let words: Vec<&str> = phrase.split(' ').collect();
         let mut y = top;
         for wd in &words {
