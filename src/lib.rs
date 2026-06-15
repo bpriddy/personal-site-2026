@@ -59,6 +59,10 @@ struct Params {
     text_sat: f32,
     bg_speed: f32,
     mobile: f32,
+    phrase_w: f32,  // phrase obstacle strength (physics) — 0 when receded
+    phrase_op: f32, // phrase visual opacity
+    phrase_z: f32,  // phrase visual z-scale (1=resting, <1=pushed back)
+    phrase_cy: f32, // phrase block center (uv.y) — the z-scale pivot
 }
 
 // Compute: integrate particles against the obstacle field (channel R).
@@ -70,6 +74,7 @@ struct Params {
   push: f32, mousef: f32, dpr: f32, rot_speed: f32,
   rot_depth: f32, turb: f32, eddy: f32, sparkg: f32,
   bg_freq: f32, text_sat: f32, bg_speed: f32, mobile: f32,
+  phrase_w: f32, phrase_op: f32, phrase_z: f32, phrase_cy: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -85,7 +90,10 @@ fn rand01(v: u32) -> f32 { return f32(pcg(v)) / 4294967295.0; }
 
 fn fieldAt(p: vec2<f32>) -> f32 {
   let uv = vec2<f32>(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
-  return textureSampleLevel(field, fsamp, uv, 0.0).r;
+  let s = textureSampleLevel(field, fsamp, uv, 0.0);
+  // name (R) is a permanent rock; the phrase (B) fades its deflection in/out
+  // as it pushes forward/back in z — a receding rock stops parting the stream
+  return max(s.r, s.b * P.phrase_w);
 }
 
 @compute @workgroup_size(64)
@@ -206,6 +214,7 @@ struct Params {
   push: f32, mousef: f32, dpr: f32, rot_speed: f32,
   rot_depth: f32, turb: f32, eddy: f32, sparkg: f32,
   bg_freq: f32, text_sat: f32, bg_speed: f32, mobile: f32,
+  phrase_w: f32, phrase_op: f32, phrase_z: f32, phrase_cy: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -263,7 +272,9 @@ fn fs_bg(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
   // the scene — it's composited ABOVE the bloom in the final pass, so glow
   // can never overlap the letter edges.
   let fr = textureSampleLevel(field, fsamp, uv, 0.0);
-  let shadow = fr.r * (1.0 - fr.g);
+  let name_sh = fr.r * (1.0 - fr.g);
+  let phrase_sh = fr.b * P.phrase_w * (1.0 - fr.a);
+  let shadow = max(name_sh, phrase_sh);
   col *= 1.0 - 0.55 * shadow;
 
   return vec4<f32>(col, 1.0);
@@ -412,6 +423,7 @@ struct Params {
   push: f32, mousef: f32, dpr: f32, rot_speed: f32,
   rot_depth: f32, turb: f32, eddy: f32, sparkg: f32,
   bg_freq: f32, text_sat: f32, bg_speed: f32, mobile: f32,
+  phrase_w: f32, phrase_op: f32, phrase_z: f32, phrase_cy: f32,
 };
 @group(0) @binding(4) var<uniform> P: Params;
 
@@ -424,6 +436,36 @@ fn textHeight(p: vec2<f32>, t: f32) -> f32 {
        + cos(p.x * 7.0 + p.y * 5.0 - t * 0.5) * 0.18;
 }
 
+// warm normal-mapped relief, shaded in screen space, for any text pixel
+fn reliefCol(suv: vec2<f32>) -> vec3<f32> {
+  let aspect = P.res.x / P.res.y;
+  let tt = P.time * 0.45;
+  let tp = vec2<f32>((suv.x - 0.5) * aspect, suv.y - 0.5) * 2.4
+         + vec2<f32>(tt * 0.35, -tt * 0.22);
+  let te = 0.02;
+  let thC = textHeight(tp, tt);
+  let tdx = thC - textHeight(tp + vec2<f32>(te, 0.0), tt);
+  let tdy = thC - textHeight(tp + vec2<f32>(0.0, te), tt);
+  let n2 = normalize(vec3<f32>(tdx * 5.0, tdy * 5.0, 1.0));
+  let tl = P.time * 0.19;
+  let l2 = normalize(vec3<f32>(cos(tl + 2.4) * 0.75, sin(tl + 2.4) * 0.75, 0.62));
+  let vv = vec3<f32>(0.0, 0.0, 1.0);
+  let d2 = max(dot(n2, l2), 0.0);
+  let s2 = pow(max(dot(reflect(-l2, n2), vv), 0.0), 30.0);
+  let enc2 = clamp(n2.xy * 2.2, vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, 1.0)) * 0.5
+           + vec2<f32>(0.5, 0.5);
+  let hue = vec3<f32>(
+    0.25 + 0.75 * enc2.x,
+    0.30 + 0.70 * enc2.y,
+    0.06 + 0.10 * (1.0 - enc2.y)
+  );
+  var tcol = mix(vec3<f32>(1.0, 1.0, 1.0), hue, P.text_sat);
+  let tlum = dot(tcol, vec3<f32>(0.2126, 0.7152, 0.0722));
+  tcol = tcol * mix(1.0, 1.02 / max(tlum, 0.30), 0.7);
+  tcol = tcol * (0.92 + 0.55 * d2) + vec3<f32>(1.15, 1.00, 0.78) * s2 * 0.90;
+  return tcol * 1.18;
+}
+
 fn aces(x: vec3<f32>) -> vec3<f32> {
   return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14),
                vec3<f32>(0.0), vec3<f32>(1.0));
@@ -433,40 +475,22 @@ fn aces(x: vec3<f32>) -> vec3<f32> {
 fn fs_comp(in: VOut) -> @location(0) vec4<f32> {
   let scene = textureSampleLevel(src, samp, in.uv, 0.0).rgb;
   let glow = textureSampleLevel(bloom, samp, in.uv, 0.0).rgb;
-  // full, untouched bloom everywhere
+  // full, untouched bloom everywhere — the text is drawn ON TOP, occluding it
   var c = aces((scene + glow * 1.25) * 0.92);
 
-  // the type, rendered LAST, above everything: one alpha (crisp) both draws
-  // the glyph and occludes whatever glow lies beneath it
-  let crisp = smoothstep(0.42, 0.55, textureSampleLevel(fieldtex, samp, in.uv, 0.0).g);
-  if (crisp > 0.001) {
-    let aspect = P.res.x / P.res.y;
-    let tt = P.time * 0.45;
-    let tp = vec2<f32>((in.uv.x - 0.5) * aspect, in.uv.y - 0.5) * 2.4
-           + vec2<f32>(tt * 0.35, -tt * 0.22);
-    let te = 0.02;
-    let thC = textHeight(tp, tt);
-    let tdx = thC - textHeight(tp + vec2<f32>(te, 0.0), tt);
-    let tdy = thC - textHeight(tp + vec2<f32>(0.0, te), tt);
-    let n2 = normalize(vec3<f32>(tdx * 5.0, tdy * 5.0, 1.0));
-    let tl = P.time * 0.19;
-    let l2 = normalize(vec3<f32>(cos(tl + 2.4) * 0.75, sin(tl + 2.4) * 0.75, 0.62));
-    let vv = vec3<f32>(0.0, 0.0, 1.0);
-    let d2 = max(dot(n2, l2), 0.0);
-    let s2 = pow(max(dot(reflect(-l2, n2), vv), 0.0), 30.0);
-    let enc2 = clamp(n2.xy * 2.2, vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, 1.0)) * 0.5
-             + vec2<f32>(0.5, 0.5);
-    let hue = vec3<f32>(
-      0.25 + 0.75 * enc2.x,
-      0.30 + 0.70 * enc2.y,
-      0.06 + 0.10 * (1.0 - enc2.y)
-    );
-    var tcol = mix(vec3<f32>(1.0, 1.0, 1.0), hue, P.text_sat);
-    let tlum = dot(tcol, vec3<f32>(0.2126, 0.7152, 0.0722));
-    tcol = tcol * mix(1.0, 1.02 / max(tlum, 0.30), 0.7);
-    tcol = tcol * (0.92 + 0.55 * d2) + vec3<f32>(1.15, 1.00, 0.78) * s2 * 0.90;
-    tcol = tcol * 1.18;
-    c = mix(c, aces(tcol * 0.92), crisp);
+  // NAME (G) — permanent, screen-locked, full opacity
+  let name_c = smoothstep(0.42, 0.55, textureSampleLevel(fieldtex, samp, in.uv, 0.0).g);
+  // PHRASE (A) — fades + pushes in z: scale the MASK sampling around the
+  // phrase center (z<1 expands the sample → glyphs shrink → pushed back),
+  // and multiply coverage by opacity. A fading phrase reveals the bloom again.
+  let pivot = vec2<f32>(0.5, P.phrase_cy);
+  let puv = pivot + (in.uv - pivot) / max(P.phrase_z, 0.01);
+  let phrase_c = smoothstep(0.42, 0.55,
+    textureSampleLevel(fieldtex, samp, puv, 0.0).a) * P.phrase_op;
+
+  let cover = max(name_c, phrase_c);
+  if (cover > 0.001) {
+    c = mix(c, aces(reliefCol(in.uv) * 0.92), cover);
   }
   return vec4<f32>(c, 1.0);
 }
@@ -499,87 +523,97 @@ fn set_status(text: &str) {
     }
 }
 
-// Rasterize LINE1 + the current phrase into the two-channel field:
-//   R — blurred coverage (deflection physics + soft drop shadow)
-//   G — sharp coverage (crisp white type, drawn with no blur)
-fn raster_field(
-    ctx: &web_sys::CanvasRenderingContext2d,
-    w: u32,
-    h: u32,
-    line2: &str,
-    css_w: f64,
-) -> Vec<u8> {
+// tier + capped font sizes, shared by name/phrase layout so they agree
+fn tier_fonts(w: u32, h: u32, css_w: f64) -> (bool, bool, f64, f64) {
     let (wf, hf) = (w as f64, h as f64);
-    let phone = hf > wf * 1.6; // aspect < ~0.62: phones
-    let portrait = hf > wf * 0.85; // tablets upright
-
-    // desktop font cap: the field maps to the full viewport, so a max SCREEN
-    // size converts to field units via wf/css_w. ~96px/52px CSS keeps large
-    // monitors close to the tablet look instead of billboard type.
+    let phone = hf > wf * 1.6; // aspect < ~0.62
+    let portrait = hf > wf * 0.85;
     let f1 = (wf * 0.118).min(wf * 118.0 / css_w.max(1.0));
     let f2 = (wf * 0.064).min(wf * 62.0 / css_w.max(1.0));
+    (phone, portrait, f1, f2)
+}
 
-    // layout: a list of (text, font-px, y) entries
-    let mut entries: Vec<(String, f64, f64)> = Vec::new();
+// the NAME is anchored at a FIXED y per tier — it never moves as phrases change
+fn name_layout(w: u32, h: u32, css_w: f64) -> Vec<(String, f64, f64)> {
+    let (wf, hf) = (w as f64, h as f64);
+    let (phone, portrait, f1, _f2) = tier_fonts(w, h, css_w);
+    let mut e = Vec::new();
     if phone {
-        // stack EVERY word — the name too — as a centered column
         let f1p = wf * 0.205;
-        let f2p = wf * 0.108;
         let gap1 = f1p * 1.08;
-        let gap2 = f2p * 1.3;
-        let name_words: Vec<&str> = LINE1.split(' ').collect();
-        let phrase_words: Vec<&str> = line2.split(' ').collect();
-        let block = gap1 * name_words.len() as f64
-            + gap2 * phrase_words.len() as f64
-            + f2p * 0.6; // breathing room between name and phrase
-        let mut y = hf * 0.5 - block / 2.0 + gap1 * 0.5;
-        for wd in &name_words {
-            entries.push((wd.to_string(), f1p, y));
+        let mut y = hf * 0.30;
+        for wd in LINE1.split(' ') {
+            e.push((wd.to_string(), f1p, y));
             y += gap1;
         }
-        y += f2p * 0.6;
-        for wd in &phrase_words {
-            entries.push((wd.to_string(), f2p, y));
+    } else if portrait {
+        e.push((LINE1.to_string(), f1, hf * 0.40));
+    } else {
+        e.push((LINE1.to_string(), f1, hf * 0.5 - f1 * 0.46));
+    }
+    e
+}
+
+// the PHRASE lays out below the anchored name; returns its lines + block center
+// (uv.y), which the composite uses as the z-scale pivot
+fn phrase_layout(w: u32, h: u32, css_w: f64, phrase: &str) -> (Vec<(String, f64, f64)>, f64) {
+    let (wf, hf) = (w as f64, h as f64);
+    let (phone, portrait, _f1, f2) = tier_fonts(w, h, css_w);
+    let mut e = Vec::new();
+    let cy;
+    if phone {
+        let f2p = wf * 0.108;
+        let gap2 = f2p * 1.25;
+        let top = hf * 0.52;
+        let words: Vec<&str> = phrase.split(' ').collect();
+        let mut y = top;
+        for wd in &words {
+            e.push((wd.to_string(), f2p, y));
             y += gap2;
         }
+        cy = (top + gap2 * (words.len() as f64 - 1.0) * 0.5) / hf;
     } else if portrait {
-        let words: Vec<&str> = line2.split(' ').collect();
+        let words: Vec<&str> = phrase.split(' ').collect();
+        let top = hf * 0.55;
         if words.len() >= 2 {
-            // balanced split: minimize the length difference of the halves
             let mut best = 1usize;
             let mut bestdiff = usize::MAX;
             for k in 1..words.len() {
-                let a = words[..k].join(" ").len();
-                let b = words[k..].join(" ").len();
-                let d = a.abs_diff(b);
+                let d = words[..k].join(" ").len().abs_diff(words[k..].join(" ").len());
                 if d < bestdiff {
                     bestdiff = d;
                     best = k;
                 }
             }
-            let la = words[..best].join(" ");
-            let lb = words[best..].join(" ");
             let f2s = wf * 0.088;
-            entries.push((LINE1.to_string(), f1, hf * 0.5 - f2s * 1.55));
-            entries.push((la, f2s, hf * 0.5 + f2s * 0.45));
-            entries.push((lb, f2s, hf * 0.5 + f2s * 1.75));
+            let gap = f2s * 1.28;
+            e.push((words[..best].join(" "), f2s, top));
+            e.push((words[best..].join(" "), f2s, top + gap));
+            cy = (top + gap * 0.5) / hf;
         } else {
-            entries.push((LINE1.to_string(), f1, hf * 0.455));
-            entries.push((line2.to_string(), wf * 0.072, hf * 0.545));
+            let f2s = wf * 0.082;
+            e.push((phrase.to_string(), f2s, top));
+            cy = top / hf;
         }
     } else {
-        // spacing follows the FONT, not the viewport — on capped big screens
-        // the name and phrase stay a tight lockup instead of drifting apart
-        entries.push((LINE1.to_string(), f1, hf * 0.5 - f1 * 0.46));
-        entries.push((line2.to_string(), f2, hf * 0.5 + f2 * 1.05));
+        let py = hf * 0.5 + f2 * 1.05;
+        e.push((phrase.to_string(), f2, py));
+        cy = py / hf;
     }
+    (e, cy)
+}
 
-    let draw_lines = |ctx: &web_sys::CanvasRenderingContext2d| {
-        for (text, px, y) in &entries {
-            ctx.set_font(&format!(
-                "900 {:.0}px -apple-system, system-ui, sans-serif",
-                px
-            ));
+// rasterize a set of text entries into a (blur, sharp) coverage pair (R channel)
+fn raster_layer(
+    ctx: &web_sys::CanvasRenderingContext2d,
+    w: u32,
+    h: u32,
+    entries: &[(String, f64, f64)],
+) -> (Vec<u8>, Vec<u8>) {
+    let (wf, hf) = (w as f64, h as f64);
+    let draw = |ctx: &web_sys::CanvasRenderingContext2d| {
+        for (text, px, y) in entries {
+            ctx.set_font(&format!("900 {:.0}px -apple-system, system-ui, sans-serif", px));
             ctx.fill_text(text, wf / 2.0, *y).ok();
         }
     };
@@ -591,28 +625,35 @@ fn raster_field(
         ctx.set_text_align("center");
         ctx.set_text_baseline("middle");
     };
-
-    // pass 1: blurred physics field
     clear(ctx);
     ctx.set_filter("blur(9px)");
-    draw_lines(ctx);
+    draw(ctx);
     ctx.set_filter("blur(2px)");
-    draw_lines(ctx);
+    draw(ctx);
     ctx.set_filter("none");
-    let img = ctx.get_image_data(0.0, 0.0, wf, hf).unwrap();
-    let blur_data = img.data();
-
-    // pass 2: sharp text mask
+    let blur = ctx.get_image_data(0.0, 0.0, wf, hf).unwrap().data();
     clear(ctx);
-    draw_lines(ctx);
-    let img2 = ctx.get_image_data(0.0, 0.0, wf, hf).unwrap();
-    let sharp_data = img2.data();
-
+    draw(ctx);
+    let sharp = ctx.get_image_data(0.0, 0.0, wf, hf).unwrap().data();
     let n = (w * h) as usize;
-    let mut out = Vec::with_capacity(n * 2);
+    let mut b = Vec::with_capacity(n);
+    let mut sh = Vec::with_capacity(n);
     for i in 0..n {
-        out.push(blur_data[i * 4]); // R: blurred
-        out.push(sharp_data[i * 4]); // G: sharp
+        b.push(blur[i * 4]);
+        sh.push(sharp[i * 4]);
+    }
+    (b, sh)
+}
+
+// interleave name(RG) + phrase(BA) coverage into one RGBA upload buffer
+fn pack_rgba(nb: &[u8], ns: &[u8], pb: &[u8], ps: &[u8]) -> Vec<u8> {
+    let n = nb.len();
+    let mut out = Vec::with_capacity(n * 4);
+    for i in 0..n {
+        out.push(nb[i]);
+        out.push(ns[i]);
+        out.push(pb[i]);
+        out.push(ps[i]);
     }
     out
 }
@@ -822,7 +863,9 @@ async fn run() {
         mapped_at_creation: false,
     });
 
-    // two-channel field: R = blurred physics, G = sharp type
+    // four-channel field: name in RG (R blur/physics, G sharp/type), phrase in
+    // BA (B blur/physics, A sharp/type) — independent layers so the name stays
+    // solid while the phrase fades + pushes in z
     let field_tex = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("field"),
         size: wgpu::Extent3d {
@@ -833,7 +876,7 @@ async fn run() {
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rg8Unorm,
+        format: wgpu::TextureFormat::Rgba8Unorm,
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });
@@ -888,7 +931,7 @@ async fn run() {
             bytes,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(fw * 2),
+                bytes_per_row: Some(fw * 4),
                 rows_per_image: Some(fh),
             },
             wgpu::Extent3d {
@@ -898,12 +941,18 @@ async fn run() {
             },
         );
     }
+    // name field is computed ONCE (it never changes); phrase field is rebuilt
+    // on each swap and interleaved with the cached name channels
+    let name_entries = name_layout(field_w, field_h, css_w);
+    let (name_blur, name_sharp) = raster_layer(&fctx, field_w, field_h, &name_entries);
+    let (p_entries0, phrase_cy0) = phrase_layout(field_w, field_h, css_w, PHRASES[0]);
+    let (pb0, ps0) = raster_layer(&fctx, field_w, field_h, &p_entries0);
     upload_field(
         &queue,
         &field_tex,
         field_w,
         field_h,
-        &raster_field(&fctx, field_w, field_h, PHRASES[0], css_w),
+        &pack_rgba(&name_blur, &name_sharp, &pb0, &ps0),
     );
 
     // ---- bind group layouts ----
@@ -1162,7 +1211,9 @@ async fn run() {
     let mut frames: u32 = 0;
     let mut acc: f64 = 0.0;
     let mut phrase_idx: usize = 0;
-    let mut phrase_t = t0;
+    let mut phase: u8 = 0; // 0 hold, 1 exit (push back + fade), 2 enter (forward + fade in)
+    let mut phase_start = t0;
+    let mut phrase_cy = phrase_cy0 as f32;
 
     let f = Rc::new(RefCell::new(None::<Closure<dyn FnMut()>>));
     let g = f.clone();
@@ -1185,18 +1236,49 @@ async fn run() {
             acc = 0.0;
         }
 
-        // cycle the phrase: new rocks drop into the stream
-        if now - phrase_t > PHRASE_SECONDS * 1000.0 {
-            phrase_t = now;
-            phrase_idx = (phrase_idx + 1) % PHRASES.len();
-            upload_field(
-                &queue,
-                &field_tex,
-                field_w,
-                field_h,
-                &raster_field(&fctx, field_w, field_h, PHRASES[phrase_idx], css_w),
-            );
+        // phrase transition: hold → exit (fade + push back) → [swap at the
+        // invisible point] → enter (fade in + push forward). phrase_tt is 0
+        // when resting, 1 when fully gone/back.
+        let exit_dur = 600.0;
+        let enter_dur = 600.0;
+        let hold_dur = (PHRASE_SECONDS * 1000.0 - exit_dur - enter_dur).max(300.0);
+        let el = now - phase_start;
+        let phrase_tt: f64;
+        if phase == 0 {
+            phrase_tt = 0.0;
+            if el >= hold_dur {
+                phase = 1;
+                phase_start = now;
+            }
+        } else if phase == 1 {
+            let e = (el / exit_dur).min(1.0);
+            phrase_tt = e * e * (3.0 - 2.0 * e);
+            if el >= exit_dur {
+                phrase_idx = (phrase_idx + 1) % PHRASES.len();
+                let (pe, cy) = phrase_layout(field_w, field_h, css_w, PHRASES[phrase_idx]);
+                let (pb, ps) = raster_layer(&fctx, field_w, field_h, &pe);
+                upload_field(
+                    &queue,
+                    &field_tex,
+                    field_w,
+                    field_h,
+                    &pack_rgba(&name_blur, &name_sharp, &pb, &ps),
+                );
+                phrase_cy = cy as f32;
+                phase = 2;
+                phase_start = now;
+            }
+        } else {
+            let e = (el / enter_dur).min(1.0);
+            phrase_tt = 1.0 - e * e * (3.0 - 2.0 * e);
+            if el >= enter_dur {
+                phase = 0;
+                phase_start = now;
+            }
         }
+        let phrase_op = (1.0 - phrase_tt) as f32;
+        let phrase_w = phrase_op; // physics weight tracks visibility
+        let phrase_z = (1.0 - 0.16 * phrase_tt) as f32;
 
         let (mx, my, mact) = mouse_r.get();
         let params = Params {
@@ -1218,6 +1300,10 @@ async fn run() {
             text_sat: dial("text_sat", bk("text_sat", 0.72)),
             bg_speed: dial("bg_speed", bk("bg_speed", 2.5)),
             mobile: if particle_count < PARTICLES { 1.0 } else { 0.0 },
+            phrase_w,
+            phrase_op,
+            phrase_z,
+            phrase_cy,
         };
         queue.write_buffer(&param_buf, 0, bytemuck::bytes_of(&params));
 
