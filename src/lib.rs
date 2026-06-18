@@ -50,7 +50,7 @@ struct Params {
     phrase_z: f32,  // phrase visual z-scale (1=resting, <1=pushed back)
     phrase_cy: f32, // phrase block center (uv.y) — the z-scale pivot
     bg_fade: f32,
-    intro_flow: f32,
+    part_fade: f32,
     name_op: f32,
     intro_glow: f32,
 }
@@ -65,7 +65,7 @@ struct Params {
   rot_depth: f32, turb: f32, eddy: f32, sparkg: f32,
   bg_freq: f32, text_sat: f32, bg_speed: f32, mobile: f32,
   phrase_w: f32, phrase_op: f32, phrase_z: f32, phrase_cy: f32,
-  bg_fade: f32, intro_flow: f32, name_op: f32, intro_glow: f32,
+  bg_fade: f32, part_fade: f32, name_op: f32, intro_glow: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -100,17 +100,13 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
   // sines), so the flow's ORIGIN itself rotates around the screen; the dials
   // control how fast (rot_speed) and how far (rot_depth) it swings
   let th = P.rot_depth * (0.6 * sin(P.time * P.rot_speed)
-                        + 0.4 * sin(P.time * P.rot_speed * 0.371 + 2.1))
-         - 1.9 * P.intro_flow; // intro: heading starts down-right (inflow from the top-left), eases to natural
+                        + 0.4 * sin(P.time * P.rot_speed * 0.371 + 2.1));
   // micro-wobble layered on top: the current still breathes locally
   let m_ang = th + 0.16 * sin(P.time * 0.11 + pt.pos.y * 0.6)
             + 0.09 * sin(P.time * 0.047 + 1.7);
   let mdir = vec2<f32>(cos(m_ang), sin(m_ang));
   let lane = 0.5 + 0.5 * sin(pt.pos.y * 7.0 + h1 * 6.2832);
-  let goal_n = mdir * (P.stream * (0.55 + 0.9 * lane));
-  // intro: the SAME core flow direction the whole time, just sped up to fill
-  // quickly and easing to the normal cruise - no redirect, one continuous motion
-  let goal = goal_n * (1.0 + 3.5 * P.intro_flow);
+  let goal = mdir * (P.stream * (0.55 + 0.9 * lane));
   var v = pt.vel + (goal - pt.vel) * min(2.6 * P.dt, 1.0);
 
   // three octaves of drifting pseudo-curl: broad swells, mid eddy-chop, shimmer
@@ -185,18 +181,13 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
   // respawn: recycle only particles that exited DOWNSTREAM (or wandered far),
   // and re-enter them on a spawn line beyond the viewport's corner radius
   // (sqrt(2)≈1.41) so the origin edge is never visible at any heading/aspect
-  // intro: flow heading points straight down (re-enter at the top) and the
-  // cull radius widens so particles seeded above the top survive (no normalize:
-  // a normalized mix of opposite dirs could hit zero - worst case a stray
-  // particle respawns mid-screen, invisible among 500k)
   let fdir = vec2<f32>(cos(th), sin(th));
-  let cull = 2.6 + P.intro_flow * 2.2;
   let outside = abs(pos.x) > 1.02 || abs(pos.y) > 1.02;
-  if ((outside && dot(pos, fdir) > 1.05) || length(pos) > cull) {
+  if ((outside && dot(pos, fdir) > 1.05) || length(pos) > 2.6) {
     let perp = vec2<f32>(-fdir.y, fdir.x);
     let eta = (rand01(i + u32(P.time * 16.0) * 2659u) * 2.0 - 1.0) * 1.65;
     pos = -fdir * 1.55 + perp * eta;
-    v = fdir * P.stream * (1.0 + 3.5 * P.intro_flow);
+    v = fdir * P.stream;
   }
 
   pt.pos = pos;
@@ -215,7 +206,7 @@ struct Params {
   rot_depth: f32, turb: f32, eddy: f32, sparkg: f32,
   bg_freq: f32, text_sat: f32, bg_speed: f32, mobile: f32,
   phrase_w: f32, phrase_op: f32, phrase_z: f32, phrase_cy: f32,
-  bg_fade: f32, intro_flow: f32, name_op: f32, intro_glow: f32,
+  bg_fade: f32, part_fade: f32, name_op: f32, intro_glow: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -346,7 +337,7 @@ fn vs_p(
   o.pos = vec4<f32>(ppos + off, 0.0, 1.0);
   // intro: reveal the field top-to-bottom (particles above the descending
   // line are lit, soft leading edge); rests fully revealed after the intro
-  o.col = col * lum * 0.10;
+  o.col = col * lum * 0.10 * P.part_fade;
   o.quv = corners[vi];
   return o;
 }
@@ -427,7 +418,7 @@ struct Params {
   rot_depth: f32, turb: f32, eddy: f32, sparkg: f32,
   bg_freq: f32, text_sat: f32, bg_speed: f32, mobile: f32,
   phrase_w: f32, phrase_op: f32, phrase_z: f32, phrase_cy: f32,
-  bg_fade: f32, intro_flow: f32, name_op: f32, intro_glow: f32,
+  bg_fade: f32, part_fade: f32, name_op: f32, intro_glow: f32,
 };
 @group(0) @binding(4) var<uniform> P: Params;
 
@@ -910,19 +901,13 @@ async fn run() {
     // ---- buffers & textures ----
     let mut rng = 0x9e3779b9u32;
     let mut init: Vec<f32> = Vec::with_capacity(particle_count as usize * 4);
-    // intro: seed UPSTREAM of the core flow's t=0 heading so the screen starts
-    // empty and the (boosted) normal flow carries them in from that edge
-    let th0 = bk("rot_depth", 3.2) as f64 * 0.4 * (2.1f64).sin() - 1.9; // top-left origin (matches intro heading offset)
-    let (fdx, fdy) = (th0.cos() as f32, th0.sin() as f32);
-    let (perpx, perpy) = (-fdy, fdx);
-    let stream0 = bk("stream", 0.28);
+    // intro: seed across the WHOLE screen so the field is fully developed from
+    // the first frame and simply fades in (no waiting for particles to flow in)
     for _ in 0..particle_count {
-        let depth = 1.55 + rnd(&mut rng) * 1.7;        // beyond the entry line, spread for a gradual pour
-        let lat = (rnd(&mut rng) * 2.0 - 1.0) * 1.65;  // perpendicular spread (matches respawn eta)
-        init.push(-fdx * depth + perpx * lat);         // pos.x (upstream band)
-        init.push(-fdy * depth + perpy * lat);         // pos.y
-        init.push(fdx * stream0 * 3.0);                // vel.x - already moving along the flow
-        init.push(fdy * stream0 * 3.0);                // vel.y
+        init.push(rnd(&mut rng) * 2.2 - 1.1);          // pos.x in [-1.1, 1.1]
+        init.push(rnd(&mut rng) * 2.2 - 1.1);          // pos.y in [-1.1, 1.1]
+        init.push((rnd(&mut rng) - 0.5) * 0.3);        // vel.x small (flow goal takes over within ~0.4s)
+        init.push((rnd(&mut rng) - 0.5) * 0.3);        // vel.y small
     }
     let particle_buf = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("particles"),
@@ -1328,8 +1313,8 @@ async fn run() {
             let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
             t * t * (3.0 - 2.0 * t)
         };
-        let bg_fade = ss(0.0, 2.2, it);                  // fades in over the same span the stream flows in
-        let intro_flow = 1.0 - ss(1.4, 2.4, it);         // downward nudge on the core flow, eases to 0 (one continuous motion)
+        let bg_fade = ss(0.0, 1.8, it);                  // background fades in alongside the particles
+        let part_fade = ss(0.0, 1.8, it);                // particles fade in over the already-populated field
         let name_op = ss(0.9, 1.4, it);                  // text resolves early, over the inflow
         let intro_glow = 0.05 + 0.95 * ss(1.2, 3.3, it); // sparkle + bloom kept low through the sweep, ramp up after
         const INTRO_DUR: f32 = 1.8;
@@ -1413,7 +1398,7 @@ async fn run() {
             phrase_z,
             phrase_cy,
             bg_fade,
-            intro_flow,
+            part_fade,
             name_op,
             intro_glow,
         };
