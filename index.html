@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Ben Priddy</title>
     <script>
       // debug shim: surface WebGPU uncaptured errors through console.error
@@ -46,7 +46,7 @@
       }
 
       #fps {
-        position: fixed; top: 12px; left: 14px;
+        position: fixed; top: calc(12px + env(safe-area-inset-top)); left: calc(14px + env(safe-area-inset-left));
         font: 11px/1.4 ui-monospace, Menlo, monospace;
         color: rgba(80, 64, 44, 0.5);
         background: rgba(255, 255, 255, 0.4);
@@ -57,7 +57,7 @@
 
       /* info button — sharp block chip */
       #info-btn {
-        position: fixed; bottom: 18px; right: 18px;
+        position: fixed; bottom: calc(18px + env(safe-area-inset-bottom)); right: calc(18px + env(safe-area-inset-right));
         width: 44px; height: 44px;
         display: flex; align-items: center; justify-content: center;
         border: none; border-radius: 50%;
@@ -128,7 +128,7 @@
 
       /* debug dials */
       #dials {
-        position: fixed; bottom: 18px; left: 18px; z-index: 9;
+        position: fixed; bottom: calc(18px + env(safe-area-inset-bottom)); left: calc(18px + env(safe-area-inset-left)); z-index: 9;
         width: 250px; padding: 12px 14px 10px;
         border-radius: 10px;
         border: 1px solid rgba(138, 90, 40, 0.35);
@@ -163,7 +163,7 @@
       }
       #dial-close:hover { color: #f2a35e; }
       #gear {
-        position: fixed; bottom: 18px; left: 18px; z-index: 8;
+        position: fixed; bottom: calc(18px + env(safe-area-inset-bottom)); left: calc(18px + env(safe-area-inset-left)); z-index: 8;
         width: 34px; height: 34px; border-radius: 50%;
         border: 1px solid rgba(138, 90, 40, 0.4);
         background: rgba(255, 255, 255, 0.55); color: #8a5a28;
@@ -173,7 +173,7 @@
 
       /* phrase editor */
       #phrases {
-        position: fixed; bottom: 18px; left: 18px; z-index: 9;
+        position: fixed; bottom: calc(18px + env(safe-area-inset-bottom)); left: calc(18px + env(safe-area-inset-left)); z-index: 9;
         width: 300px; padding: 12px 14px 12px;
         border-radius: 10px;
         border: 1px solid rgba(138, 90, 40, 0.35);
@@ -211,7 +211,7 @@
       }
       #phrase-close:hover { color: #f2a35e; }
       #phrase-btn {
-        position: fixed; bottom: 60px; left: 18px; z-index: 8;
+        position: fixed; bottom: calc(60px + env(safe-area-inset-bottom)); left: calc(18px + env(safe-area-inset-left)); z-index: 8;
         width: 34px; height: 34px; border-radius: 50%;
         display: flex; align-items: center; justify-content: center;
         border: 1px solid rgba(138, 90, 40, 0.4);
@@ -225,16 +225,16 @@
         #modal { font-size: 14px; }
         .modal-body { padding: 1.7rem 1.4rem 1.4rem; }
         #modal h2 { font-size: 1.45rem; }
-        #info-btn { bottom: 12px; right: 12px; }
-        #gear { bottom: 12px; left: 12px; }
+        #info-btn { bottom: calc(12px + env(safe-area-inset-bottom)); right: calc(12px + env(safe-area-inset-right)); }
+        #gear { bottom: calc(12px + env(safe-area-inset-bottom)); left: calc(12px + env(safe-area-inset-left)); }
         #dials {
-          bottom: 12px; left: 12px;
+          bottom: calc(12px + env(safe-area-inset-bottom)); left: calc(12px + env(safe-area-inset-left));
           width: calc(100vw - 24px - 28px);
           max-width: 250px;
         }
-        #fps { top: 8px; left: 10px; font-size: 10px; }
-        #phrase-btn { bottom: 54px; left: 12px; }
-        #phrases { bottom: 12px; left: 12px; width: calc(100vw - 24px - 28px); max-width: 300px; }
+        #fps { top: calc(8px + env(safe-area-inset-top)); left: calc(10px + env(safe-area-inset-left)); font-size: 10px; }
+        #phrase-btn { bottom: calc(54px + env(safe-area-inset-bottom)); left: calc(12px + env(safe-area-inset-left)); }
+        #phrases { bottom: calc(12px + env(safe-area-inset-bottom)); left: calc(12px + env(safe-area-inset-left)); width: calc(100vw - 24px - 28px); max-width: 300px; }
       }
 
     </style>
