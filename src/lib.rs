@@ -811,8 +811,8 @@ async fn run() {
         let cb = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |e: web_sys::MouseEvent| {
             if dr.get().2 > 0.5 {
                 let (pu, pv, bu, bv) = an.get();
-                let du = (bu + (e.client_x() as f32 / w - pu)).clamp(-0.6, 0.6);
-                let dv = (bv + (e.client_y() as f32 / h - pv)).clamp(-0.6, 0.6);
+                let du = bu + (e.client_x() as f32 / w - pu);
+                let dv = bv + (e.client_y() as f32 / h - pv);
                 dr.set((du, dv, 1.0));
             } else {
                 let x = (e.client_x() as f32 / w) * 2.0 - 1.0;
@@ -888,8 +888,8 @@ async fn run() {
             if dr.get().2 > 0.5 {
                 if let Some(t) = e.touches().get(0) {
                     let (pu, pv, bu, bv) = an.get();
-                    let du = (bu + (t.client_x() as f32 / w - pu)).clamp(-0.6, 0.6);
-                    let dv = (bv + (t.client_y() as f32 / h - pv)).clamp(-0.6, 0.6);
+                    let du = bu + (t.client_x() as f32 / w - pu);
+                    let dv = bv + (t.client_y() as f32 / h - pv);
                     dr.set((du, dv, 1.0));
                 }
             }
@@ -1457,12 +1457,12 @@ async fn run() {
                       (tx_vel.1 * 0.55 + ivy * 0.45).clamp(-8.0, 8.0));
             tx_off = (tdu, tdv);
         } else {
-            let k = 100.0f32;
-            let c = 7.0f32;
-            tx_vel = (tx_vel.0 + (-k * tx_off.0 - c * tx_vel.0) * dt,
-                      tx_vel.1 + (-k * tx_off.1 - c * tx_vel.1) * dt);
-            tx_off = ((tx_off.0 + tx_vel.0 * dt).clamp(-0.85, 0.85),
-                      (tx_off.1 + tx_vel.1 * dt).clamp(-0.85, 0.85));
+            // throw: carry the release momentum, decelerate with friction,
+            // and settle wherever it stops (no spring back; may go off-frame)
+            let decay = (-3.0f32 * dt).exp();
+            tx_vel = (tx_vel.0 * decay, tx_vel.1 * decay);
+            tx_off = ((tx_off.0 + tx_vel.0 * dt).clamp(-5.0, 5.0),
+                      (tx_off.1 + tx_vel.1 * dt).clamp(-5.0, 5.0));
         }
         offpub_r.set(tx_off);
 
