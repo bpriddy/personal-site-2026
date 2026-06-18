@@ -726,14 +726,8 @@ async fn run() {
     // render at device resolution (capped 2x) for retina crispness; CSS keeps
     // the canvas at viewport size
     let dpr = window.device_pixel_ratio().min(2.0);
-    // size from the canvas's own CSS box (100vw x 100lvh) so the backing
-    // store matches the LARGE viewport - the render then covers the strip
-    // behind iOS Safari's translucent bottom bar, not just the visible
-    // 100svh. Fall back to inner W/H when the box reads 0 (0-viewport load).
-    let cw = canvas.client_width() as f64;
-    let cssh = canvas.client_height() as f64;
-    let css_w = if cw > 1.0 { cw } else { window.inner_width().unwrap().as_f64().unwrap() };
-    let css_h = if cssh > 1.0 { cssh } else { window.inner_height().unwrap().as_f64().unwrap() };
+    let css_w = window.inner_width().unwrap().as_f64().unwrap();
+    let css_h = window.inner_height().unwrap().as_f64().unwrap();
     // embedded previews can load the page while the viewport is still 0-sized;
     // initializing against that poisons every GPU resource — retry instead
     if css_w < 50.0 || css_h < 50.0 {
