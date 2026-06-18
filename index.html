@@ -513,5 +513,35 @@
         });
       })();
     </script>
+    <script>
+      // ?debug — on-device safe-area / viewport readout (hidden for normal visitors)
+      if (location.search.indexOf("debug") !== -1) {
+        var probe = document.createElement("div");
+        probe.style.cssText =
+          "position:fixed;top:0;left:0;width:0;height:0;visibility:hidden;" +
+          "padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);";
+        document.body.appendChild(probe);
+        var dbg = document.createElement("pre");
+        dbg.style.cssText =
+          "position:fixed;top:90px;left:10px;z-index:99;margin:0;color:#0f0;" +
+          "background:rgba(0,0,0,.8);padding:10px;font:13px/1.5 monospace;" +
+          "white-space:pre;pointer-events:none;border:1px solid #0f0;border-radius:6px;";
+        document.body.appendChild(dbg);
+        var upd = function () {
+          var cs = getComputedStyle(probe);
+          var c = document.getElementById("canvas").getBoundingClientRect();
+          dbg.textContent =
+            "inner   " + innerWidth + " x " + innerHeight + "\n" +
+            "screen  " + screen.width + " x " + screen.height + "\n" +
+            "visualV " + (window.visualViewport ? Math.round(visualViewport.width) + " x " + Math.round(visualViewport.height) : "-") + "\n" +
+            "dpr     " + devicePixelRatio + "\n" +
+            "safe    T" + cs.paddingTop + " B" + cs.paddingBottom + " L" + cs.paddingLeft + " R" + cs.paddingRight + "\n" +
+            "canvas  " + Math.round(c.left) + "," + Math.round(c.top) + "  " + Math.round(c.width) + " x " + Math.round(c.height);
+        };
+        upd();
+        addEventListener("resize", upd);
+        setInterval(upd, 500);
+      }
+    </script>
   </body>
 </html>
