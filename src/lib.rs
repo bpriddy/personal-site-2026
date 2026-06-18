@@ -49,6 +49,10 @@ struct Params {
     phrase_op: f32, // phrase visual opacity
     phrase_z: f32,  // phrase visual z-scale (1=resting, <1=pushed back)
     phrase_cy: f32, // phrase block center (uv.y) — the z-scale pivot
+    bg_fade: f32,
+    intro_reveal: f32,
+    name_op: f32,
+    name_soft: f32,
 }
 
 // Compute: integrate particles against the obstacle field (channel R).
@@ -61,6 +65,7 @@ struct Params {
   rot_depth: f32, turb: f32, eddy: f32, sparkg: f32,
   bg_freq: f32, text_sat: f32, bg_speed: f32, mobile: f32,
   phrase_w: f32, phrase_op: f32, phrase_z: f32, phrase_cy: f32,
+  bg_fade: f32, intro_reveal: f32, name_op: f32, name_soft: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -167,6 +172,11 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
     v += (md / max(sqrt(mr2), 0.02)) * P.mousef * exp(-mr2 * 26.0) * P.dt;
   }
 
+  // intro: bias the stream gently downward so the field reads as pouring in
+  // from the top; fades out as the reveal line passes mid-screen
+  let introf = clamp(P.intro_reveal + 0.6, 0.0, 1.0);
+  v += vec2<f32>(0.0, -1.0) * introf * P.stream * 1.1 * P.dt;
+
   // speed cap
   let sp = length(v);
   if (sp > 1.4) { v *= 1.4 / sp; }
@@ -201,6 +211,7 @@ struct Params {
   rot_depth: f32, turb: f32, eddy: f32, sparkg: f32,
   bg_freq: f32, text_sat: f32, bg_speed: f32, mobile: f32,
   phrase_w: f32, phrase_op: f32, phrase_z: f32, phrase_cy: f32,
+  bg_fade: f32, intro_reveal: f32, name_op: f32, name_soft: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -258,12 +269,12 @@ fn fs_bg(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
   // the scene — it's composited ABOVE the bloom in the final pass, so glow
   // can never overlap the letter edges.
   let fr = textureSampleLevel(field, fsamp, uv, 0.0);
-  let name_sh = fr.r * (1.0 - fr.g);
+  let name_sh = fr.r * (1.0 - fr.g) * P.name_op;
   let phrase_sh = fr.b * P.phrase_w * (1.0 - fr.a);
   let shadow = max(name_sh, phrase_sh);
   col *= 1.0 - 0.55 * shadow;
 
-  return vec4<f32>(col, 1.0);
+  return vec4<f32>(col * P.bg_fade, 1.0);
 }
 
 // ---------- particles: instanced soft quads, additive light ----------
@@ -329,7 +340,10 @@ fn vs_p(
   let off = (corners[vi].x * along + corners[vi].y * perp) * px;
   var o: VOut;
   o.pos = vec4<f32>(ppos + off, 0.0, 1.0);
-  o.col = col * lum * 0.10;
+  // intro: reveal the field top-to-bottom (particles above the descending
+  // line are lit, soft leading edge); rests fully revealed after the intro
+  let reveal = smoothstep(P.intro_reveal - 0.45, P.intro_reveal, ppos.y);
+  o.col = col * lum * 0.10 * reveal;
   o.quv = corners[vi];
   return o;
 }
@@ -410,6 +424,7 @@ struct Params {
   rot_depth: f32, turb: f32, eddy: f32, sparkg: f32,
   bg_freq: f32, text_sat: f32, bg_speed: f32, mobile: f32,
   phrase_w: f32, phrase_op: f32, phrase_z: f32, phrase_cy: f32,
+  bg_fade: f32, intro_reveal: f32, name_op: f32, name_soft: f32,
 };
 @group(0) @binding(4) var<uniform> P: Params;
 
@@ -465,7 +480,11 @@ fn fs_comp(in: VOut) -> @location(0) vec4<f32> {
   var c = aces((scene + glow * 1.25) * 0.92);
 
   // NAME (G) — permanent, screen-locked, full opacity
-  let name_c = smoothstep(0.42, 0.55, textureSampleLevel(fieldtex, samp, in.uv, 0.0).g);
+  // NAME (G) — resolves soft->crisp and fades in during the intro, then locked
+  let name_g = textureSampleLevel(fieldtex, samp, in.uv, 0.0).g;
+  let name_lo = mix(0.42, 0.30, P.name_soft);
+  let name_hi = mix(0.55, 0.74, P.name_soft);
+  let name_c = smoothstep(name_lo, name_hi, name_g) * P.name_op;
   // PHRASE (A) — fades + pushes in z: scale the MASK sampling around the
   // phrase center (z<1 expands the sample → glyphs shrink → pushed back),
   // and multiply coverage by opacity. A fading phrase reveals the bloom again.
@@ -1294,6 +1313,28 @@ async fn run() {
         // phrase transition: hold → exit (fade + push back) → [swap at the
         // invisible point] → enter (fade in + push forward). phrase_tt is 0
         // when resting, 1 when fully gone/back.
+        let it = ((now - t0) / 1000.0) as f32;
+        let ss = |a: f32, b: f32, x: f32| -> f32 {
+            let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
+            t * t * (3.0 - 2.0 * t)
+        };
+        let bg_fade = ss(0.0, 0.6, it);
+        let intro_reveal = 1.3 - 2.9 * ss(0.4, 1.5, it); // +1.3 hidden -> -1.6 all shown
+        let name_op = ss(1.1, 1.9, it);
+        let name_soft = 1.0 - ss(1.1, 2.0, it);
+        const INTRO_DUR: f32 = 2.6;
+        let phrase_op: f32;
+        let phrase_w: f32;
+        let phrase_z: f32;
+        if it < INTRO_DUR {
+            // hold the cycle frozen; the first phrase fades in last
+            phase = 0;
+            phase_start = now;
+            let pop = ss(1.7, INTRO_DUR, it);
+            phrase_op = pop;
+            phrase_w = pop;
+            phrase_z = 1.0;
+        } else {
         let exit_dur = 600.0;
         let enter_dur = 600.0;
         let hold_dur = (PHRASE_SECONDS * 1000.0 - exit_dur - enter_dur).max(300.0);
@@ -1332,9 +1373,10 @@ async fn run() {
                 phase_start = now;
             }
         }
-        let phrase_op = (1.0 - phrase_tt) as f32;
-        let phrase_w = phrase_op; // physics weight tracks visibility
-        let phrase_z = (1.0 - 0.16 * phrase_tt) as f32;
+        phrase_op = (1.0 - phrase_tt) as f32;
+        phrase_w = phrase_op; // physics weight tracks visibility
+        phrase_z = (1.0 - 0.16 * phrase_tt) as f32;
+        }
 
         let (mx, my, mact) = mouse_r.get();
         let params = Params {
@@ -1360,6 +1402,10 @@ async fn run() {
             phrase_op,
             phrase_z,
             phrase_cy,
+            bg_fade,
+            intro_reveal,
+            name_op,
+            name_soft,
         };
         queue.write_buffer(&param_buf, 0, bytemuck::bytes_of(&params));
 
