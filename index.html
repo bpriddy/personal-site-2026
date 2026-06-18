@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#000000" />
     <title>Ben Priddy</title>
     <script>
       // debug shim: surface WebGPU uncaptured errors through console.error
@@ -34,12 +35,13 @@
         --dim: #9a948a;
         --accent: #f2a35e;
       }
-      html, body { margin: 0; height: 100%; overflow: hidden; background: #f5f1e8; overscroll-behavior: none; }
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #000; overscroll-behavior: none; }
       /* touch-action:none keeps mobile from claiming a finger-drag as a
          scroll/zoom/URL-bar gesture (which fires touchcancel and kills the
          stream perturbance); scoped to the canvas so the modal still scrolls */
       #canvas {
-        display: block; width: 100vw; height: 100vh;
+        display: block; position: fixed; inset: 0;
+        width: 100%; height: 100%;
         background: #000;
         touch-action: none;
         -webkit-user-select: none; user-select: none;
