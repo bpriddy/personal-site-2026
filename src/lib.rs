@@ -1329,9 +1329,9 @@ async fn run() {
         };
         let bg_fade = ss(0.0, 2.2, it);                  // fades in over the same span the stream flows in
         let intro_flow = 1.0 - ss(1.4, 2.4, it);         // downward nudge on the core flow, eases to 0 (one continuous motion)
-        let name_op = ss(1.4, 1.9, it);                  // words come in 1s sooner (during the tail of the fill)
+        let name_op = ss(0.9, 1.4, it);                  // text resolves early, over the inflow
         let intro_glow = 0.05 + 0.95 * ss(1.2, 3.3, it); // sparkle + bloom kept low through the sweep, ramp up after
-        const INTRO_DUR: f32 = 2.3;
+        const INTRO_DUR: f32 = 1.8;
         let phrase_op: f32;
         let phrase_w: f32;
         let phrase_z: f32;
@@ -1339,7 +1339,7 @@ async fn run() {
             // hold the cycle frozen; the first phrase fades in last
             phase = 0;
             phase_start = now;
-            let pop = ss(1.8, INTRO_DUR, it);
+            let pop = ss(1.3, INTRO_DUR, it);
             phrase_op = pop;
             phrase_w = pop;
             phrase_z = 1.0;
