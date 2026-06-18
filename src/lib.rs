@@ -55,8 +55,8 @@ struct Params {
     intro_glow: f32,
     text_du: f32, // text drag offset in field-UV
     text_dv: f32,
-    pad0: f32,
-    pad1: f32,
+    text_vx: f32, // text travel velocity (NDC/s) - plows the field
+    text_vy: f32,
 }
 
 // Compute: integrate particles against the obstacle field (channel R).
@@ -70,7 +70,7 @@ struct Params {
   bg_freq: f32, text_sat: f32, bg_speed: f32, mobile: f32,
   phrase_w: f32, phrase_op: f32, phrase_z: f32, phrase_cy: f32,
   bg_fade: f32, part_fade: f32, name_op: f32, intro_glow: f32,
-  text_du: f32, text_dv: f32, pad0: f32, pad1: f32,
+  text_du: f32, text_dv: f32, text_vx: f32, text_vy: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -157,6 +157,9 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
       let into = dot(v, n);
       if (into > 0.0) { v -= n * into * min(8.0 * f * P.dt, 0.9); }
     }
+    // a moving word plows the field along its travel - bow wave + wake, like
+    // an object dragged through water (whole glyph body, not just the edges)
+    v += vec2<f32>(P.text_vx, P.text_vy) * f * 4.0 * P.dt;
   }
   // never trap: inside the field particles may only SLOW, never stall — keep a
   // minimum drift so they always wash out of the letterforms
@@ -212,7 +215,7 @@ struct Params {
   bg_freq: f32, text_sat: f32, bg_speed: f32, mobile: f32,
   phrase_w: f32, phrase_op: f32, phrase_z: f32, phrase_cy: f32,
   bg_fade: f32, part_fade: f32, name_op: f32, intro_glow: f32,
-  text_du: f32, text_dv: f32, pad0: f32, pad1: f32,
+  text_du: f32, text_dv: f32, text_vx: f32, text_vy: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -425,7 +428,7 @@ struct Params {
   bg_freq: f32, text_sat: f32, bg_speed: f32, mobile: f32,
   phrase_w: f32, phrase_op: f32, phrase_z: f32, phrase_cy: f32,
   bg_fade: f32, part_fade: f32, name_op: f32, intro_glow: f32,
-  text_du: f32, text_dv: f32, pad0: f32, pad1: f32,
+  text_du: f32, text_dv: f32, text_vx: f32, text_vy: f32,
 };
 @group(0) @binding(4) var<uniform> P: Params;
 
@@ -1496,8 +1499,8 @@ async fn run() {
             intro_glow,
             text_du: tx_off.0,
             text_dv: tx_off.1,
-            pad0: 0.0,
-            pad1: 0.0,
+            text_vx: tx_vel.0 * 2.0,
+            text_vy: tx_vel.1 * -2.0,
         };
         queue.write_buffer(&param_buf, 0, bytemuck::bytes_of(&params));
 
