@@ -53,6 +53,10 @@ struct Params {
     part_fade: f32,
     name_op: f32,
     intro_glow: f32,
+    text_du: f32, // text drag offset in field-UV
+    text_dv: f32,
+    pad0: f32,
+    pad1: f32,
 }
 
 // Compute: integrate particles against the obstacle field (channel R).
@@ -66,6 +70,7 @@ struct Params {
   bg_freq: f32, text_sat: f32, bg_speed: f32, mobile: f32,
   phrase_w: f32, phrase_op: f32, phrase_z: f32, phrase_cy: f32,
   bg_fade: f32, part_fade: f32, name_op: f32, intro_glow: f32,
+  text_du: f32, text_dv: f32, pad0: f32, pad1: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -80,7 +85,7 @@ fn pcg(v: u32) -> u32 {
 fn rand01(v: u32) -> f32 { return f32(pcg(v)) / 4294967295.0; }
 
 fn fieldAt(p: vec2<f32>) -> f32 {
-  let uv = vec2<f32>(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
+  let uv = vec2<f32>(p.x * 0.5 + 0.5 - P.text_du, 0.5 - p.y * 0.5 - P.text_dv);
   let s = textureSampleLevel(field, fsamp, uv, 0.0);
   // name (R) is a permanent rock; the phrase (B) fades its deflection in/out
   // as it pushes forward/back in z — a receding rock stops parting the stream
@@ -207,6 +212,7 @@ struct Params {
   bg_freq: f32, text_sat: f32, bg_speed: f32, mobile: f32,
   phrase_w: f32, phrase_op: f32, phrase_z: f32, phrase_cy: f32,
   bg_fade: f32, part_fade: f32, name_op: f32, intro_glow: f32,
+  text_du: f32, text_dv: f32, pad0: f32, pad1: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -263,7 +269,7 @@ fn fs_bg(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
   // soft drop shadow from the blurred field (R). The type itself is NOT in
   // the scene — it's composited ABOVE the bloom in the final pass, so glow
   // can never overlap the letter edges.
-  let fr = textureSampleLevel(field, fsamp, uv, 0.0);
+  let fr = textureSampleLevel(field, fsamp, uv - vec2<f32>(P.text_du, P.text_dv), 0.0);
   let name_sh = fr.r * (1.0 - fr.g) * P.name_op;
   let phrase_sh = fr.b * P.phrase_w * (1.0 - fr.a);
   let shadow = max(name_sh, phrase_sh);
@@ -419,6 +425,7 @@ struct Params {
   bg_freq: f32, text_sat: f32, bg_speed: f32, mobile: f32,
   phrase_w: f32, phrase_op: f32, phrase_z: f32, phrase_cy: f32,
   bg_fade: f32, part_fade: f32, name_op: f32, intro_glow: f32,
+  text_du: f32, text_dv: f32, pad0: f32, pad1: f32,
 };
 @group(0) @binding(4) var<uniform> P: Params;
 
@@ -475,12 +482,12 @@ fn fs_comp(in: VOut) -> @location(0) vec4<f32> {
 
   // NAME (G) — permanent, screen-locked, full opacity
   // NAME (G) — resolves soft->crisp and fades in during the intro, then locked
-  let name_c = smoothstep(0.42, 0.55, textureSampleLevel(fieldtex, samp, in.uv, 0.0).g) * P.name_op;
+  let name_c = smoothstep(0.42, 0.55, textureSampleLevel(fieldtex, samp, in.uv - vec2<f32>(P.text_du, P.text_dv), 0.0).g) * P.name_op;
   // PHRASE (A) — fades + pushes in z: scale the MASK sampling around the
   // phrase center (z<1 expands the sample → glyphs shrink → pushed back),
   // and multiply coverage by opacity. A fading phrase reveals the bloom again.
   let pivot = vec2<f32>(0.5, P.phrase_cy);
-  let puv = pivot + (in.uv - pivot) / max(P.phrase_z, 0.01);
+  let puv = pivot + (in.uv - vec2<f32>(P.text_du, P.text_dv) - pivot) / max(P.phrase_z, 0.01);
   let phrase_c = smoothstep(0.42, 0.55,
     textureSampleLevel(fieldtex, samp, puv, 0.0).a) * P.phrase_op;
 
@@ -787,17 +794,60 @@ async fn run() {
         fcanvas.get_context("2d").unwrap().unwrap().dyn_into().unwrap();
 
     // mouse → NDC, shared with the frame loop
-    let mouse = Rc::new(Cell::new((0.0f32, 0.0f32, 0.0f32))); // x, y, active
+    let mouse = Rc::new(Cell::new((0.0f32, 0.0f32, 0.0f32))); // x, y, active (perturbance)
+    // text drag: (target_du, target_dv, dragging) in field-UV; anchor = grab uv
+    // + offset-at-grab; offset_pub is the live offset the frame loop publishes
+    // so a fresh grab continues from where the text currently is
+    let drag = Rc::new(Cell::new((0.0f32, 0.0f32, 0.0f32)));
+    let anchor = Rc::new(Cell::new((0.0f32, 0.0f32, 0.0f32, 0.0f32)));
+    let offset_pub = Rc::new(Cell::new((0.0f32, 0.0f32)));
+
+    // mouse move: drag the text if pressed, else perturb the stream
     {
         let m = mouse.clone();
+        let dr = drag.clone();
+        let an = anchor.clone();
         let (w, h) = (css_w as f32, css_h as f32);
         let cb = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |e: web_sys::MouseEvent| {
-            let x = (e.client_x() as f32 / w) * 2.0 - 1.0;
-            let y = -((e.client_y() as f32 / h) * 2.0 - 1.0);
-            m.set((x, y, 1.0));
+            if dr.get().2 > 0.5 {
+                let (pu, pv, bu, bv) = an.get();
+                let du = (bu + (e.client_x() as f32 / w - pu)).clamp(-0.6, 0.6);
+                let dv = (bv + (e.client_y() as f32 / h - pv)).clamp(-0.6, 0.6);
+                dr.set((du, dv, 1.0));
+            } else {
+                let x = (e.client_x() as f32 / w) * 2.0 - 1.0;
+                let y = -((e.client_y() as f32 / h) * 2.0 - 1.0);
+                m.set((x, y, 1.0));
+            }
         });
         window
             .add_event_listener_with_callback("mousemove", cb.as_ref().unchecked_ref())
+            .unwrap();
+        cb.forget();
+    }
+    {
+        let dr = drag.clone();
+        let an = anchor.clone();
+        let op = offset_pub.clone();
+        let (w, h) = (css_w as f32, css_h as f32);
+        let cb = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |e: web_sys::MouseEvent| {
+            let (bu, bv) = op.get();
+            an.set((e.client_x() as f32 / w, e.client_y() as f32 / h, bu, bv));
+            dr.set((bu, bv, 1.0));
+        });
+        canvas
+            .add_event_listener_with_callback("mousedown", cb.as_ref().unchecked_ref())
+            .unwrap();
+        cb.forget();
+    }
+    {
+        let dr = drag.clone();
+        let cb = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |_e: web_sys::MouseEvent| {
+            let (du, dv, _) = dr.get();
+            dr.set((du, dv, 0.0));
+        });
+        window
+            .add_event_listener_with_callback("mouseup", cb.as_ref().unchecked_ref())
             .unwrap();
         cb.forget();
     }
@@ -812,32 +862,53 @@ async fn run() {
             .unwrap();
         cb.forget();
     }
-    // touch: a finger dragged through the stream perturbs it like the mouse
+    // touch: press-drag throws the text (its moving obstacle stirs the field)
     {
-        let m = mouse.clone();
+        let dr = drag.clone();
+        let an = anchor.clone();
+        let op = offset_pub.clone();
         let (w, h) = (css_w as f32, css_h as f32);
-        let set = Closure::<dyn FnMut(web_sys::TouchEvent)>::new(move |e: web_sys::TouchEvent| {
+        let cb = Closure::<dyn FnMut(web_sys::TouchEvent)>::new(move |e: web_sys::TouchEvent| {
             if let Some(t) = e.touches().get(0) {
-                let x = (t.client_x() as f32 / w) * 2.0 - 1.0;
-                let y = -((t.client_y() as f32 / h) * 2.0 - 1.0);
-                m.set((x, y, 1.0));
+                let (bu, bv) = op.get();
+                an.set((t.client_x() as f32 / w, t.client_y() as f32 / h, bu, bv));
+                dr.set((bu, bv, 1.0));
             }
         });
-        let r = set.as_ref().unchecked_ref();
-        window.add_event_listener_with_callback("touchstart", r).unwrap();
-        window.add_event_listener_with_callback("touchmove", r).unwrap();
-        set.forget();
+        canvas
+            .add_event_listener_with_callback("touchstart", cb.as_ref().unchecked_ref())
+            .unwrap();
+        cb.forget();
     }
     {
-        let m = mouse.clone();
-        let clear = Closure::<dyn FnMut(web_sys::TouchEvent)>::new(move |_e: web_sys::TouchEvent| {
-            let (x, y, _) = m.get();
-            m.set((x, y, 0.0));
+        let dr = drag.clone();
+        let an = anchor.clone();
+        let (w, h) = (css_w as f32, css_h as f32);
+        let cb = Closure::<dyn FnMut(web_sys::TouchEvent)>::new(move |e: web_sys::TouchEvent| {
+            if dr.get().2 > 0.5 {
+                if let Some(t) = e.touches().get(0) {
+                    let (pu, pv, bu, bv) = an.get();
+                    let du = (bu + (t.client_x() as f32 / w - pu)).clamp(-0.6, 0.6);
+                    let dv = (bv + (t.client_y() as f32 / h - pv)).clamp(-0.6, 0.6);
+                    dr.set((du, dv, 1.0));
+                }
+            }
         });
-        let r = clear.as_ref().unchecked_ref();
+        window
+            .add_event_listener_with_callback("touchmove", cb.as_ref().unchecked_ref())
+            .unwrap();
+        cb.forget();
+    }
+    {
+        let dr = drag.clone();
+        let cb = Closure::<dyn FnMut(web_sys::TouchEvent)>::new(move |_e: web_sys::TouchEvent| {
+            let (du, dv, _) = dr.get();
+            dr.set((du, dv, 0.0));
+        });
+        let r = cb.as_ref().unchecked_ref();
         window.add_event_listener_with_callback("touchend", r).unwrap();
         window.add_event_listener_with_callback("touchcancel", r).unwrap();
-        clear.forget();
+        cb.forget();
     }
 
     // ---- wgpu ----
@@ -1278,6 +1349,8 @@ async fn run() {
     let mut frames: u32 = 0;
     let mut acc: f64 = 0.0;
     let mut sim_t: f64 = 0.0; // intro clock on capped sim-time (stays synced to the fill at any fps)
+    let mut tx_off = (0.0f32, 0.0f32); // text drag offset (field-UV)
+    let mut tx_vel = (0.0f32, 0.0f32);
     let mut phrase_idx: usize = 0;
     let mut phase: u8 = 0; // 0 hold, 1 exit (push back + fade), 2 enter (forward + fade in)
     let mut phase_start = t0;
@@ -1287,6 +1360,8 @@ async fn run() {
     let g = f.clone();
     let win = window.clone();
     let mouse_r = mouse.clone();
+    let drag_r = drag.clone();
+    let offpub_r = offset_pub.clone();
     *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
         let now = perf.now();
         let dt_ms = now - last;
@@ -1373,6 +1448,24 @@ async fn run() {
         phrase_z = (1.0 - 0.16 * phrase_tt) as f32;
         }
 
+        // text drag -> spring-back throw (offset in field-UV)
+        let (tdu, tdv, dragging) = drag_r.get();
+        if dragging > 0.5 {
+            let ivx = (tdu - tx_off.0) / dt.max(0.001);
+            let ivy = (tdv - tx_off.1) / dt.max(0.001);
+            tx_vel = ((tx_vel.0 * 0.55 + ivx * 0.45).clamp(-8.0, 8.0),
+                      (tx_vel.1 * 0.55 + ivy * 0.45).clamp(-8.0, 8.0));
+            tx_off = (tdu, tdv);
+        } else {
+            let k = 100.0f32;
+            let c = 7.0f32;
+            tx_vel = (tx_vel.0 + (-k * tx_off.0 - c * tx_vel.0) * dt,
+                      tx_vel.1 + (-k * tx_off.1 - c * tx_vel.1) * dt);
+            tx_off = ((tx_off.0 + tx_vel.0 * dt).clamp(-0.85, 0.85),
+                      (tx_off.1 + tx_vel.1 * dt).clamp(-0.85, 0.85));
+        }
+        offpub_r.set(tx_off);
+
         let (mx, my, mact) = mouse_r.get();
         let params = Params {
             res: [width as f32, height as f32],
@@ -1382,7 +1475,7 @@ async fn run() {
             count: particle_count,
             stream: dial("stream", bk("stream", 0.28)),
             push: 2.5,
-            mousef: dial("perturb", bk("perturb", 0.5)) * mact,
+            mousef: if dragging > 0.5 { 0.0 } else { dial("perturb", bk("perturb", 0.5)) * mact },
             dpr: dpr as f32,
             rot_speed: dial("rot_speed", bk("rot_speed", 0.27)),
             rot_depth: dial("rot_depth", bk("rot_depth", 3.2)),
@@ -1401,6 +1494,10 @@ async fn run() {
             part_fade,
             name_op,
             intro_glow,
+            text_du: tx_off.0,
+            text_dv: tx_off.1,
+            pad0: 0.0,
+            pad1: 0.0,
         };
         queue.write_buffer(&param_buf, 0, bytemuck::bytes_of(&params));
 
