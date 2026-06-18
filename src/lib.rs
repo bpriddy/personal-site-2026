@@ -1318,7 +1318,7 @@ async fn run() {
         let bg_fade = ss(0.0, 0.45, it);
         let intro_reveal = 1.3 - 2.9 * ss(0.2, 1.9, it); // sweep sooner + longer; +1.3 hidden -> -1.6 shown
         let name_op = ss(1.95, 2.5, it);                 // name resolves only AFTER the sweep finishes
-        let bloom_fade = 0.15 + 0.85 * ss(0.2, 2.9, it); // bloom starts low, rises slowly through the intro
+        let bloom_fade = 0.05 + 0.95 * ss(1.2, 3.3, it); // bloom held subtle through the sweep, blooms up at the end
         const INTRO_DUR: f32 = 3.0;
         let phrase_op: f32;
         let phrase_w: f32;
