@@ -50,7 +50,7 @@ struct Params {
     phrase_z: f32,  // phrase visual z-scale (1=resting, <1=pushed back)
     phrase_cy: f32, // phrase block center (uv.y) — the z-scale pivot
     bg_fade: f32,
-    intro_reveal: f32,
+    intro_flow: f32,
     name_op: f32,
     intro_glow: f32,
 }
@@ -65,7 +65,7 @@ struct Params {
   rot_depth: f32, turb: f32, eddy: f32, sparkg: f32,
   bg_freq: f32, text_sat: f32, bg_speed: f32, mobile: f32,
   phrase_w: f32, phrase_op: f32, phrase_z: f32, phrase_cy: f32,
-  bg_fade: f32, intro_reveal: f32, name_op: f32, intro_glow: f32,
+  bg_fade: f32, intro_flow: f32, name_op: f32, intro_glow: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -106,7 +106,10 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
             + 0.09 * sin(P.time * 0.047 + 1.7);
   let mdir = vec2<f32>(cos(m_ang), sin(m_ang));
   let lane = 0.5 + 0.5 * sin(pt.pos.y * 7.0 + h1 * 6.2832);
-  let goal = mdir * (P.stream * (0.55 + 0.9 * lane));
+  let goal_n = mdir * (P.stream * (0.55 + 0.9 * lane));
+  // intro: a true downward inflow - particles seeded above the top fall in
+  // to fill the screen, then ease into the normal flow as intro_flow -> 0
+  let goal = mix(goal_n, vec2<f32>(0.0, -1.0 - 0.7 * lane), P.intro_flow);
   var v = pt.vel + (goal - pt.vel) * min(2.6 * P.dt, 1.0);
 
   // three octaves of drifting pseudo-curl: broad swells, mid eddy-chop, shimmer
@@ -172,11 +175,6 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
     v += (md / max(sqrt(mr2), 0.02)) * P.mousef * exp(-mr2 * 26.0) * P.dt;
   }
 
-  // intro: bias the stream gently downward so the field reads as pouring in
-  // from the top; fades out as the reveal line passes mid-screen
-  let introf = clamp(P.intro_reveal + 0.6, 0.0, 1.0);
-  v += vec2<f32>(0.0, -1.0) * introf * P.stream * 1.1 * P.dt;
-
   // speed cap
   let sp = length(v);
   if (sp > 1.4) { v *= 1.4 / sp; }
@@ -186,13 +184,18 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
   // respawn: recycle only particles that exited DOWNSTREAM (or wandered far),
   // and re-enter them on a spawn line beyond the viewport's corner radius
   // (sqrt(2)≈1.41) so the origin edge is never visible at any heading/aspect
-  let fdir = vec2<f32>(cos(th), sin(th));
+  // intro: flow heading points straight down (re-enter at the top) and the
+  // cull radius widens so particles seeded above the top survive (no normalize:
+  // a normalized mix of opposite dirs could hit zero - worst case a stray
+  // particle respawns mid-screen, invisible among 500k)
+  let fdir = mix(vec2<f32>(cos(th), sin(th)), vec2<f32>(0.0, -1.0), P.intro_flow);
+  let cull = 2.6 + P.intro_flow * 2.2;
   let outside = abs(pos.x) > 1.02 || abs(pos.y) > 1.02;
-  if ((outside && dot(pos, fdir) > 1.05) || length(pos) > 2.6) {
+  if ((outside && dot(pos, fdir) > 1.05) || length(pos) > cull) {
     let perp = vec2<f32>(-fdir.y, fdir.x);
     let eta = (rand01(i + u32(P.time * 16.0) * 2659u) * 2.0 - 1.0) * 1.65;
     pos = -fdir * 1.55 + perp * eta;
-    v = fdir * P.stream;
+    v = fdir * P.stream * (1.0 + P.intro_flow * 4.0);
   }
 
   pt.pos = pos;
@@ -211,7 +214,7 @@ struct Params {
   rot_depth: f32, turb: f32, eddy: f32, sparkg: f32,
   bg_freq: f32, text_sat: f32, bg_speed: f32, mobile: f32,
   phrase_w: f32, phrase_op: f32, phrase_z: f32, phrase_cy: f32,
-  bg_fade: f32, intro_reveal: f32, name_op: f32, intro_glow: f32,
+  bg_fade: f32, intro_flow: f32, name_op: f32, intro_glow: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -342,8 +345,7 @@ fn vs_p(
   o.pos = vec4<f32>(ppos + off, 0.0, 1.0);
   // intro: reveal the field top-to-bottom (particles above the descending
   // line are lit, soft leading edge); rests fully revealed after the intro
-  let reveal = smoothstep(P.intro_reveal - 0.45, P.intro_reveal, ppos.y);
-  o.col = col * lum * 0.10 * reveal;
+  o.col = col * lum * 0.10;
   o.quv = corners[vi];
   return o;
 }
@@ -424,7 +426,7 @@ struct Params {
   rot_depth: f32, turb: f32, eddy: f32, sparkg: f32,
   bg_freq: f32, text_sat: f32, bg_speed: f32, mobile: f32,
   phrase_w: f32, phrase_op: f32, phrase_z: f32, phrase_cy: f32,
-  bg_fade: f32, intro_reveal: f32, name_op: f32, intro_glow: f32,
+  bg_fade: f32, intro_flow: f32, name_op: f32, intro_glow: f32,
 };
 @group(0) @binding(4) var<uniform> P: Params;
 
@@ -908,10 +910,10 @@ async fn run() {
     let mut rng = 0x9e3779b9u32;
     let mut init: Vec<f32> = Vec::with_capacity(particle_count as usize * 4);
     for _ in 0..particle_count {
-        init.push(rnd(&mut rng) * 2.2 - 1.1);
-        init.push(rnd(&mut rng) * 2.0 - 1.0);
-        init.push(0.25 + rnd(&mut rng) * 0.2);
-        init.push(0.0);
+        init.push(rnd(&mut rng) * 2.2 - 1.1);          // pos.x in [-1.1, 1.1]
+        init.push(1.05 + rnd(&mut rng) * 2.0);         // pos.y in [1.05, 3.05] - above the top
+        init.push((rnd(&mut rng) - 0.5) * 0.2);        // vel.x small lateral spread
+        init.push(-0.9 - rnd(&mut rng) * 0.5);         // vel.y downward [-1.4, -0.9]
     }
     let particle_buf = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("particles"),
@@ -1281,6 +1283,7 @@ async fn run() {
     let mut last = t0;
     let mut frames: u32 = 0;
     let mut acc: f64 = 0.0;
+    let mut sim_t: f64 = 0.0; // intro clock on capped sim-time (stays synced to the fill at any fps)
     let mut phrase_idx: usize = 0;
     let mut phase: u8 = 0; // 0 hold, 1 exit (push back + fade), 2 enter (forward + fade in)
     let mut phase_start = t0;
@@ -1295,6 +1298,7 @@ async fn run() {
         let dt_ms = now - last;
         last = now;
         let dt = (dt_ms / 1000.0).min(0.033) as f32;
+        sim_t += dt as f64;
         frames += 1;
         acc += dt_ms;
         if acc >= 500.0 {
@@ -1310,14 +1314,14 @@ async fn run() {
         // phrase transition: hold → exit (fade + push back) → [swap at the
         // invisible point] → enter (fade in + push forward). phrase_tt is 0
         // when resting, 1 when fully gone/back.
-        let it = ((now - t0) / 1000.0) as f32;
+        let it = sim_t as f32;
         let ss = |a: f32, b: f32, x: f32| -> f32 {
             let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
             t * t * (3.0 - 2.0 * t)
         };
         let bg_fade = ss(0.0, 0.45, it);
-        let intro_reveal = 1.3 - 2.9 * ss(0.2, 1.9, it); // sweep sooner + longer; +1.3 hidden -> -1.6 shown
-        let name_op = ss(1.95, 2.5, it);                 // name resolves only AFTER the sweep finishes
+        let intro_flow = 1.0 - ss(1.3, 2.3, it);         // 1 = forced downward inflow at t=0, eases to normal flow
+        let name_op = ss(2.0, 2.6, it);                  // name resolves after the field has filled
         let intro_glow = 0.05 + 0.95 * ss(1.2, 3.3, it); // sparkle + bloom kept low through the sweep, ramp up after
         const INTRO_DUR: f32 = 3.0;
         let phrase_op: f32;
@@ -1400,7 +1404,7 @@ async fn run() {
             phrase_z,
             phrase_cy,
             bg_fade,
-            intro_reveal,
+            intro_flow,
             name_op,
             intro_glow,
         };
