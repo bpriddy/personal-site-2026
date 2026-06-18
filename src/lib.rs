@@ -52,7 +52,7 @@ struct Params {
     bg_fade: f32,
     intro_reveal: f32,
     name_op: f32,
-    name_soft: f32,
+    bloom_fade: f32,
 }
 
 // Compute: integrate particles against the obstacle field (channel R).
@@ -65,7 +65,7 @@ struct Params {
   rot_depth: f32, turb: f32, eddy: f32, sparkg: f32,
   bg_freq: f32, text_sat: f32, bg_speed: f32, mobile: f32,
   phrase_w: f32, phrase_op: f32, phrase_z: f32, phrase_cy: f32,
-  bg_fade: f32, intro_reveal: f32, name_op: f32, name_soft: f32,
+  bg_fade: f32, intro_reveal: f32, name_op: f32, bloom_fade: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -84,7 +84,7 @@ fn fieldAt(p: vec2<f32>) -> f32 {
   let s = textureSampleLevel(field, fsamp, uv, 0.0);
   // name (R) is a permanent rock; the phrase (B) fades its deflection in/out
   // as it pushes forward/back in z — a receding rock stops parting the stream
-  return max(s.r, s.b * P.phrase_w);
+  return max(s.r * P.name_op, s.b * P.phrase_w);
 }
 
 @compute @workgroup_size(64)
@@ -211,7 +211,7 @@ struct Params {
   rot_depth: f32, turb: f32, eddy: f32, sparkg: f32,
   bg_freq: f32, text_sat: f32, bg_speed: f32, mobile: f32,
   phrase_w: f32, phrase_op: f32, phrase_z: f32, phrase_cy: f32,
-  bg_fade: f32, intro_reveal: f32, name_op: f32, name_soft: f32,
+  bg_fade: f32, intro_reveal: f32, name_op: f32, bloom_fade: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -424,7 +424,7 @@ struct Params {
   rot_depth: f32, turb: f32, eddy: f32, sparkg: f32,
   bg_freq: f32, text_sat: f32, bg_speed: f32, mobile: f32,
   phrase_w: f32, phrase_op: f32, phrase_z: f32, phrase_cy: f32,
-  bg_fade: f32, intro_reveal: f32, name_op: f32, name_soft: f32,
+  bg_fade: f32, intro_reveal: f32, name_op: f32, bloom_fade: f32,
 };
 @group(0) @binding(4) var<uniform> P: Params;
 
@@ -477,14 +477,11 @@ fn fs_comp(in: VOut) -> @location(0) vec4<f32> {
   let scene = textureSampleLevel(src, samp, in.uv, 0.0).rgb;
   let glow = textureSampleLevel(bloom, samp, in.uv, 0.0).rgb;
   // full, untouched bloom everywhere — the text is drawn ON TOP, occluding it
-  var c = aces((scene + glow * 1.25) * 0.92);
+  var c = aces((scene + glow * 1.25 * P.bloom_fade) * 0.92);
 
   // NAME (G) — permanent, screen-locked, full opacity
   // NAME (G) — resolves soft->crisp and fades in during the intro, then locked
-  let name_g = textureSampleLevel(fieldtex, samp, in.uv, 0.0).g;
-  let name_lo = mix(0.42, 0.30, P.name_soft);
-  let name_hi = mix(0.55, 0.74, P.name_soft);
-  let name_c = smoothstep(name_lo, name_hi, name_g) * P.name_op;
+  let name_c = smoothstep(0.42, 0.55, textureSampleLevel(fieldtex, samp, in.uv, 0.0).g) * P.name_op;
   // PHRASE (A) — fades + pushes in z: scale the MASK sampling around the
   // phrase center (z<1 expands the sample → glyphs shrink → pushed back),
   // and multiply coverage by opacity. A fading phrase reveals the bloom again.
@@ -1318,11 +1315,11 @@ async fn run() {
             let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
             t * t * (3.0 - 2.0 * t)
         };
-        let bg_fade = ss(0.0, 0.6, it);
-        let intro_reveal = 1.3 - 2.9 * ss(0.4, 1.5, it); // +1.3 hidden -> -1.6 all shown
-        let name_op = ss(1.1, 1.9, it);
-        let name_soft = 1.0 - ss(1.1, 2.0, it);
-        const INTRO_DUR: f32 = 2.6;
+        let bg_fade = ss(0.0, 0.45, it);
+        let intro_reveal = 1.3 - 2.9 * ss(0.2, 1.9, it); // sweep sooner + longer; +1.3 hidden -> -1.6 shown
+        let name_op = ss(1.95, 2.5, it);                 // name resolves only AFTER the sweep finishes
+        let bloom_fade = 0.15 + 0.85 * ss(0.2, 2.9, it); // bloom starts low, rises slowly through the intro
+        const INTRO_DUR: f32 = 3.0;
         let phrase_op: f32;
         let phrase_w: f32;
         let phrase_z: f32;
@@ -1330,7 +1327,7 @@ async fn run() {
             // hold the cycle frozen; the first phrase fades in last
             phase = 0;
             phase_start = now;
-            let pop = ss(1.7, INTRO_DUR, it);
+            let pop = ss(2.45, INTRO_DUR, it);
             phrase_op = pop;
             phrase_w = pop;
             phrase_z = 1.0;
@@ -1405,7 +1402,7 @@ async fn run() {
             bg_fade,
             intro_reveal,
             name_op,
-            name_soft,
+            bloom_fade,
         };
         queue.write_buffer(&param_buf, 0, bytemuck::bytes_of(&params));
 
