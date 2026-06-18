@@ -52,7 +52,7 @@ struct Params {
     bg_fade: f32,
     intro_reveal: f32,
     name_op: f32,
-    bloom_fade: f32,
+    intro_glow: f32,
 }
 
 // Compute: integrate particles against the obstacle field (channel R).
@@ -65,7 +65,7 @@ struct Params {
   rot_depth: f32, turb: f32, eddy: f32, sparkg: f32,
   bg_freq: f32, text_sat: f32, bg_speed: f32, mobile: f32,
   phrase_w: f32, phrase_op: f32, phrase_z: f32, phrase_cy: f32,
-  bg_fade: f32, intro_reveal: f32, name_op: f32, bloom_fade: f32,
+  bg_fade: f32, intro_reveal: f32, name_op: f32, intro_glow: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -211,7 +211,7 @@ struct Params {
   rot_depth: f32, turb: f32, eddy: f32, sparkg: f32,
   bg_freq: f32, text_sat: f32, bg_speed: f32, mobile: f32,
   phrase_w: f32, phrase_op: f32, phrase_z: f32, phrase_cy: f32,
-  bg_fade: f32, intro_reveal: f32, name_op: f32, bloom_fade: f32,
+  bg_fade: f32, intro_reveal: f32, name_op: f32, intro_glow: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -325,7 +325,7 @@ fn vs_p(
   let tw = pow(max(sin(P.time * (2.0 + h1 * 7.0) + h2 * 6.2832), 0.0), 26.0);
   let stag = 1.0 - clamp(speed / max(P.stream, 0.01), 0.0, 1.0);
   let spark = min(tw * (0.05 + 2.4 * stag * stag) * P.sparkg, 1.4)
-            * (1.0 - P.mobile * 0.5);
+            * (1.0 - P.mobile * 0.5) * P.intro_glow;
   col = mix(col, vec3<f32>(1.45, 1.22, 0.78), clamp(spark, 0.0, 0.9));
   lum += spark * 3.2;
 
@@ -424,7 +424,7 @@ struct Params {
   rot_depth: f32, turb: f32, eddy: f32, sparkg: f32,
   bg_freq: f32, text_sat: f32, bg_speed: f32, mobile: f32,
   phrase_w: f32, phrase_op: f32, phrase_z: f32, phrase_cy: f32,
-  bg_fade: f32, intro_reveal: f32, name_op: f32, bloom_fade: f32,
+  bg_fade: f32, intro_reveal: f32, name_op: f32, intro_glow: f32,
 };
 @group(0) @binding(4) var<uniform> P: Params;
 
@@ -477,7 +477,7 @@ fn fs_comp(in: VOut) -> @location(0) vec4<f32> {
   let scene = textureSampleLevel(src, samp, in.uv, 0.0).rgb;
   let glow = textureSampleLevel(bloom, samp, in.uv, 0.0).rgb;
   // full, untouched bloom everywhere — the text is drawn ON TOP, occluding it
-  var c = aces((scene + glow * 1.25 * P.bloom_fade) * 0.92);
+  var c = aces((scene + glow * 1.25 * P.intro_glow) * 0.92);
 
   // NAME (G) — permanent, screen-locked, full opacity
   // NAME (G) — resolves soft->crisp and fades in during the intro, then locked
@@ -1318,7 +1318,7 @@ async fn run() {
         let bg_fade = ss(0.0, 0.45, it);
         let intro_reveal = 1.3 - 2.9 * ss(0.2, 1.9, it); // sweep sooner + longer; +1.3 hidden -> -1.6 shown
         let name_op = ss(1.95, 2.5, it);                 // name resolves only AFTER the sweep finishes
-        let bloom_fade = 0.05 + 0.95 * ss(1.2, 3.3, it); // bloom held subtle through the sweep, blooms up at the end
+        let intro_glow = 0.05 + 0.95 * ss(1.2, 3.3, it); // sparkle + bloom kept low through the sweep, ramp up after
         const INTRO_DUR: f32 = 3.0;
         let phrase_op: f32;
         let phrase_w: f32;
@@ -1402,7 +1402,7 @@ async fn run() {
             bg_fade,
             intro_reveal,
             name_op,
-            bloom_fade,
+            intro_glow,
         };
         queue.write_buffer(&param_buf, 0, bytemuck::bytes_of(&params));
 
