@@ -107,9 +107,9 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
   let mdir = vec2<f32>(cos(m_ang), sin(m_ang));
   let lane = 0.5 + 0.5 * sin(pt.pos.y * 7.0 + h1 * 6.2832);
   let goal_n = mdir * (P.stream * (0.55 + 0.9 * lane));
-  // intro: a true downward inflow - particles seeded above the top fall in
-  // to fill the screen, then ease into the normal flow as intro_flow -> 0
-  let goal = mix(goal_n, vec2<f32>(0.0, -1.0 - 0.7 * lane), P.intro_flow);
+  // intro: the SAME core flow direction the whole time, just sped up to fill
+  // quickly and easing to the normal cruise - no redirect, one continuous motion
+  let goal = goal_n * (1.0 + 3.5 * P.intro_flow);
   var v = pt.vel + (goal - pt.vel) * min(2.6 * P.dt, 1.0);
 
   // three octaves of drifting pseudo-curl: broad swells, mid eddy-chop, shimmer
@@ -188,14 +188,14 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
   // cull radius widens so particles seeded above the top survive (no normalize:
   // a normalized mix of opposite dirs could hit zero - worst case a stray
   // particle respawns mid-screen, invisible among 500k)
-  let fdir = mix(vec2<f32>(cos(th), sin(th)), vec2<f32>(0.0, -1.0), P.intro_flow);
+  let fdir = vec2<f32>(cos(th), sin(th));
   let cull = 2.6 + P.intro_flow * 2.2;
   let outside = abs(pos.x) > 1.02 || abs(pos.y) > 1.02;
   if ((outside && dot(pos, fdir) > 1.05) || length(pos) > cull) {
     let perp = vec2<f32>(-fdir.y, fdir.x);
     let eta = (rand01(i + u32(P.time * 16.0) * 2659u) * 2.0 - 1.0) * 1.65;
     pos = -fdir * 1.55 + perp * eta;
-    v = fdir * P.stream * (1.0 + P.intro_flow * 4.0);
+    v = fdir * P.stream * (1.0 + 3.5 * P.intro_flow);
   }
 
   pt.pos = pos;
@@ -909,11 +909,19 @@ async fn run() {
     // ---- buffers & textures ----
     let mut rng = 0x9e3779b9u32;
     let mut init: Vec<f32> = Vec::with_capacity(particle_count as usize * 4);
+    // intro: seed UPSTREAM of the core flow's t=0 heading so the screen starts
+    // empty and the (boosted) normal flow carries them in from that edge
+    let th0 = bk("rot_depth", 3.2) as f64 * 0.4 * (2.1f64).sin();
+    let (fdx, fdy) = (th0.cos() as f32, th0.sin() as f32);
+    let (perpx, perpy) = (-fdy, fdx);
+    let stream0 = bk("stream", 0.28);
     for _ in 0..particle_count {
-        init.push(rnd(&mut rng) * 2.2 - 1.1);          // pos.x in [-1.1, 1.1]
-        init.push(1.05 + rnd(&mut rng) * 2.0);         // pos.y in [1.05, 3.05] - above the top
-        init.push((rnd(&mut rng) - 0.5) * 0.2);        // vel.x small lateral spread
-        init.push(-0.9 - rnd(&mut rng) * 0.5);         // vel.y downward [-1.4, -0.9]
+        let depth = 1.55 + rnd(&mut rng) * 1.7;        // beyond the entry line, spread for a gradual pour
+        let lat = (rnd(&mut rng) * 2.0 - 1.0) * 1.65;  // perpendicular spread (matches respawn eta)
+        init.push(-fdx * depth + perpx * lat);         // pos.x (upstream band)
+        init.push(-fdy * depth + perpy * lat);         // pos.y
+        init.push(fdx * stream0 * 3.0);                // vel.x - already moving along the flow
+        init.push(fdy * stream0 * 3.0);                // vel.y
     }
     let particle_buf = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("particles"),
@@ -1319,11 +1327,11 @@ async fn run() {
             let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
             t * t * (3.0 - 2.0 * t)
         };
-        let bg_fade = ss(0.0, 0.45, it);
-        let intro_flow = 1.0 - ss(1.3, 2.3, it);         // 1 = forced downward inflow at t=0, eases to normal flow
-        let name_op = ss(2.0, 2.6, it);                  // name resolves after the field has filled
+        let bg_fade = ss(0.0, 2.2, it);                  // fades in over the same span the stream flows in
+        let intro_flow = 1.0 - ss(1.4, 2.4, it);         // downward nudge on the core flow, eases to 0 (one continuous motion)
+        let name_op = ss(2.4, 2.9, it);                  // name resolves after the field has filled
         let intro_glow = 0.05 + 0.95 * ss(1.2, 3.3, it); // sparkle + bloom kept low through the sweep, ramp up after
-        const INTRO_DUR: f32 = 3.0;
+        const INTRO_DUR: f32 = 3.3;
         let phrase_op: f32;
         let phrase_w: f32;
         let phrase_z: f32;
@@ -1331,7 +1339,7 @@ async fn run() {
             // hold the cycle frozen; the first phrase fades in last
             phase = 0;
             phase_start = now;
-            let pop = ss(2.45, INTRO_DUR, it);
+            let pop = ss(2.8, INTRO_DUR, it);
             phrase_op = pop;
             phrase_w = pop;
             phrase_z = 1.0;
