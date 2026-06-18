@@ -100,7 +100,8 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
   // sines), so the flow's ORIGIN itself rotates around the screen; the dials
   // control how fast (rot_speed) and how far (rot_depth) it swings
   let th = P.rot_depth * (0.6 * sin(P.time * P.rot_speed)
-                        + 0.4 * sin(P.time * P.rot_speed * 0.371 + 2.1));
+                        + 0.4 * sin(P.time * P.rot_speed * 0.371 + 2.1))
+         - 1.9 * P.intro_flow; // intro: heading starts down-right (inflow from the top-left), eases to natural
   // micro-wobble layered on top: the current still breathes locally
   let m_ang = th + 0.16 * sin(P.time * 0.11 + pt.pos.y * 0.6)
             + 0.09 * sin(P.time * 0.047 + 1.7);
@@ -911,7 +912,7 @@ async fn run() {
     let mut init: Vec<f32> = Vec::with_capacity(particle_count as usize * 4);
     // intro: seed UPSTREAM of the core flow's t=0 heading so the screen starts
     // empty and the (boosted) normal flow carries them in from that edge
-    let th0 = bk("rot_depth", 3.2) as f64 * 0.4 * (2.1f64).sin();
+    let th0 = bk("rot_depth", 3.2) as f64 * 0.4 * (2.1f64).sin() - 1.9; // top-left origin (matches intro heading offset)
     let (fdx, fdy) = (th0.cos() as f32, th0.sin() as f32);
     let (perpx, perpy) = (-fdy, fdx);
     let stream0 = bk("stream", 0.28);
