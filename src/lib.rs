@@ -57,6 +57,10 @@ struct Params {
     text_dv: f32,
     text_vx: f32, // text travel velocity (NDC/s) - plows the field
     text_vy: f32,
+    menu_du: f32, // MENU conveyor offset (field-UV)
+    menu_dv: f32,
+    pad0: f32,
+    pad1: f32,
 }
 
 // Compute: integrate particles against the obstacle field (channel R).
@@ -71,10 +75,12 @@ struct Params {
   phrase_w: f32, phrase_op: f32, phrase_z: f32, phrase_cy: f32,
   bg_fade: f32, part_fade: f32, name_op: f32, intro_glow: f32,
   text_du: f32, text_dv: f32, text_vx: f32, text_vy: f32,
+  menu_du: f32, menu_dv: f32, pad0: f32, pad1: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
 @group(0) @binding(2) var fsamp: sampler;
+@group(0) @binding(3) var menu: texture_2d<f32>;
 @group(1) @binding(0) var<storage, read_write> parts: array<Particle>;
 
 fn pcg(v: u32) -> u32 {
@@ -87,9 +93,10 @@ fn rand01(v: u32) -> f32 { return f32(pcg(v)) / 4294967295.0; }
 fn fieldAt(p: vec2<f32>) -> f32 {
   let uv = vec2<f32>(p.x * 0.5 + 0.5 - P.text_du, 0.5 - p.y * 0.5 - P.text_dv);
   let s = textureSampleLevel(field, fsamp, uv, 0.0);
-  // name (R) is a permanent rock; the phrase (B) fades its deflection in/out
-  // as it pushes forward/back in z — a receding rock stops parting the stream
-  return max(s.r * P.name_op, s.b * P.phrase_w);
+  let muv = vec2<f32>(p.x * 0.5 + 0.5 - P.menu_du, 0.5 - p.y * 0.5 - P.menu_dv);
+  let mr = textureSampleLevel(menu, fsamp, muv, 0.0).r;
+  // name (R) permanent; phrase (B) fades with z; MENU (mr) rides the conveyor
+  return max(max(s.r * P.name_op, s.b * P.phrase_w), mr);
 }
 
 @compute @workgroup_size(64)
@@ -216,6 +223,7 @@ struct Params {
   phrase_w: f32, phrase_op: f32, phrase_z: f32, phrase_cy: f32,
   bg_fade: f32, part_fade: f32, name_op: f32, intro_glow: f32,
   text_du: f32, text_dv: f32, text_vx: f32, text_vy: f32,
+  menu_du: f32, menu_dv: f32, pad0: f32, pad1: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -429,8 +437,10 @@ struct Params {
   phrase_w: f32, phrase_op: f32, phrase_z: f32, phrase_cy: f32,
   bg_fade: f32, part_fade: f32, name_op: f32, intro_glow: f32,
   text_du: f32, text_dv: f32, text_vx: f32, text_vy: f32,
+  menu_du: f32, menu_dv: f32, pad0: f32, pad1: f32,
 };
 @group(0) @binding(4) var<uniform> P: Params;
+@group(0) @binding(5) var menutex: texture_2d<f32>;
 
 // the TEXT's own relief — sampled in continuous screen space so one surface
 // spans the whole text block; rendered here, ABOVE scene + bloom
@@ -494,7 +504,8 @@ fn fs_comp(in: VOut) -> @location(0) vec4<f32> {
   let phrase_c = smoothstep(0.42, 0.55,
     textureSampleLevel(fieldtex, samp, puv, 0.0).a) * P.phrase_op;
 
-  let cover = max(name_c, phrase_c);
+  let menu_c = smoothstep(0.42, 0.55, textureSampleLevel(menutex, samp, in.uv - vec2<f32>(P.menu_du, P.menu_dv), 0.0).g);
+  let cover = max(max(name_c, phrase_c), menu_c);
   if (cover > 0.001) {
     c = mix(c, aces(reliefCol(in.uv) * 0.92), cover);
   }
@@ -1096,6 +1107,25 @@ async fn run() {
         &pack_rgba(&name_blur, &name_sharp, &pb0, &ps0),
     );
 
+    // MENU: a second static obstacle field, summoned by the drag conveyor
+    let menu_entries: Vec<(String, f64, f64)> =
+        vec![("MENU".to_string(), field_w as f64 * 0.13, field_h as f64 * 0.5)];
+    let (menu_blur, menu_sharp) = raster_layer(&fctx, field_w, field_h, &menu_entries);
+    let menu_zero = vec![0u8; menu_blur.len()];
+    let menu_tex = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("menu"),
+        size: wgpu::Extent3d { width: field_w, height: field_h, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let menu_view = menu_tex.create_view(&wgpu::TextureViewDescriptor::default());
+    upload_field(&queue, &menu_tex, field_w, field_h,
+        &pack_rgba(&menu_blur, &menu_sharp, &menu_zero, &menu_zero));
+
     // ---- bind group layouts ----
     let common_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("common"),
@@ -1126,6 +1156,16 @@ async fn run() {
                 binding: 2,
                 visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 3,
+                visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
                 count: None,
             },
         ],
@@ -1190,6 +1230,7 @@ async fn run() {
                 },
                 count: None,
             },
+            tex_entry(5),
         ],
     });
 
@@ -1200,6 +1241,7 @@ async fn run() {
             wgpu::BindGroupEntry { binding: 0, resource: param_buf.as_entire_binding() },
             wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&field_view) },
             wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&lin_samp) },
+            wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&menu_view) },
         ],
     });
     let parts_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1234,6 +1276,7 @@ async fn run() {
             wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&bloom_b_view) },
             wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&field_view) },
             wgpu::BindGroupEntry { binding: 4, resource: param_buf.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::TextureView(&menu_view) },
         ],
     });
 
@@ -1354,6 +1397,9 @@ async fn run() {
     let mut sim_t: f64 = 0.0; // intro clock on capped sim-time (stays synced to the fill at any fps)
     let mut tx_off = (0.0f32, 0.0f32); // text drag offset (field-UV)
     let mut tx_vel = (0.0f32, 0.0f32);
+    let mut last_dir = (0.0f32, 1.0f32); // last 8-snapped drag direction
+    let mut snap_target = (0.0f32, 0.0f32);
+    let mut was_dragging = false;
     let mut phrase_idx: usize = 0;
     let mut phase: u8 = 0; // 0 hold, 1 exit (push back + fade), 2 enter (forward + fade in)
     let mut phase_start = t0;
@@ -1451,23 +1497,47 @@ async fn run() {
         phrase_z = (1.0 - 0.16 * phrase_tt) as f32;
         }
 
-        // text drag -> spring-back throw (offset in field-UV)
+        // drag snapped to 8 directions; on release it snaps to the dominant
+        // of two states - name centered (0) or MENU centered (dir*SPAN) - and
+        // the MENU rides one SPAN behind along the drag axis (conveyor)
+        let span = 1.0f32;
         let (tdu, tdv, dragging) = drag_r.get();
         if dragging > 0.5 {
-            let ivx = (tdu - tx_off.0) / dt.max(0.001);
-            let ivy = (tdv - tx_off.1) / dt.max(0.001);
-            tx_vel = ((tx_vel.0 * 0.55 + ivx * 0.45).clamp(-8.0, 8.0),
-                      (tx_vel.1 * 0.55 + ivy * 0.45).clamp(-8.0, 8.0));
-            tx_off = (tdu, tdv);
+            let m = (tdu * tdu + tdv * tdv).sqrt();
+            let (ux, uy) = if m > 1e-4 {
+                let q = std::f32::consts::FRAC_PI_4;
+                let a = (tdv.atan2(tdu) / q).round() * q;
+                (a.cos(), a.sin())
+            } else {
+                last_dir
+            };
+            let snapped = (ux * m, uy * m);
+            let ivx = (snapped.0 - tx_off.0) / dt.max(0.001);
+            let ivy = (snapped.1 - tx_off.1) / dt.max(0.001);
+            tx_vel = ((tx_vel.0 * 0.55 + ivx * 0.45).clamp(-10.0, 10.0),
+                      (tx_vel.1 * 0.55 + ivy * 0.45).clamp(-10.0, 10.0));
+            tx_off = snapped;
+            if m > 1e-4 { last_dir = (ux, uy); }
+            was_dragging = true;
         } else {
-            // throw: carry the release momentum, decelerate with friction,
-            // and settle wherever it stops (no spring back; may go off-frame)
-            let decay = (-3.0f32 * dt).exp();
-            tx_vel = (tx_vel.0 * decay, tx_vel.1 * decay);
-            tx_off = ((tx_off.0 + tx_vel.0 * dt).clamp(-5.0, 5.0),
-                      (tx_off.1 + tx_vel.1 * dt).clamp(-5.0, 5.0));
+            if was_dragging {
+                // commit to MENU once dragged past the halfway point, else name
+                let along = tx_off.0 * last_dir.0 + tx_off.1 * last_dir.1;
+                snap_target = if along > span * 0.5 {
+                    (last_dir.0 * span, last_dir.1 * span)
+                } else {
+                    (0.0, 0.0)
+                };
+                was_dragging = false;
+            }
+            let k = 130.0f32;
+            let c = 22.0f32;
+            tx_vel = (tx_vel.0 + (-k * (tx_off.0 - snap_target.0) - c * tx_vel.0) * dt,
+                      tx_vel.1 + (-k * (tx_off.1 - snap_target.1) - c * tx_vel.1) * dt);
+            tx_off = (tx_off.0 + tx_vel.0 * dt, tx_off.1 + tx_vel.1 * dt);
         }
         offpub_r.set(tx_off);
+        let menu_off = (tx_off.0 - last_dir.0 * span, tx_off.1 - last_dir.1 * span);
 
         let (mx, my, mact) = mouse_r.get();
         let params = Params {
@@ -1501,6 +1571,10 @@ async fn run() {
             text_dv: tx_off.1,
             text_vx: tx_vel.0 * 2.0,
             text_vy: tx_vel.1 * -2.0,
+            menu_du: menu_off.0,
+            menu_dv: menu_off.1,
+            pad0: 0.0,
+            pad1: 0.0,
         };
         queue.write_buffer(&param_buf, 0, bytemuck::bytes_of(&params));
 
