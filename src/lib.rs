@@ -1400,6 +1400,7 @@ async fn run() {
     let mut last_dir = (0.0f32, 1.0f32); // last 8-snapped drag direction
     let mut snap_target = (0.0f32, 0.0f32);
     let mut was_dragging = false;
+    let mut menu_off = (0.0f32, -1.0f32); // lerps toward its conveyor slot (soft trail)
     let mut phrase_idx: usize = 0;
     let mut phase: u8 = 0; // 0 hold, 1 exit (push back + fade), 2 enter (forward + fade in)
     let mut phase_start = t0;
@@ -1537,7 +1538,12 @@ async fn run() {
             tx_off = (tx_off.0 + tx_vel.0 * dt, tx_off.1 + tx_vel.1 * dt);
         }
         offpub_r.set(tx_off);
-        let menu_off = (tx_off.0 - last_dir.0 * span, tx_off.1 - last_dir.1 * span);
+        // the menu trails its conveyor slot with a soft lerp, so its motion
+        // reads elastic/natural rather than rigidly bolted to the text
+        let menu_slot = (tx_off.0 - last_dir.0 * span, tx_off.1 - last_dir.1 * span);
+        let ml = 1.0 - (-9.0f32 * dt).exp();
+        menu_off = (menu_off.0 + (menu_slot.0 - menu_off.0) * ml,
+                    menu_off.1 + (menu_slot.1 - menu_off.1) * ml);
 
         let (mx, my, mact) = mouse_r.get();
         let params = Params {
