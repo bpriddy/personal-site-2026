@@ -1476,6 +1476,7 @@ async fn run() {
     let mut was_dragging = false;
     let mut menu_off = (0.0f32, 0.0f32); // lerped pan of the panel atlas (trails the drag)
     let mut drag_intent = DragIntent::new();
+    drag_intent.set_axis_mode(true); // lock to an axis → drag both ways (up & down, etc.)
     let mut phrase_idx: usize = 0;
     let mut phase: u8 = 0; // 0 hold, 1 exit (push back + fade), 2 enter (forward + fade in)
     let mut phase_start = t0;
@@ -1573,12 +1574,12 @@ async fn run() {
         phrase_z = (1.0 - 0.16 * phrase_tt) as f32;
         }
 
-        // The drag slides along ONE axis between two states: name centred (origin)
-        // and a single panel centred (panel = the locked direction's grid cell -
-        // cardinals one screen away, diagonals at the corner). From the name you
-        // reveal the panel OPPOSITE the drag; once a panel is in, the only move is
-        // back to the name. The offset is clamped to that [origin, panel] segment,
-        // so you can't over-pull past the panel or summon a different one.
+        // The drag slides along ONE AXIS (a line) between three states: name
+        // centred (origin) and the two panels at +/- the axis. Axis mode lets the
+        // gesture go BOTH ways - lock the y axis, then drag DOWN to bring in the
+        // panel above (north) or UP to bring in the one below (south). The offset
+        // is clamped to [-axis, +axis] so you can't over-pull past a panel; the
+        // panel shown is the one on whichever side you drag toward.
         let (tdu, tdv, dragging) = drag_r.get();
         drag_intent.set_commit_threshold(dial("commit", 0.3)); // live FEEL dial
         let at_panel = committed.0.abs() + committed.1.abs() > 1e-4;
@@ -1587,23 +1588,23 @@ async fn run() {
                 drag_intent.begin((tdu, tdv));
             }
             let target = drag_intent.update((tdu, tdv), dt);
-            // segment far end: the committed panel if we're on one, else the grid
-            // cell opposite the (locked) drag direction
-            let p = if at_panel {
-                committed
+            // the locked axis: pinned to the committed panel's axis when on one,
+            // else the canonical axis the drag locked onto
+            let axis = if at_panel {
+                (last_dir.0.round(), last_dir.1.round())
             } else if let Some(d) = drag_intent.direction() {
                 (d.0.round(), d.1.round())
             } else {
                 (0.0, 0.0)
             };
-            // clamp the offset onto the [origin, p] segment
-            let plen = (p.0 * p.0 + p.1 * p.1).sqrt();
+            // clamp the offset onto the [-axis, +axis] line (both directions)
+            let plen = (axis.0 * axis.0 + axis.1 * axis.1).sqrt();
             let constrained = if plen > 1e-5 {
-                let pd = (p.0 / plen, p.1 / plen);
-                let along = (target.0 * pd.0 + target.1 * pd.1).clamp(0.0, plen);
-                (pd.0 * along, pd.1 * along)
+                let ah = (axis.0 / plen, axis.1 / plen);
+                let along = (target.0 * ah.0 + target.1 * ah.1).clamp(-plen, plen);
+                (ah.0 * along, ah.1 * along)
             } else {
-                committed // pre-lock: hold at rest until a direction reads (stays on-segment)
+                committed // pre-lock: hold at rest until a direction reads
             };
             let ivx = (constrained.0 - tx_off.0) / dt.max(0.001);
             let ivy = (constrained.1 - tx_off.1) / dt.max(0.001);
@@ -1617,15 +1618,22 @@ async fn run() {
         } else {
             if was_dragging {
                 drag_intent.end();
-                // snap along the active segment: from the name, commit to the panel
-                // once past the threshold; from a panel, return to the name once
-                // dragged back past it (symmetric)
-                let p = if at_panel { committed } else { (last_dir.0.round(), last_dir.1.round()) };
-                let plen2 = p.0 * p.0 + p.1 * p.1;
-                let f = if plen2 > 1e-5 { (tx_off.0 * p.0 + tx_off.1 * p.1) / plen2 } else { 0.0 };
+                // snap to the nearest of three detents along the axis: the panel on
+                // whichever side we pulled toward (once past the threshold), or the
+                // name. Hysteresis: leaving a panel takes the same threshold.
+                let axis = (last_dir.0.round(), last_dir.1.round());
+                let plen2 = axis.0 * axis.0 + axis.1 * axis.1;
+                let f = if plen2 > 1e-5 { (tx_off.0 * axis.0 + tx_off.1 * axis.1) / plen2 } else { 0.0 };
                 let thr = drag_intent.commit_threshold();
-                let to_panel = if at_panel { f > 1.0 - thr } else { f > thr };
-                snap_target = if to_panel { p } else { (0.0, 0.0) };
+                let neg = (-axis.0, -axis.1);
+                let cs = committed.0 * axis.0 + committed.1 * axis.1; // side we were resting on
+                snap_target = if cs > 0.5 {
+                    if f > 1.0 - thr { axis } else if f < -thr { neg } else { (0.0, 0.0) }
+                } else if cs < -0.5 {
+                    if f < -(1.0 - thr) { neg } else if f > thr { axis } else { (0.0, 0.0) }
+                } else {
+                    if f > thr { axis } else if f < -thr { neg } else { (0.0, 0.0) }
+                };
                 committed = snap_target;
                 tx_vel = (0.0, 0.0); // clean settle - drop any clamp/flick velocity spike
                 was_dragging = false;
@@ -1644,9 +1652,13 @@ async fn run() {
         menu_off = (menu_off.0 + (tx_off.0 - menu_off.0) * ml,
                     menu_off.1 + (tx_off.1 - menu_off.1) * ml);
         // active panel cell centre in atlas-uv, for the shader mask (only this cell
-        // shows). cp = the locked direction's grid cell; atlas centre = (1.5 - cp)/3
-        let cp = (last_dir.0.round(), last_dir.1.round());
-        let menu_cell = ((1.5 - cp.0) / 3.0, (1.5 - cp.1) / 3.0);
+        // shows). The active panel is on whichever SIDE of the axis the offset is,
+        // so dragging the other way reveals the opposite panel. centre = (1.5-cell)/3
+        let axis_n = (last_dir.0.round(), last_dir.1.round());
+        let alen = (axis_n.0 * axis_n.0 + axis_n.1 * axis_n.1).sqrt();
+        let along_now = if alen > 1e-5 { (tx_off.0 * axis_n.0 + tx_off.1 * axis_n.1) / alen } else { 0.0 };
+        let side = if along_now >= 0.0 { axis_n } else { (-axis_n.0, -axis_n.1) };
+        let menu_cell = ((1.5 - side.0) / 3.0, (1.5 - side.1) / 3.0);
         // the name leads further off-screen than the panel pans in, so the two
         // don't crowd each other on the way out or back
         let name_lead = dial("name_lead", 1.5);
