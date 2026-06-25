@@ -12,6 +12,9 @@ use std::f32::consts::FRAC_PI_4;
 pub struct DragIntent {
     window: f32,   // seconds of sampling before the direction locks
     min_move: f32, // minimum displacement (field-UV) before a direction is read
+    // fraction of a caller-supplied span the locked-axis travel must exceed for the
+    // gesture to read as intent to reach the far state (vs. fall back to the near one)
+    commit_threshold: f32,
     active: bool,
     elapsed: f32,
     base: (f32, f32),           // tracked value at gesture start
@@ -24,12 +27,26 @@ impl DragIntent {
         Self {
             window: 0.12,
             min_move: 0.015,
+            commit_threshold: 0.5,
             active: false,
             elapsed: 0.0,
             base: (0.0, 0.0),
             locked: None,
             cur: None,
         }
+    }
+
+    /// How far the drag must travel along its locked axis — as a fraction of the
+    /// span to the off-screen item — before the gesture reads as intent to reach
+    /// that item rather than snap back to rest. Lower commits with less drag.
+    /// (Default 0.5 = halfway.)
+    pub fn set_commit_threshold(&mut self, fraction: f32) {
+        self.commit_threshold = fraction;
+    }
+
+    /// The current commit threshold (fraction of span). See [`Self::set_commit_threshold`].
+    pub fn commit_threshold(&self) -> f32 {
+        self.commit_threshold
     }
 
     /// Start a gesture. `base` is the tracked value (here: the text offset) at press.
@@ -86,6 +103,7 @@ impl DragIntent {
     /// The committed axis, available only once the sampling window has locked it
     /// (None during the window). Use this to react once per gesture rather than
     /// to the provisional direction that may still be settling.
+    #[allow(dead_code)]
     pub fn locked_direction(&self) -> Option<(f32, f32)> {
         self.locked
     }

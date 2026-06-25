@@ -62,8 +62,12 @@ struct Params {
     text_vy: f32,
     menu_du: f32, // MENU conveyor offset (field-UV)
     menu_dv: f32,
-    pad0: f32,
+    pad0: f32, // active panel cell centre (atlas-uv) for the reveal mask
     pad1: f32,
+    wake: f32,     // plow/wake strength (live FEEL dial)
+    porosity: f32, // rest-state flow-through between glyphs (live FEEL dial)
+    pad2: f32,
+    pad3: f32,
 }
 
 // Compute: integrate particles against the obstacle field (channel R).
@@ -79,6 +83,7 @@ struct Params {
   bg_fade: f32, part_fade: f32, name_op: f32, intro_glow: f32,
   text_du: f32, text_dv: f32, text_vx: f32, text_vy: f32,
   menu_du: f32, menu_dv: f32, pad0: f32, pad1: f32,
+  wake: f32, porosity: f32, pad2: f32, pad3: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -96,9 +101,11 @@ fn rand01(v: u32) -> f32 { return f32(pcg(v)) / 4294967295.0; }
 fn fieldAt(p: vec2<f32>) -> f32 {
   let uv = vec2<f32>(p.x * 0.5 + 0.5 - P.text_du, 0.5 - p.y * 0.5 - P.text_dv);
   let s = textureSampleLevel(field, fsamp, uv, 0.0);
-  let muv = vec2<f32>(p.x * 0.5 + 0.5 - P.menu_du, 0.5 - p.y * 0.5 - P.menu_dv);
-  let mr = textureSampleLevel(menu, fsamp, muv, 0.0).r;
-  // name (R) permanent; phrase (B) fades with z; MENU (mr) rides the conveyor
+  let muv = (vec2<f32>(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5) + vec2<f32>(1.0, 1.0) - vec2<f32>(P.menu_du, P.menu_dv)) / 3.0;
+  // only the single active panel cell (pad0,pad1) contributes - never its neighbours
+  let inCell = abs(muv.x - P.pad0) < 0.1667 && abs(muv.y - P.pad1) < 0.1667;
+  let mr = select(0.0, textureSampleLevel(menu, fsamp, muv, 0.0).r, inCell);
+  // name (R) permanent; phrase (B) fades with z; panel (mr) pans in opposite the drag
   return max(max(s.r * P.name_op, s.b * P.phrase_w), mr);
 }
 
@@ -156,6 +163,11 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
   // obstacle deflection: push away from glyphs along the field gradient
   let f = fieldAt(pt.pos);
   if (f > 0.02) {
+    // how hard the text is moving: 0 at rest, ->1 while dragging. At rest the glyphs
+    // are porous so particles thread BETWEEN the letters; dragging makes them shove.
+    let dragk = clamp(length(vec2<f32>(P.text_vx, P.text_vy)) * 0.5, 0.0, 1.0);
+    // porosity opens the glyphs at rest (full deflection returns while dragging)
+    let pf = (1.0 - P.porosity) + P.porosity * dragk;
     let e = 0.012;
     let gx = fieldAt(pt.pos + vec2<f32>(e, 0.0)) - fieldAt(pt.pos - vec2<f32>(e, 0.0));
     let gy = fieldAt(pt.pos + vec2<f32>(0.0, e)) - fieldAt(pt.pos - vec2<f32>(0.0, e));
@@ -163,13 +175,13 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
     let gl = length(g);
     if (gl > 1e-5) {
       let n = g / gl;
-      v -= n * P.push * (f * f * 4.0 + f * 0.6) * P.dt;
+      v -= n * P.push * (f * f * 4.0 + f * 0.6) * pf * P.dt;
       let into = dot(v, n);
-      if (into > 0.0) { v -= n * into * min(8.0 * f * P.dt, 0.9); }
+      if (into > 0.0) { v -= n * into * min(8.0 * f * P.dt, 0.9) * pf; }
     }
-    // a moving word plows the field along its travel - bow wave + wake, like
-    // an object dragged through water (whole glyph body, not just the edges)
-    v += vec2<f32>(P.text_vx, P.text_vy) * f * 4.0 * P.dt;
+    // a moving word plows the field along its travel - bow wave + wake, like an
+    // object dragged through water. sqrt(f) term widens the wake into the halo.
+    v += vec2<f32>(P.text_vx, P.text_vy) * (f * 6.0 + sqrt(f) * 3.0) * P.wake * P.dt;
   }
   // never trap: inside the field particles may only SLOW, never stall — keep a
   // minimum drift so they always wash out of the letterforms
@@ -227,6 +239,7 @@ struct Params {
   bg_fade: f32, part_fade: f32, name_op: f32, intro_glow: f32,
   text_du: f32, text_dv: f32, text_vx: f32, text_vy: f32,
   menu_du: f32, menu_dv: f32, pad0: f32, pad1: f32,
+  wake: f32, porosity: f32, pad2: f32, pad3: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -441,6 +454,7 @@ struct Params {
   bg_fade: f32, part_fade: f32, name_op: f32, intro_glow: f32,
   text_du: f32, text_dv: f32, text_vx: f32, text_vy: f32,
   menu_du: f32, menu_dv: f32, pad0: f32, pad1: f32,
+  wake: f32, porosity: f32, pad2: f32, pad3: f32,
 };
 @group(0) @binding(4) var<uniform> P: Params;
 @group(0) @binding(5) var menutex: texture_2d<f32>;
@@ -507,7 +521,9 @@ fn fs_comp(in: VOut) -> @location(0) vec4<f32> {
   let phrase_c = smoothstep(0.42, 0.55,
     textureSampleLevel(fieldtex, samp, puv, 0.0).a) * P.phrase_op;
 
-  let menu_c = smoothstep(0.42, 0.55, textureSampleLevel(menutex, samp, in.uv - vec2<f32>(P.menu_du, P.menu_dv), 0.0).g);
+  let m_uv = (in.uv + vec2<f32>(1.0, 1.0) - vec2<f32>(P.menu_du, P.menu_dv)) / 3.0;
+  let m_in = abs(m_uv.x - P.pad0) < 0.1667 && abs(m_uv.y - P.pad1) < 0.1667;
+  let menu_c = select(0.0, smoothstep(0.42, 0.55, textureSampleLevel(menutex, samp, m_uv, 0.0).g), m_in);
   let cover = max(max(name_c, phrase_c), menu_c);
   if (cover > 0.001) {
     c = mix(c, aces(reliefCol(in.uv) * 0.92), cover);
@@ -665,7 +681,7 @@ fn raster_layer(
         ctx.set_text_baseline("middle");
     };
     clear(ctx);
-    ctx.set_filter("blur(9px)");
+    ctx.set_filter("blur(6px)");
     draw(ctx);
     ctx.set_filter("blur(2px)");
     draw(ctx);
@@ -685,15 +701,47 @@ fn raster_layer(
 }
 
 // interleave name(RG) + phrase(BA) coverage into one RGBA upload buffer
-fn compass_word(d: (f32, f32)) -> &'static str {
-    // d is the panel's world direction (offset space: +y = down/south,
-    // +x = east, up/north = -y). North is the MENU; the rest are placeholders.
-    const W: [&str; 8] = [
-        "EAST", "SOUTHEAST", "SOUTH", "SOUTHWEST", "WEST", "NORTHWEST", "MENU", "NORTHEAST",
-    ];
-    let q = std::f32::consts::FRAC_PI_4;
-    let i = (d.1.atan2(d.0) / q).round() as i32;
-    W[(((i % 8) + 8) % 8) as usize]
+// rasterize text at arbitrary (cx, cy) into a (blur, sharp) coverage pair —
+// used to bake the static off-screen panel atlas (one raster, all panels)
+fn raster_atlas(
+    ctx: &web_sys::CanvasRenderingContext2d,
+    w: u32,
+    h: u32,
+    entries: &[(&str, f64, f64, f64)],
+) -> (Vec<u8>, Vec<u8>) {
+    let (wf, hf) = (w as f64, h as f64);
+    let draw = |ctx: &web_sys::CanvasRenderingContext2d| {
+        for (text, px, cx, cy) in entries {
+            ctx.set_font(&format!("900 {:.0}px -apple-system, system-ui, sans-serif", px));
+            ctx.fill_text(text, *cx, *cy).ok();
+        }
+    };
+    let clear = |ctx: &web_sys::CanvasRenderingContext2d| {
+        ctx.set_filter("none");
+        ctx.set_fill_style_str("#000000");
+        ctx.fill_rect(0.0, 0.0, wf, hf);
+        ctx.set_fill_style_str("#ffffff");
+        ctx.set_text_align("center");
+        ctx.set_text_baseline("middle");
+    };
+    clear(ctx);
+    ctx.set_filter("blur(6px)");
+    draw(ctx);
+    ctx.set_filter("blur(2px)");
+    draw(ctx);
+    ctx.set_filter("none");
+    let blur = ctx.get_image_data(0.0, 0.0, wf, hf).unwrap().data();
+    clear(ctx);
+    draw(ctx);
+    let sharp = ctx.get_image_data(0.0, 0.0, wf, hf).unwrap().data();
+    let n = (w * h) as usize;
+    let mut b = Vec::with_capacity(n);
+    let mut sh = Vec::with_capacity(n);
+    for i in 0..n {
+        b.push(blur[i * 4]);
+        sh.push(sharp[i * 4]);
+    }
+    (b, sh)
 }
 
 fn pack_rgba(nb: &[u8], ns: &[u8], pb: &[u8], ps: &[u8]) -> Vec<u8> {
@@ -1121,10 +1169,21 @@ async fn run() {
         &pack_rgba(&name_blur, &name_sharp, &pb0, &ps0),
     );
 
-    // MENU: a second static obstacle field, summoned by the drag conveyor
-    let menu_entries: Vec<(String, f64, f64)> =
-        vec![("MENU".to_string(), field_w as f64 * 0.13, field_h as f64 * 0.5)];
-    let (menu_blur, menu_sharp) = raster_layer(&fctx, field_w, field_h, &menu_entries);
+    // MENU + placeholder map directions baked ONCE into a 3x3 world atlas:
+    // centre cell empty (the name shows from the field), 8 fixed panels around
+    let (cw, ch) = (field_w as f64, field_h as f64);
+    let pf = field_w as f64 * 0.033; // panel font (atlas is 3x screen → keep small)
+    let menu_entries: Vec<(&str, f64, f64, f64)> = vec![
+        ("NORTHWEST", pf, 0.1667 * cw, 0.1667 * ch),
+        ("MENU", pf, 0.5 * cw, 0.1667 * ch),
+        ("NORTHEAST", pf, 0.8333 * cw, 0.1667 * ch),
+        ("WEST", pf, 0.1667 * cw, 0.5 * ch),
+        ("EAST", pf, 0.8333 * cw, 0.5 * ch),
+        ("SOUTHWEST", pf, 0.1667 * cw, 0.8333 * ch),
+        ("SOUTH", pf, 0.5 * cw, 0.8333 * ch),
+        ("SOUTHEAST", pf, 0.8333 * cw, 0.8333 * ch),
+    ];
+    let (menu_blur, menu_sharp) = raster_atlas(&fctx, field_w, field_h, &menu_entries);
     let menu_zero = vec![0u8; menu_blur.len()];
     let menu_tex = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("menu"),
@@ -1413,10 +1472,10 @@ async fn run() {
     let mut tx_vel = (0.0f32, 0.0f32);
     let mut last_dir = (0.0f32, 1.0f32); // last 8-snapped drag direction
     let mut snap_target = (0.0f32, 0.0f32);
+    let mut committed = (0.0f32, 0.0f32); // resting state: name (origin) or a panel
     let mut was_dragging = false;
-    let mut menu_off = (0.0f32, -1.0f32); // lerps toward its conveyor slot (soft trail)
+    let mut menu_off = (0.0f32, 0.0f32); // lerped pan of the panel atlas (trails the drag)
     let mut drag_intent = DragIntent::new();
-    let mut cur_word: &str = "MENU";
     let mut phrase_idx: usize = 0;
     let mut phase: u8 = 0; // 0 hold, 1 exit (push back + fade), 2 enter (forward + fade in)
     let mut phase_start = t0;
@@ -1514,65 +1573,83 @@ async fn run() {
         phrase_z = (1.0 - 0.16 * phrase_tt) as f32;
         }
 
-        // drag snapped to 8 directions; on release it snaps to the dominant
-        // of two states - name centered (0) or MENU centered (dir*SPAN) - and
-        // the MENU rides one SPAN behind along the drag axis (conveyor)
-        let span = 1.0f32;
+        // The drag slides along ONE axis between two states: name centred (origin)
+        // and a single panel centred (panel = the locked direction's grid cell -
+        // cardinals one screen away, diagonals at the corner). From the name you
+        // reveal the panel OPPOSITE the drag; once a panel is in, the only move is
+        // back to the name. The offset is clamped to that [origin, panel] segment,
+        // so you can't over-pull past the panel or summon a different one.
         let (tdu, tdv, dragging) = drag_r.get();
+        drag_intent.set_commit_threshold(dial("commit", 0.3)); // live FEEL dial
+        let at_panel = committed.0.abs() + committed.1.abs() > 1e-4;
         if dragging > 0.5 {
             if !was_dragging {
                 drag_intent.begin((tdu, tdv));
             }
             let target = drag_intent.update((tdu, tdv), dt);
-            let ivx = (target.0 - tx_off.0) / dt.max(0.001);
-            let ivy = (target.1 - tx_off.1) / dt.max(0.001);
+            // segment far end: the committed panel if we're on one, else the grid
+            // cell opposite the (locked) drag direction
+            let p = if at_panel {
+                committed
+            } else if let Some(d) = drag_intent.direction() {
+                (d.0.round(), d.1.round())
+            } else {
+                (0.0, 0.0)
+            };
+            // clamp the offset onto the [origin, p] segment
+            let plen = (p.0 * p.0 + p.1 * p.1).sqrt();
+            let constrained = if plen > 1e-5 {
+                let pd = (p.0 / plen, p.1 / plen);
+                let along = (target.0 * pd.0 + target.1 * pd.1).clamp(0.0, plen);
+                (pd.0 * along, pd.1 * along)
+            } else {
+                committed // pre-lock: hold at rest until a direction reads (stays on-segment)
+            };
+            let ivx = (constrained.0 - tx_off.0) / dt.max(0.001);
+            let ivy = (constrained.1 - tx_off.1) / dt.max(0.001);
             tx_vel = ((tx_vel.0 * 0.55 + ivx * 0.45).clamp(-10.0, 10.0),
                       (tx_vel.1 * 0.55 + ivy * 0.45).clamp(-10.0, 10.0));
-            tx_off = target;
-            if let Some(d) = drag_intent.direction() { last_dir = d; }
+            tx_off = constrained;
+            if !at_panel {
+                if let Some(d) = drag_intent.direction() { last_dir = d; }
+            }
             was_dragging = true;
         } else {
             if was_dragging {
                 drag_intent.end();
-                // commit to MENU once dragged past the halfway point, else name
-                let along = tx_off.0 * last_dir.0 + tx_off.1 * last_dir.1;
-                snap_target = if along > span * 0.5 {
-                    (last_dir.0 * span, last_dir.1 * span)
-                } else {
-                    (0.0, 0.0)
-                };
+                // snap along the active segment: from the name, commit to the panel
+                // once past the threshold; from a panel, return to the name once
+                // dragged back past it (symmetric)
+                let p = if at_panel { committed } else { (last_dir.0.round(), last_dir.1.round()) };
+                let plen2 = p.0 * p.0 + p.1 * p.1;
+                let f = if plen2 > 1e-5 { (tx_off.0 * p.0 + tx_off.1 * p.1) / plen2 } else { 0.0 };
+                let thr = drag_intent.commit_threshold();
+                let to_panel = if at_panel { f > 1.0 - thr } else { f > thr };
+                snap_target = if to_panel { p } else { (0.0, 0.0) };
+                committed = snap_target;
+                tx_vel = (0.0, 0.0); // clean settle - drop any clamp/flick velocity spike
                 was_dragging = false;
             }
+            // slightly over-damped spring so it never overshoots past the target
             let k = 130.0f32;
-            let c = 22.0f32;
+            let c = 24.0f32;
             tx_vel = (tx_vel.0 + (-k * (tx_off.0 - snap_target.0) - c * tx_vel.0) * dt,
                       tx_vel.1 + (-k * (tx_off.1 - snap_target.1) - c * tx_vel.1) * dt);
             tx_off = (tx_off.0 + tx_vel.0 * dt, tx_off.1 + tx_vel.1 * dt);
         }
         offpub_r.set(tx_off);
-        // the revealed panel's word follows the locked drag direction's
-        // compass (north = MENU, others = placeholder directions); MENU stays
-        // fixed above the top, summoned by dragging down
-        if let Some(ld) = drag_intent.locked_direction() {
-            let word = compass_word((-ld.0, -ld.1));
-            if word != cur_word {
-                let (mb, ms) = raster_layer(
-                    &fctx,
-                    field_w,
-                    field_h,
-                    &[(word.to_string(), field_w as f64 * 0.13, field_h as f64 * 0.5)],
-                );
-                let z = vec![0u8; mb.len()];
-                upload_field(&queue, &menu_tex, field_w, field_h, &pack_rgba(&mb, &ms, &z, &z));
-                cur_word = word;
-            }
-        }
-        // the menu trails its conveyor slot with a stronger lerp for an
-        // elastic, floaty feel as it eases in/out
-        let menu_slot = (tx_off.0 - last_dir.0 * span, tx_off.1 - last_dir.1 * span);
-        let ml = 1.0 - (-5.0f32 * dt).exp();
-        menu_off = (menu_off.0 + (menu_slot.0 - menu_off.0) * ml,
-                    menu_off.1 + (menu_slot.1 - menu_off.1) * ml);
+        // the panel atlas pans with the drag but trails it with a strong lerp
+        // (elastic/floaty). All panels are baked in place; nothing repositions
+        let ml = 1.0 - (-dial("menu_lerp", 5.0) * dt).exp();
+        menu_off = (menu_off.0 + (tx_off.0 - menu_off.0) * ml,
+                    menu_off.1 + (tx_off.1 - menu_off.1) * ml);
+        // active panel cell centre in atlas-uv, for the shader mask (only this cell
+        // shows). cp = the locked direction's grid cell; atlas centre = (1.5 - cp)/3
+        let cp = (last_dir.0.round(), last_dir.1.round());
+        let menu_cell = ((1.5 - cp.0) / 3.0, (1.5 - cp.1) / 3.0);
+        // the name leads further off-screen than the panel pans in, so the two
+        // don't crowd each other on the way out or back
+        let name_lead = dial("name_lead", 1.5);
 
         let (mx, my, mact) = mouse_r.get();
         let params = Params {
@@ -1602,14 +1679,18 @@ async fn run() {
             part_fade,
             name_op,
             intro_glow,
-            text_du: tx_off.0,
-            text_dv: tx_off.1,
-            text_vx: tx_vel.0 * 2.0,
-            text_vy: tx_vel.1 * -2.0,
+            text_du: tx_off.0 * name_lead,
+            text_dv: tx_off.1 * name_lead,
+            text_vx: tx_vel.0 * 2.0 * name_lead,
+            text_vy: tx_vel.1 * -2.0 * name_lead,
             menu_du: menu_off.0,
             menu_dv: menu_off.1,
-            pad0: 0.0,
-            pad1: 0.0,
+            pad0: menu_cell.0,
+            pad1: menu_cell.1,
+            wake: dial("wake", 1.0),
+            porosity: dial("porosity", 0.55),
+            pad2: 0.0,
+            pad3: 0.0,
         };
         queue.write_buffer(&param_buf, 0, bytemuck::bytes_of(&params));
 

@@ -135,7 +135,7 @@
       #modal-x:hover { background: #161616; color: #ffffff; }
 
       /* debug dials */
-      #dials {
+      #dials, #dials2 {
         position: fixed; bottom: calc(18px + env(safe-area-inset-bottom)); left: calc(18px + env(safe-area-inset-left)); z-index: 9;
         width: 250px; padding: 12px 14px 10px;
         border-radius: 10px;
@@ -145,32 +145,32 @@
         font: 11px/1.5 ui-monospace, Menlo, monospace;
         color: #d8cfc0;
       }
-      #dials.hidden { display: none; }
-      #dials h3 {
+      #dials.hidden, #dials2.hidden { display: none; }
+      #dials h3, #dials2 h3 {
         margin: 0 0 6px; font: 700 11px/1 ui-monospace, Menlo, monospace;
         color: #f2a35e; letter-spacing: 0.08em;
       }
-      #dials .row { display: flex; align-items: center; gap: 8px; margin: 3px 0; }
-      #dials label { flex: 0 0 74px; color: #b0a694; }
-      #dials input[type=range] { flex: 1; accent-color: #f2a35e; height: 14px; }
-      #dials .val { flex: 0 0 42px; text-align: right; color: #f2e9d8; }
-      #dial-save {
+      #dials .row, #dials2 .row { display: flex; align-items: center; gap: 8px; margin: 3px 0; }
+      #dials label, #dials2 label { flex: 0 0 74px; color: #b0a694; }
+      #dials input[type=range], #dials2 input[type=range] { flex: 1; accent-color: #f2a35e; height: 14px; }
+      #dials .val, #dials2 .val { flex: 0 0 42px; text-align: right; color: #f2e9d8; }
+      #dial-save, #dial-save2 {
         display: block; width: 100%; margin-top: 8px; padding: 7px;
         border: 1px solid rgba(242, 163, 94, 0.4); border-radius: 0;
         background: transparent; color: #f2a35e;
         font: 700 10px/1 ui-monospace, Menlo, monospace;
         letter-spacing: 0.12em; cursor: pointer;
       }
-      #dial-save:hover { background: rgba(242, 163, 94, 0.15); }
-      #dial-close {
+      #dial-save:hover, #dial-save2:hover { background: rgba(242, 163, 94, 0.15); }
+      #dial-close, #dial-close2 {
         position: absolute; top: 6px; right: 8px;
         width: 22px; height: 22px;
         display: flex; align-items: center; justify-content: center;
         border: none; background: transparent; color: #d8cfc0;
         font: 300 20px/1 -apple-system, system-ui, sans-serif; cursor: pointer;
       }
-      #dial-close:hover { color: #f2a35e; }
-      #gear {
+      #dial-close:hover, #dial-close2:hover { color: #f2a35e; }
+      #gear, #gear2 {
         position: fixed; bottom: calc(18px + env(safe-area-inset-bottom)); left: calc(18px + env(safe-area-inset-left)); z-index: 8;
         width: 34px; height: 34px; border-radius: 50%;
         border: 1px solid rgba(138, 90, 40, 0.4);
@@ -178,6 +178,8 @@
         font: 600 15px/1 system-ui; cursor: pointer;
         backdrop-filter: blur(6px);
       }
+      /* feel-dials button stacks above the gear (⚙) and phrase (✎) buttons */
+      #gear2 { bottom: calc(102px + env(safe-area-inset-bottom)); font-size: 17px; }
 
       /* phrase editor */
       #phrases {
@@ -234,8 +236,9 @@
         .modal-body { padding: 1.7rem 1.4rem 1.4rem; }
         #modal h2 { font-size: 1.45rem; }
         #info-btn { bottom: calc(12px + env(safe-area-inset-bottom)); right: calc(12px + env(safe-area-inset-right)); }
-        #gear { bottom: calc(12px + env(safe-area-inset-bottom)); left: calc(12px + env(safe-area-inset-left)); }
-        #dials {
+        #gear, #gear2 { bottom: calc(12px + env(safe-area-inset-bottom)); left: calc(12px + env(safe-area-inset-left)); }
+        #gear2 { bottom: calc(96px + env(safe-area-inset-bottom)); }
+        #dials, #dials2 {
           bottom: calc(12px + env(safe-area-inset-bottom)); left: calc(12px + env(safe-area-inset-left));
           width: calc(100vw - 24px - 28px);
           max-width: 250px;
@@ -275,6 +278,17 @@
       <div class="row"><label>bg speed</label><input type="range" min="0" max="10" step="0.1" data-dial="bg_speed"><span class="val"></span></div>
       <div class="row"><label>perturb</label><input type="range" min="0" max="3" step="0.05" data-dial="perturb"><span class="val"></span></div>
       <button id="dial-save" title="download dials.json for the repo">SAVE DIALS.JSON</button>
+    </div>
+    <button id="gear2" title="feel / drag dials (f)">≈</button>
+    <div id="dials2" class="hidden">
+      <button id="dial-close2" aria-label="Close">×</button>
+      <h3>FEEL DIALS</h3>
+      <div class="row"><label>wake</label><input type="range" min="0" max="3" step="0.05" data-dial="wake"><span class="val"></span></div>
+      <div class="row"><label>porosity</label><input type="range" min="0" max="1" step="0.02" data-dial="porosity"><span class="val"></span></div>
+      <div class="row"><label>name lead</label><input type="range" min="1" max="3" step="0.05" data-dial="name_lead"><span class="val"></span></div>
+      <div class="row"><label>commit</label><input type="range" min="0.1" max="0.6" step="0.02" data-dial="commit"><span class="val"></span></div>
+      <div class="row"><label>menu lerp</label><input type="range" min="1" max="15" step="0.5" data-dial="menu_lerp"><span class="val"></span></div>
+      <button id="dial-save2" title="download dials.json for the repo">SAVE DIALS.JSON</button>
     </div>
     <button id="info-btn" aria-label="About Ben Priddy" title="About">i</button>
 
@@ -340,29 +354,48 @@
         } catch (e) {}
         var panel = document.getElementById("dials");
         var gear = document.getElementById("gear");
+        var panel2 = document.getElementById("dials2");
+        var gear2 = document.getElementById("gear2");
         var fps = document.getElementById("fps");
-        // dev tooling is visible locally only; on the deployed site the 'd'
-        // key remains as a hidden door to the dials + fps readout
+        // dev tooling is visible locally only; on the deployed site the 'd'/'f'
+        // keys remain as a hidden door to the dials + fps readout
         var isDev = ["localhost", "127.0.0.1"].indexOf(location.hostname) !== -1;
         if (!isDev) {
           fps.style.display = "none";
           gear.style.display = "none";
+          gear2.style.display = "none";
         }
-        function toggle() {
-          panel.classList.toggle("hidden");
-          var open = !panel.classList.contains("hidden");
-          if (isDev) {
-            gear.style.display = open ? "none" : "block";
-          } else {
-            fps.style.display = open ? "block" : "none";
-          }
+        // toggle for one [panel, gear] pair; opening one closes its sibling so
+        // the two dial menus never overlap
+        function makeToggle(pnl, gr, other, otherGr) {
+          return function () {
+            var opening = pnl.classList.contains("hidden");
+            if (opening) {
+              other.classList.add("hidden");
+              if (isDev) otherGr.style.display = "block";
+              pnl.classList.remove("hidden");
+            } else {
+              pnl.classList.add("hidden");
+            }
+            if (isDev) {
+              gr.style.display = opening ? "none" : "block";
+            } else {
+              var anyOpen = !pnl.classList.contains("hidden") || !other.classList.contains("hidden");
+              fps.style.display = anyOpen ? "block" : "none";
+            }
+          };
         }
+        var toggle = makeToggle(panel, gear, panel2, gear2);
+        var toggle2 = makeToggle(panel2, gear2, panel, gear);
         gear.addEventListener("click", toggle);
+        gear2.addEventListener("click", toggle2);
         document.getElementById("dial-close").addEventListener("click", toggle);
+        document.getElementById("dial-close2").addEventListener("click", toggle2);
         document.addEventListener("keydown", function (e) {
           var t = e.target && e.target.tagName;
           if (t === "TEXTAREA" || t === "INPUT") return;
           if (e.key === "d" && !e.metaKey && !e.ctrlKey) toggle();
+          if (e.key === "f" && !e.metaKey && !e.ctrlKey) toggle2();
         });
 
         // ── phrase editor: window.__PHRASES read by the wasm each cycle ──
@@ -463,8 +496,13 @@
           phrasePanel.classList.add("hidden");
           if (isDev) phraseBtn.style.display = "block";
         });
+        // both dial menus share one __DIALS object + one dials.json
+        function allSliders() {
+          return document.querySelectorAll(
+            "#dials input[type=range], #dials2 input[type=range]");
+        }
         function syncSliders() {
-          panel.querySelectorAll("input[type=range]").forEach(function (el) {
+          allSliders().forEach(function (el) {
             var key = el.dataset.dial;
             if (key in window.__DIALS) {
               el.value = window.__DIALS[key];
@@ -479,7 +517,7 @@
             if (!(k in window.__DIALS)) window.__DIALS[k] = defaults[k];
           syncSliders();
         };
-        panel.querySelectorAll("input[type=range]").forEach(function (el) {
+        allSliders().forEach(function (el) {
           el.addEventListener("input", function () {
             window.__DIALS[el.dataset.dial] = Number(el.value);
             el.parentElement.querySelector(".val").textContent =
@@ -488,14 +526,16 @@
           });
         });
         syncSliders();
-        document.getElementById("dial-save").addEventListener("click", function () {
+        function saveDials() {
           var json = JSON.stringify(window.__DIALS, null, 2) + "\n";
           try { navigator.clipboard.writeText(json); } catch (e) {}
           var a = document.createElement("a");
           a.href = URL.createObjectURL(new Blob([json], { type: "application/json" }));
           a.download = "dials.json";
           a.click();
-        });
+        }
+        document.getElementById("dial-save").addEventListener("click", saveDials);
+        document.getElementById("dial-save2").addEventListener("click", saveDials);
       })();
       (function () {
         var backdrop = document.getElementById("modal-backdrop");
