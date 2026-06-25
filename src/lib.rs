@@ -3,6 +3,9 @@ use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
+mod interaction_intent;
+use interaction_intent::drag_intent::DragIntent;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // "Words as rocks in a stream" — HDR edition.
 //
@@ -1401,6 +1404,7 @@ async fn run() {
     let mut snap_target = (0.0f32, 0.0f32);
     let mut was_dragging = false;
     let mut menu_off = (0.0f32, -1.0f32); // lerps toward its conveyor slot (soft trail)
+    let mut drag_intent = DragIntent::new();
     let mut phrase_idx: usize = 0;
     let mut phase: u8 = 0; // 0 hold, 1 exit (push back + fade), 2 enter (forward + fade in)
     let mut phase_start = t0;
@@ -1504,24 +1508,20 @@ async fn run() {
         let span = 1.0f32;
         let (tdu, tdv, dragging) = drag_r.get();
         if dragging > 0.5 {
-            let m = (tdu * tdu + tdv * tdv).sqrt();
-            let (ux, uy) = if m > 1e-4 {
-                let q = std::f32::consts::FRAC_PI_4;
-                let a = (tdv.atan2(tdu) / q).round() * q;
-                (a.cos(), a.sin())
-            } else {
-                last_dir
-            };
-            let snapped = (ux * m, uy * m);
-            let ivx = (snapped.0 - tx_off.0) / dt.max(0.001);
-            let ivy = (snapped.1 - tx_off.1) / dt.max(0.001);
+            if !was_dragging {
+                drag_intent.begin((tdu, tdv));
+            }
+            let target = drag_intent.update((tdu, tdv), dt);
+            let ivx = (target.0 - tx_off.0) / dt.max(0.001);
+            let ivy = (target.1 - tx_off.1) / dt.max(0.001);
             tx_vel = ((tx_vel.0 * 0.55 + ivx * 0.45).clamp(-10.0, 10.0),
                       (tx_vel.1 * 0.55 + ivy * 0.45).clamp(-10.0, 10.0));
-            tx_off = snapped;
-            if m > 1e-4 { last_dir = (ux, uy); }
+            tx_off = target;
+            if let Some(d) = drag_intent.direction() { last_dir = d; }
             was_dragging = true;
         } else {
             if was_dragging {
+                drag_intent.end();
                 // commit to MENU once dragged past the halfway point, else name
                 let along = tx_off.0 * last_dir.0 + tx_off.1 * last_dir.1;
                 snap_target = if along > span * 0.5 {

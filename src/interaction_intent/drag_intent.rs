@@ -1,0 +1,85 @@
+//! DIRECTION INTENT for drags.
+//!
+//! After a gesture begins (touchstart / mousedown+move), the dominant 8-way
+//! direction is sampled over a short window and then LOCKED. From then until the
+//! gesture ends, only the component of motion *along* that locked axis is fed
+//! back — so if you start dragging down and then wander diagonally, only the
+//! downward part of that diagonal counts. Erratic mid-drag motion can't
+//! destabilize the tracked direction.
+
+use std::f32::consts::FRAC_PI_4;
+
+pub struct DragIntent {
+    window: f32,   // seconds of sampling before the direction locks
+    min_move: f32, // minimum displacement (field-UV) before a direction is read
+    active: bool,
+    elapsed: f32,
+    base: (f32, f32),           // tracked value at gesture start
+    locked: Option<(f32, f32)>, // frozen 8-way unit direction (after the window)
+    cur: Option<(f32, f32)>,    // direction in effect this frame (provisional or locked)
+}
+
+impl DragIntent {
+    pub fn new() -> Self {
+        Self {
+            window: 0.12,
+            min_move: 0.015,
+            active: false,
+            elapsed: 0.0,
+            base: (0.0, 0.0),
+            locked: None,
+            cur: None,
+        }
+    }
+
+    /// Start a gesture. `base` is the tracked value (here: the text offset) at press.
+    pub fn begin(&mut self, base: (f32, f32)) {
+        self.active = true;
+        self.elapsed = 0.0;
+        self.base = base;
+        self.locked = None;
+        self.cur = None;
+    }
+
+    /// Feed the raw (unconstrained) target each frame; returns the
+    /// direction-stabilized target. Before enough movement is read it tracks the
+    /// raw input; once moving it projects onto the dominant 8-way axis, and after
+    /// the sampling window that axis is locked for the rest of the gesture.
+    pub fn update(&mut self, raw: (f32, f32), dt: f32) -> (f32, f32) {
+        if !self.active {
+            return raw;
+        }
+        self.elapsed += dt;
+        let d = (raw.0 - self.base.0, raw.1 - self.base.1);
+        let dir = match self.locked {
+            Some(l) => l,
+            None => {
+                let m = (d.0 * d.0 + d.1 * d.1).sqrt();
+                if m <= self.min_move {
+                    self.cur = None;
+                    return raw; // intent not readable yet — follow the finger
+                }
+                let a = (d.1.atan2(d.0) / FRAC_PI_4).round() * FRAC_PI_4;
+                let prov = (a.cos(), a.sin());
+                if self.elapsed >= self.window {
+                    self.locked = Some(prov); // window elapsed → lock the dominant dir
+                }
+                prov
+            }
+        };
+        self.cur = Some(dir);
+        let proj = d.0 * dir.0 + d.1 * dir.1; // motion ALONG the axis only
+        (self.base.0 + dir.0 * proj, self.base.1 + dir.1 * proj)
+    }
+
+    /// End the gesture.
+    pub fn end(&mut self) {
+        self.active = false;
+    }
+
+    /// The direction in effect this frame (provisional during the window, then
+    /// the locked axis), or None before any intent is read.
+    pub fn direction(&self) -> Option<(f32, f32)> {
+        self.cur
+    }
+}
