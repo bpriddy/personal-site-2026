@@ -685,6 +685,17 @@ fn raster_layer(
 }
 
 // interleave name(RG) + phrase(BA) coverage into one RGBA upload buffer
+fn compass_word(d: (f32, f32)) -> &'static str {
+    // d is the panel's world direction (offset space: +y = down/south,
+    // +x = east, up/north = -y). North is the MENU; the rest are placeholders.
+    const W: [&str; 8] = [
+        "EAST", "SOUTHEAST", "SOUTH", "SOUTHWEST", "WEST", "NORTHWEST", "MENU", "NORTHEAST",
+    ];
+    let q = std::f32::consts::FRAC_PI_4;
+    let i = (d.1.atan2(d.0) / q).round() as i32;
+    W[(((i % 8) + 8) % 8) as usize]
+}
+
 fn pack_rgba(nb: &[u8], ns: &[u8], pb: &[u8], ps: &[u8]) -> Vec<u8> {
     let n = nb.len();
     let mut out = Vec::with_capacity(n * 4);
@@ -1405,6 +1416,7 @@ async fn run() {
     let mut was_dragging = false;
     let mut menu_off = (0.0f32, -1.0f32); // lerps toward its conveyor slot (soft trail)
     let mut drag_intent = DragIntent::new();
+    let mut cur_word: &str = "MENU";
     let mut phrase_idx: usize = 0;
     let mut phase: u8 = 0; // 0 hold, 1 exit (push back + fade), 2 enter (forward + fade in)
     let mut phase_start = t0;
@@ -1538,10 +1550,27 @@ async fn run() {
             tx_off = (tx_off.0 + tx_vel.0 * dt, tx_off.1 + tx_vel.1 * dt);
         }
         offpub_r.set(tx_off);
-        // the menu trails its conveyor slot with a soft lerp, so its motion
-        // reads elastic/natural rather than rigidly bolted to the text
+        // the revealed panel's word follows the locked drag direction's
+        // compass (north = MENU, others = placeholder directions); MENU stays
+        // fixed above the top, summoned by dragging down
+        if let Some(ld) = drag_intent.locked_direction() {
+            let word = compass_word((-ld.0, -ld.1));
+            if word != cur_word {
+                let (mb, ms) = raster_layer(
+                    &fctx,
+                    field_w,
+                    field_h,
+                    &[(word.to_string(), field_w as f64 * 0.13, field_h as f64 * 0.5)],
+                );
+                let z = vec![0u8; mb.len()];
+                upload_field(&queue, &menu_tex, field_w, field_h, &pack_rgba(&mb, &ms, &z, &z));
+                cur_word = word;
+            }
+        }
+        // the menu trails its conveyor slot with a stronger lerp for an
+        // elastic, floaty feel as it eases in/out
         let menu_slot = (tx_off.0 - last_dir.0 * span, tx_off.1 - last_dir.1 * span);
-        let ml = 1.0 - (-9.0f32 * dt).exp();
+        let ml = 1.0 - (-5.0f32 * dt).exp();
         menu_off = (menu_off.0 + (menu_slot.0 - menu_off.0) * ml,
                     menu_off.1 + (menu_slot.1 - menu_off.1) * ml);
 

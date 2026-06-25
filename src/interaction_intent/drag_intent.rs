@@ -82,4 +82,11 @@ impl DragIntent {
     pub fn direction(&self) -> Option<(f32, f32)> {
         self.cur
     }
+
+    /// The committed axis, available only once the sampling window has locked it
+    /// (None during the window). Use this to react once per gesture rather than
+    /// to the provisional direction that may still be settling.
+    pub fn locked_direction(&self) -> Option<(f32, f32)> {
+        self.locked
+    }
 }
