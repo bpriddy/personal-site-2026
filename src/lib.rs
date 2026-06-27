@@ -68,6 +68,10 @@ struct Params {
     porosity: f32, // rest-state flow-through between glyphs (live FEEL dial)
     pressed: f32,    // 1.0 while a finger/mouse is down (mousedown..mouseup)
     wake_width: f32, // press-wake berth radius (fraction of screen width, live dial)
+    press_z: f32,    // visible text z-scale: <1 recedes on press, eases back on release
+    pz0: f32,
+    pz1: f32,
+    pz2: f32,
 }
 
 // Compute: integrate particles against the obstacle field (channel R).
@@ -84,6 +88,7 @@ struct Params {
   text_du: f32, text_dv: f32, text_vx: f32, text_vy: f32,
   menu_du: f32, menu_dv: f32, pad0: f32, pad1: f32,
   wake: f32, porosity: f32, pressed: f32, wake_width: f32,
+  press_z: f32, pz0: f32, pz1: f32, pz2: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -272,6 +277,7 @@ struct Params {
   text_du: f32, text_dv: f32, text_vx: f32, text_vy: f32,
   menu_du: f32, menu_dv: f32, pad0: f32, pad1: f32,
   wake: f32, porosity: f32, pressed: f32, wake_width: f32,
+  press_z: f32, pz0: f32, pz1: f32, pz2: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -487,6 +493,7 @@ struct Params {
   text_du: f32, text_dv: f32, text_vx: f32, text_vy: f32,
   menu_du: f32, menu_dv: f32, pad0: f32, pad1: f32,
   wake: f32, porosity: f32, pressed: f32, wake_width: f32,
+  press_z: f32, pz0: f32, pz1: f32, pz2: f32,
 };
 @group(0) @binding(4) var<uniform> P: Params;
 @group(0) @binding(5) var menutex: texture_2d<f32>;
@@ -542,18 +549,22 @@ fn fs_comp(in: VOut) -> @location(0) vec4<f32> {
   // full, untouched bloom everywhere — the text is drawn ON TOP, occluding it
   var c = aces((scene + glow * 1.25 * P.intro_glow) * 0.92);
 
+  // press recede: scale the TEXT sampling around screen centre (press_z<1 pushes
+  // the visible words back to meet the wake). The scene/bloom keep in.uv.
+  let zuv = vec2<f32>(0.5, 0.5) + (in.uv - vec2<f32>(0.5, 0.5)) / max(P.press_z, 0.01);
+
   // NAME (G) — permanent, screen-locked, full opacity
   // NAME (G) — resolves soft->crisp and fades in during the intro, then locked
-  let name_c = smoothstep(0.42, 0.55, textureSampleLevel(fieldtex, samp, in.uv - vec2<f32>(P.text_du, P.text_dv), 0.0).g) * P.name_op;
+  let name_c = smoothstep(0.42, 0.55, textureSampleLevel(fieldtex, samp, zuv - vec2<f32>(P.text_du, P.text_dv), 0.0).g) * P.name_op;
   // PHRASE (A) — fades + pushes in z: scale the MASK sampling around the
   // phrase center (z<1 expands the sample → glyphs shrink → pushed back),
   // and multiply coverage by opacity. A fading phrase reveals the bloom again.
   let pivot = vec2<f32>(0.5, P.phrase_cy);
-  let puv = pivot + (in.uv - vec2<f32>(P.text_du, P.text_dv) - pivot) / max(P.phrase_z, 0.01);
+  let puv = pivot + (zuv - vec2<f32>(P.text_du, P.text_dv) - pivot) / max(P.phrase_z, 0.01);
   let phrase_c = smoothstep(0.42, 0.55,
     textureSampleLevel(fieldtex, samp, puv, 0.0).a) * P.phrase_op;
 
-  let m_uv = (in.uv + vec2<f32>(1.0, 1.0) - vec2<f32>(P.menu_du, P.menu_dv)) / 3.0;
+  let m_uv = (zuv + vec2<f32>(1.0, 1.0) - vec2<f32>(P.menu_du, P.menu_dv)) / 3.0;
   let m_in = abs(m_uv.x - P.pad0) < 0.1667 && abs(m_uv.y - P.pad1) < 0.1667;
   let menu_c = select(0.0, smoothstep(0.42, 0.55, textureSampleLevel(menutex, samp, m_uv, 0.0).g), m_in);
   let cover = max(max(name_c, phrase_c), menu_c);
@@ -1662,7 +1673,7 @@ async fn run() {
     let mut snap_target = (0.0f32, 0.0f32);
     let mut committed = (0.0f32, 0.0f32); // resting state: name (origin) or a panel
     let mut was_dragging = false;
-    let mut menu_off = (0.0f32, 0.0f32); // lerped pan of the panel atlas (trails the drag)
+    let mut press_z = 1.0f32; // visible-text recede: dips on press, eases back on release
     let mut drag_intent = DragIntent::new();
     drag_intent.set_axis_mode(true); // lock to an axis → drag both ways (up & down, etc.)
     let mut phrase_idx: usize = 0;
@@ -1851,11 +1862,13 @@ async fn run() {
             tx_off = (tx_off.0 + tx_vel.0 * dt, tx_off.1 + tx_vel.1 * dt);
         }
         offpub_r.set(tx_off);
-        // the panel atlas pans with the drag but trails it with a strong lerp
-        // (elastic/floaty). All panels are baked in place; nothing repositions
-        let ml = 1.0 - (-dial("menu_lerp", 5.0) * dt).exp();
-        menu_off = (menu_off.0 + (tx_off.0 - menu_off.0) * ml,
-                    menu_off.1 + (tx_off.1 - menu_off.1) * ml);
+        // the panel atlas pans DIRECTLY with the drag (menu uniforms use tx_off, same
+        // as the name) so it drags and throws with identical feel - no lerp lag.
+        // on press the visible text recedes slightly in z to meet the wake growth,
+        // then eases back to normal more slowly on release
+        let pz_target = if dragging > 0.5 { 0.93f32 } else { 1.0f32 };
+        let pz_rate = if dragging > 0.5 { 7.0f32 } else { 3.0f32 };
+        press_z += (pz_target - press_z) * (1.0 - (-pz_rate * dt).exp());
         // active panel cell centre in atlas-uv, for the shader mask (only this cell
         // shows). The active panel is on whichever SIDE of the axis the offset is,
         // so dragging the other way reveals the opposite panel. centre = (1.5-cell)/3
@@ -1900,14 +1913,18 @@ async fn run() {
             text_dv: tx_off.1 * name_lead,
             text_vx: tx_vel.0 * 2.0 * name_lead,
             text_vy: tx_vel.1 * -2.0 * name_lead,
-            menu_du: menu_off.0,
-            menu_dv: menu_off.1,
+            menu_du: tx_off.0,
+            menu_dv: tx_off.1,
             pad0: menu_cell.0,
             pad1: menu_cell.1,
             wake: dial("wake", 1.0),
             porosity: dial("porosity", 0.55),
             pressed: if dragging > 0.5 { 1.0 } else { 0.0 },
             wake_width: dial("wake_width", 0.09),
+            press_z,
+            pz0: 0.0,
+            pz1: 0.0,
+            pz2: 0.0,
         };
         queue.write_buffer(&param_buf, 0, bytemuck::bytes_of(&params));
 
