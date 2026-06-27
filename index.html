@@ -204,6 +204,7 @@
         border: 1px solid rgba(138, 90, 40, 0.3); border-radius: 0;
         font: 12px/1.6 ui-monospace, Menlo, monospace; padding: 8px;
       }
+      #phrase-text.invalid { border-color: #c0563a; }
       #phrase-save {
         display: block; width: 100%; margin-top: 8px; padding: 7px;
         border: 1px solid rgba(242, 163, 94, 0.4); border-radius: 0;
@@ -255,13 +256,13 @@
     <div id="fps">starting…</div>
 
 
-    <button id="phrase-btn" title="edit phrases (p)">✎</button>
+    <button id="phrase-btn" title="edit sections (p)">✎</button>
     <div id="phrases" class="hidden">
       <button id="phrase-close" aria-label="Close">×</button>
-      <h3>PHRASES</h3>
-      <p class="hint">one per line · the running line below your name</p>
+      <h3>SECTIONS</h3>
+      <p class="hint">JSON · each section's action_phrase is the line below your name</p>
       <textarea id="phrase-text" spellcheck="false"></textarea>
-      <button id="phrase-save" title="write phrases.json in place">SAVE PHRASES.JSON</button>
+      <button id="phrase-save" title="write sections.json in place">SAVE SECTIONS.JSON</button>
     </div>
     <button id="gear" title="tuning dials (d)">⚙</button>
     <div id="dials" class="hidden">
@@ -342,10 +343,10 @@
       // SAVE button downloads dials.json — drop it in the repo root and the
       // next build ships exactly these values.
       window.__DIALS = {};
-      window.__PHRASES = [];
+      window.__SECTIONS = [];
       try {
-        var sp = JSON.parse(localStorage.getItem("phrases") || "null");
-        if (Array.isArray(sp) && sp.length) window.__PHRASES = sp;
+        var sp = JSON.parse(localStorage.getItem("sections") || "null");
+        if (Array.isArray(sp) && sp.length) window.__SECTIONS = sp;
       } catch (e) {}
       (function () {
         try {
@@ -398,7 +399,7 @@
           if (e.key === "f" && !e.metaKey && !e.ctrlKey) toggle2();
         });
 
-        // ── phrase editor: window.__PHRASES read by the wasm each cycle ──
+        // ── section editor: window.__SECTIONS (JSON) read by the wasm each cycle ──
         var phrasePanel = document.getElementById("phrases");
         var phraseBtn = document.getElementById("phrase-btn");
         var phraseText = document.getElementById("phrase-text");
@@ -414,27 +415,33 @@
           if (t === "TEXTAREA" || t === "INPUT") return;
           if (e.key === "p" && !e.metaKey && !e.ctrlKey) togglePhrases();
         });
-        function fillPhrases() {
+        function fillSections() {
           if (document.activeElement !== phraseText) {
-            phraseText.value = (window.__PHRASES || []).join("\n");
+            phraseText.value = JSON.stringify(window.__SECTIONS || [], null, 2);
           }
         }
-        // wasm calls this with baked phrases.json; localStorage edits win
-        window.__initPhrases = function (arr) {
-          if (!window.__PHRASES || !window.__PHRASES.length) {
-            window.__PHRASES = Array.prototype.slice.call(arr);
+        // wasm calls this with baked sections.json; localStorage edits win
+        window.__initSections = function (arr) {
+          if (!window.__SECTIONS || !window.__SECTIONS.length) {
+            window.__SECTIONS = Array.prototype.slice.call(arr);
           }
-          fillPhrases();
+          fillSections();
         };
+        // edit the whole sections array as JSON; only commit when it parses to an
+        // array, so a half-typed edit can't break the running viz.
         phraseText.addEventListener("input", function () {
-          window.__PHRASES = phraseText.value.split("\n")
-            .map(function (x) { return x.trim(); })
-            .filter(Boolean);
-          try { localStorage.setItem("phrases", JSON.stringify(window.__PHRASES)); } catch (e) {}
+          var parsed = null;
+          try { parsed = JSON.parse(phraseText.value); } catch (e) {}
+          var ok = Array.isArray(parsed);
+          phraseText.classList.toggle("invalid", !ok && phraseText.value.trim() !== "");
+          if (ok) {
+            window.__SECTIONS = parsed;
+            try { localStorage.setItem("sections", JSON.stringify(parsed)); } catch (e) {}
+          }
         });
-        fillPhrases();
-        // SAVE writes phrases.json IN PLACE via the File System Access API:
-        // pick the repo's phrases.json once (handle persisted in IndexedDB),
+        fillSections();
+        // SAVE writes sections.json IN PLACE via the File System Access API:
+        // pick the repo's sections.json once (handle persisted in IndexedDB),
         // then every later save overwrites it silently — no download dialog.
         // Falls back to a download where the API is unavailable.
         function idbHandle(method, val) {
@@ -444,7 +451,7 @@
             op.onsuccess = function () {
               var tx = op.result.transaction("h", method === "get" ? "readonly" : "readwrite");
               var st = tx.objectStore("h");
-              var rq = method === "get" ? st.get("phrases") : st.put(val, "phrases");
+              var rq = method === "get" ? st.get("sections") : st.put(val, "sections");
               rq.onsuccess = function () { resolve(method === "get" ? rq.result : true); };
               rq.onerror = function () { resolve(null); };
             };
@@ -457,26 +464,26 @@
           b.textContent = msg;
           setTimeout(function () { b.textContent = b.dataset.label; }, 1300);
         }
-        var phrasesHandle = null;
+        var sectionsHandle = null;
         async function savePhrases() {
-          var json = JSON.stringify(window.__PHRASES || [], null, 2) + "\n";
+          var json = JSON.stringify(window.__SECTIONS || [], null, 2) + "\n";
           try { navigator.clipboard.writeText(json); } catch (e) {}
           if (window.showSaveFilePicker) {
             try {
-              if (!phrasesHandle) phrasesHandle = await idbHandle("get");
-              if (phrasesHandle) {
-                var perm = await phrasesHandle.queryPermission({ mode: "readwrite" });
-                if (perm !== "granted") perm = await phrasesHandle.requestPermission({ mode: "readwrite" });
-                if (perm !== "granted") phrasesHandle = null;
+              if (!sectionsHandle) sectionsHandle = await idbHandle("get");
+              if (sectionsHandle) {
+                var perm = await sectionsHandle.queryPermission({ mode: "readwrite" });
+                if (perm !== "granted") perm = await sectionsHandle.requestPermission({ mode: "readwrite" });
+                if (perm !== "granted") sectionsHandle = null;
               }
-              if (!phrasesHandle) {
-                phrasesHandle = await window.showSaveFilePicker({
-                  suggestedName: "phrases.json",
+              if (!sectionsHandle) {
+                sectionsHandle = await window.showSaveFilePicker({
+                  suggestedName: "sections.json",
                   types: [{ description: "JSON", accept: { "application/json": [".json"] } }]
                 });
-                await idbHandle("put", phrasesHandle);
+                await idbHandle("put", sectionsHandle);
               }
-              var w = await phrasesHandle.createWritable();
+              var w = await sectionsHandle.createWritable();
               await w.write(json);
               await w.close();
               flashSave("saved \u2713");
@@ -487,7 +494,7 @@
           }
           var a = document.createElement("a");
           a.href = URL.createObjectURL(new Blob([json], { type: "application/json" }));
-          a.download = "phrases.json";
+          a.download = "sections.json";
           a.click();
           flashSave("downloaded");
         }

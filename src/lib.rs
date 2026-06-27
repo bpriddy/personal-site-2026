@@ -20,8 +20,9 @@ use interaction_intent::scroll_intent::ScrollIntent;
 // ─────────────────────────────────────────────────────────────────────────────
 
 const LINE1: &str = "BEN PRIDDY";
-// The phrase list lives in phrases.json (baked at build time, editable live via
-// the hidden phrase panel → window.__PHRASES). PHRASE_SECONDS sets the cycle.
+// Content sections live in sections.json (baked at build time, editable live via
+// the hidden ✎ panel → window.__SECTIONS as JSON). Each section's action_phrase
+// is the line that cycles under the name; PHRASE_SECONDS sets the cycle.
 const PHRASE_SECONDS: f64 = 4.5;
 
 const PARTICLES: u32 = 500_000;
@@ -668,19 +669,28 @@ fn dial(name: &str, default: f32) -> f32 {
         .unwrap_or(default)
 }
 
-// the live phrase list from window.__PHRASES (editor panel); falls back to the
-// baked phrases.json when unset or empty so the viz never breaks
-fn current_phrases(fallback: &[String]) -> Vec<String> {
+// extract the "action_phrase" string from one section object (a member of the
+// live __SECTIONS list or the baked sections.json). A section's other properties
+// are carried in the data but not read by the renderer yet.
+fn section_action_phrase(obj: &wasm_bindgen::JsValue) -> Option<String> {
+    js_sys::Reflect::get(obj, &"action_phrase".into())
+        .ok()
+        .and_then(|v| v.as_string())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+// the live section list from window.__SECTIONS (editor panel), reduced to their
+// action phrases for the home cycle; falls back to the baked sections.json when
+// unset or empty so the viz never breaks
+fn current_action_phrases(fallback: &[String]) -> Vec<String> {
     let arr = web_sys::window()
-        .and_then(|w| js_sys::Reflect::get(&w, &"__PHRASES".into()).ok())
+        .and_then(|w| js_sys::Reflect::get(&w, &"__SECTIONS".into()).ok())
         .and_then(|v| v.dyn_into::<js_sys::Array>().ok());
     if let Some(a) = arr {
         let mut out = Vec::new();
         for i in 0..a.length() {
-            if let Some(t) = a.get(i).as_string() {
-                let t = t.trim().to_string();
-                if !t.is_empty() { out.push(t); }
-            }
+            if let Some(p) = section_action_phrase(&a.get(i)) { out.push(p); }
         }
         if !out.is_empty() { return out; }
     }
@@ -1004,12 +1014,13 @@ async fn run() {
             func.call1(&wasm_bindgen::JsValue::NULL, &baked).ok();
         }
     }
-    // phrases.json: baked phrase list, pushed to the editor panel; runtime edits
-    // (window.__PHRASES) override it. Parse to a Vec for the fallback.
+    // sections.json: baked content sections, pushed to the editor panel (which
+    // edits them as JSON → window.__SECTIONS). Reduce to action phrases for the
+    // home-cycle fallback; other properties ride along untouched.
     let baked_phrases: Vec<String> = {
-        let v = js_sys::JSON::parse(include_str!("../phrases.json"))
+        let v = js_sys::JSON::parse(include_str!("../sections.json"))
             .unwrap_or(wasm_bindgen::JsValue::NULL);
-        if let Ok(f) = js_sys::Reflect::get(&window, &"__initPhrases".into()) {
+        if let Ok(f) = js_sys::Reflect::get(&window, &"__initSections".into()) {
             if let Some(func) = f.dyn_ref::<js_sys::Function>() {
                 func.call1(&wasm_bindgen::JsValue::NULL, &v).ok();
             }
@@ -1017,7 +1028,7 @@ async fn run() {
         let mut out = Vec::new();
         if let Ok(arr) = v.dyn_into::<js_sys::Array>() {
             for i in 0..arr.length() {
-                if let Some(t) = arr.get(i).as_string() { out.push(t); }
+                if let Some(p) = section_action_phrase(&arr.get(i)) { out.push(p); }
             }
         }
         if out.is_empty() { out.push("BUILDS TECHNOLOGY".to_string()); }
@@ -1418,7 +1429,7 @@ async fn run() {
     // on each swap and interleaved with the cached name channels
     let name_entries = name_layout(field_w, field_h, css_w);
     let (name_blur, name_sharp) = raster_layer(&fctx, field_w, field_h, &name_entries);
-    let first_phrase = current_phrases(&baked_phrases)
+    let first_phrase = current_action_phrases(&baked_phrases)
         .into_iter()
         .next()
         .unwrap_or_else(|| baked_phrases[0].clone());
@@ -1867,7 +1878,7 @@ async fn run() {
             phrase_tt = 0.0;
             // pre-warm: bake the NEXT phrase's SDF during the quiet hold so the
             // swap itself does zero work (cheap no-op once cached)
-            let phrases = current_phrases(&baked_phrases);
+            let phrases = current_action_phrases(&baked_phrases);
             // bound the cache to the live phrase set (live editing won't leak)
             sdf_cache.retain(|k, _| phrases.iter().any(|p| p == k));
             let nxt = phrases[(phrase_idx + 1) % phrases.len()].clone();
@@ -1882,7 +1893,7 @@ async fn run() {
             let e = (el / exit_dur).min(1.0);
             phrase_tt = e * e * (3.0 - 2.0 * e);
             if el >= exit_dur {
-                let phrases = current_phrases(&baked_phrases);
+                let phrases = current_action_phrases(&baked_phrases);
                 phrase_idx = (phrase_idx + 1) % phrases.len();
                 let (pe, cy) = phrase_layout(field_w, field_h, css_w, &phrases[phrase_idx]);
                 let (pb, ps) = raster_layer(&fctx, field_w, field_h, &pe);
