@@ -974,7 +974,9 @@ fn zhang_suen(g: &mut [u8], w: usize, h: usize) {
 // (2× the interior distance, from edt8 on the inverted mask). Returns a flat
 // [x, y, width, …] with x,y in 0..1 (normalized to the raster) and width as a
 // fraction of the raster width — the spine the section camera flies along.
-fn bake_stroke_path(ctx: &web_sys::CanvasRenderingContext2d, w: u32, h: u32, title: &str) -> Vec<f32> {
+// rasterize a title word large + centered (shrunk to fit) into a sharp coverage
+// mask — shared by the stroke-path tracer and the title SDF bake.
+fn raster_title_sharp(ctx: &web_sys::CanvasRenderingContext2d, w: u32, h: u32, title: &str) -> Vec<u8> {
     let (wf, hf) = (w as f64, h as f64);
     let (wu, hu) = (w as usize, h as usize);
     ctx.set_filter("none");
@@ -995,7 +997,27 @@ fn bake_stroke_path(ctx: &web_sys::CanvasRenderingContext2d, w: u32, h: u32, tit
     ctx.fill_text(title, wf * 0.5, hf * 0.5).ok();
     let img = ctx.get_image_data(0.0, 0.0, wf, hf).unwrap().data();
     let n = wu * hu;
-    let sharp: Vec<u8> = (0..n).map(|i| img[i * 4]).collect();
+    (0..n).map(|i| img[i * 4]).collect()
+}
+
+// a section title's camera path + render/wake SDF, from ONE raster. Returns the
+// stroke-centerline path (flat [x,y,width,…], normalized) and a wake-format SDF
+// (RG outward dir, B distance as a fraction of the title width).
+fn bake_title(ctx: &web_sys::CanvasRenderingContext2d, w: u32, h: u32, title: &str) -> (Vec<f32>, Vec<u8>) {
+    let sharp = raster_title_sharp(ctx, w, h, title);
+    let path = stroke_path_from(&sharp, w, h);
+    let sdf = coverage_to_sdf(&sharp, w, h, w as f32, 0.35); // 0.35 = SDF_MAXDIST
+    (path, sdf)
+}
+
+// trace an ordered stroke-centerline path from a sharp coverage mask: skeletonize
+// (Zhang-Suen), walk it in reading order (per letter, junctions resolved), tag
+// each point with stroke width. Flat [x,y,width,…]; x,y in 0..1, width a fraction
+// of the raster width.
+fn stroke_path_from(sharp: &[u8], w: u32, h: u32) -> Vec<f32> {
+    let (wf, hf) = (w as f64, h as f64);
+    let (wu, hu) = (w as usize, h as usize);
+    let n = wu * hu;
 
     let mut g: Vec<u8> = sharp.iter().map(|&v| if v > 127 { 1 } else { 0 }).collect();
     zhang_suen(&mut g, wu, hu);
@@ -1745,21 +1767,38 @@ async fn run() {
     scanvas.set_height(sdf_h);
     let sctx: web_sys::CanvasRenderingContext2d =
         scanvas.get_context("2d").unwrap().unwrap().dyn_into().unwrap();
-    // STAGE A: extract a stroke-centerline path for a prototype section title and
-    // expose it to JS (window.__STROKE_PATH, flat [x,y,width,…] normalized) so the
-    // ordered path can be verified before the camera that flies it is wired up.
-    {
+    // SECTION CAMERA: bake the (prototype) section title once → its stroke-
+    // centerline path (the camera spine) + a wake-format SDF (rendered crisp when
+    // scaled up, and later fed to the wake). Square raster so path and SDF share
+    // isotropic coords.
+    let (title_w, title_h) = (768u32, 768u32);
+    let (title_path, title_sdf_bytes) = {
         let pcanvas: web_sys::HtmlCanvasElement =
             document.create_element("canvas").unwrap().dyn_into().unwrap();
-        let (pw, ph) = (1024u32, 384u32);
-        pcanvas.set_width(pw);
-        pcanvas.set_height(ph);
+        pcanvas.set_width(title_w);
+        pcanvas.set_height(title_h);
         let pctx: web_sys::CanvasRenderingContext2d =
             pcanvas.get_context("2d").unwrap().unwrap().dyn_into().unwrap();
-        let path = bake_stroke_path(&pctx, pw, ph, "BUILDS");
-        let arr = js_sys::Float32Array::from(path.as_slice());
-        js_sys::Reflect::set(&window, &"__STROKE_PATH".into(), &arr).ok();
-    }
+        bake_title(&pctx, title_w, title_h, "BUILDS")
+    };
+    js_sys::Reflect::set(
+        &window,
+        &"__STROKE_PATH".into(),
+        &js_sys::Float32Array::from(title_path.as_slice()),
+    )
+    .ok();
+    let title_sdf_tex = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("title-sdf"),
+        size: wgpu::Extent3d { width: title_w, height: title_h, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let title_sdf_view = title_sdf_tex.create_view(&wgpu::TextureViewDescriptor::default());
+    upload_field(&queue, &title_sdf_tex, title_w, title_h, &title_sdf_bytes);
     let sdf_tex = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("wake-sdf"),
         size: wgpu::Extent3d { width: sdf_w, height: sdf_h, depth_or_array_layers: 1 },
