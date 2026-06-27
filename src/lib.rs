@@ -66,8 +66,8 @@ struct Params {
     pad1: f32,
     wake: f32,     // plow/wake strength (live FEEL dial)
     porosity: f32, // rest-state flow-through between glyphs (live FEEL dial)
-    pad2: f32,
-    pad3: f32,
+    pressed: f32,    // 1.0 while a finger/mouse is down (mousedown..mouseup)
+    wake_width: f32, // press-wake berth radius (fraction of screen width, live dial)
 }
 
 // Compute: integrate particles against the obstacle field (channel R).
@@ -83,12 +83,14 @@ struct Params {
   bg_fade: f32, part_fade: f32, name_op: f32, intro_glow: f32,
   text_du: f32, text_dv: f32, text_vx: f32, text_vy: f32,
   menu_du: f32, menu_dv: f32, pad0: f32, pad1: f32,
-  wake: f32, porosity: f32, pad2: f32, pad3: f32,
+  wake: f32, porosity: f32, pressed: f32, wake_width: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
 @group(0) @binding(2) var fsamp: sampler;
 @group(0) @binding(3) var menu: texture_2d<f32>;
+@group(0) @binding(4) var sdftex: texture_2d<f32>; // wake distance field (RG=dir, B=dist)
+@group(0) @binding(5) var menusdf: texture_2d<f32>; // off-screen panel wake field
 @group(1) @binding(0) var<storage, read_write> parts: array<Particle>;
 
 fn pcg(v: u32) -> u32 {
@@ -163,9 +165,9 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
   // obstacle deflection: push away from glyphs along the field gradient
   let f = fieldAt(pt.pos);
   if (f > 0.02) {
-    // how hard the text is moving: 0 at rest, ->1 while dragging. At rest the glyphs
-    // are porous so particles thread BETWEEN the letters; dragging makes them shove.
-    let dragk = clamp(length(vec2<f32>(P.text_vx, P.text_vy)) * 0.5, 0.0, 1.0);
+    // 0 at rest, ->1 while engaged. At rest the glyphs are porous so particles
+    // thread BETWEEN the letters; pressing or moving makes them shove hard.
+    let dragk = max(clamp(length(vec2<f32>(P.text_vx, P.text_vy)) * 0.5, 0.0, 1.0), P.pressed);
     // porosity opens the glyphs at rest (full deflection returns while dragging)
     let pf = (1.0 - P.porosity) + P.porosity * dragk;
     let e = 0.012;
@@ -182,6 +184,36 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
     // a moving word plows the field along its travel - bow wave + wake, like an
     // object dragged through water. sqrt(f) term widens the wake into the halo.
     v += vec2<f32>(P.text_vx, P.text_vy) * (f * 6.0 + sqrt(f) * 3.0) * P.wake * P.dt;
+  }
+  // PRESS WAKE: while a finger/mouse is DOWN, push a WIDE, EVEN berth around the
+  // words using the baked wake SDF - RG is the screen-outward unit direction, B
+  // the distance to the words. Radial in every direction (corners included), with
+  // a smooth falloff out to wake_width. Sampled in the words' moving frame.
+  if (P.pressed > 0.5) {
+    let suv = vec2<f32>(pt.pos.x * 0.5 + 0.5, 0.5 - pt.pos.y * 0.5)
+              - vec2<f32>(P.text_du, P.text_dv);
+    let suv0 = vec2<f32>(pt.pos.x * 0.5 + 0.5, 0.5 - pt.pos.y * 0.5);
+    let sdf = textureSampleLevel(sdftex, fsamp, suv, 0.0);
+    let dist = sdf.b * 0.35; // decode (matches bake maxdist)
+    if (dist < P.wake_width) {
+      let dir = sdf.rg * 2.0 - vec2<f32>(1.0, 1.0); // screen-outward unit
+      let ff = 1.0 - smoothstep(0.0, P.wake_width, dist); // strong near words → 0 at edge
+      // screen (+y down) → NDC (+y up)
+      v += vec2<f32>(dir.x, -dir.y) * ff * P.push * (1.0 + P.wake) * 2.0 * P.dt;
+    }
+    // same berth around the ACTIVE off-screen panel as it animates in (the word in
+    // motion). Sampled in the panned atlas frame, masked to the active cell so only
+    // that panel - not the other seven - gets a wake.
+    let muv = (suv0 + vec2<f32>(1.0, 1.0) - vec2<f32>(P.menu_du, P.menu_dv)) / 3.0;
+    if (abs(muv.x - P.pad0) < 0.1667 && abs(muv.y - P.pad1) < 0.1667) {
+      let msdf = textureSampleLevel(menusdf, fsamp, muv, 0.0);
+      let mdist = msdf.b * 0.35;
+      if (mdist < P.wake_width) {
+        let mdir = msdf.rg * 2.0 - vec2<f32>(1.0, 1.0);
+        let mff = 1.0 - smoothstep(0.0, P.wake_width, mdist);
+        v += vec2<f32>(mdir.x, -mdir.y) * mff * P.push * (1.0 + P.wake) * 2.0 * P.dt;
+      }
+    }
   }
   // never trap: inside the field particles may only SLOW, never stall — keep a
   // minimum drift so they always wash out of the letterforms
@@ -239,7 +271,7 @@ struct Params {
   bg_fade: f32, part_fade: f32, name_op: f32, intro_glow: f32,
   text_du: f32, text_dv: f32, text_vx: f32, text_vy: f32,
   menu_du: f32, menu_dv: f32, pad0: f32, pad1: f32,
-  wake: f32, porosity: f32, pad2: f32, pad3: f32,
+  wake: f32, porosity: f32, pressed: f32, wake_width: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -454,7 +486,7 @@ struct Params {
   bg_fade: f32, part_fade: f32, name_op: f32, intro_glow: f32,
   text_du: f32, text_dv: f32, text_vx: f32, text_vy: f32,
   menu_du: f32, menu_dv: f32, pad0: f32, pad1: f32,
-  wake: f32, porosity: f32, pad2: f32, pad3: f32,
+  wake: f32, porosity: f32, pressed: f32, wake_width: f32,
 };
 @group(0) @binding(4) var<uniform> P: Params;
 @group(0) @binding(5) var menutex: texture_2d<f32>;
@@ -698,6 +730,104 @@ fn raster_layer(
         sh.push(sharp[i * 4]);
     }
     (b, sh)
+}
+
+// 8SSEDT exterior distance transform: for every pixel, the (dx,dy) offset to the
+// nearest "inside" pixel (mask>127). Two sweeps; distance = |offset|. Canvas
+// pixels are square in screen space (the field shares the screen aspect), so the
+// offset is already screen-isotropic.
+fn edt8(mask: &[u8], w: usize, h: usize) -> Vec<(i32, i32)> {
+    const INF: i32 = 1 << 14;
+    let mut g = vec![(INF, INF); w * h];
+    for i in 0..w * h {
+        if mask[i] > 127 {
+            g[i] = (0, 0);
+        }
+    }
+    let d2 = |p: (i32, i32)| p.0 * p.0 + p.1 * p.1;
+    for y in 0..h {
+        for x in 0..w {
+            let mut c = g[y * w + x];
+            if x > 0 { let n = g[y * w + x - 1]; let cc = (n.0 - 1, n.1); if d2(cc) < d2(c) { c = cc; } }
+            if y > 0 { let n = g[(y - 1) * w + x]; let cc = (n.0, n.1 - 1); if d2(cc) < d2(c) { c = cc; } }
+            if x > 0 && y > 0 { let n = g[(y - 1) * w + x - 1]; let cc = (n.0 - 1, n.1 - 1); if d2(cc) < d2(c) { c = cc; } }
+            if x + 1 < w && y > 0 { let n = g[(y - 1) * w + x + 1]; let cc = (n.0 + 1, n.1 - 1); if d2(cc) < d2(c) { c = cc; } }
+            g[y * w + x] = c;
+        }
+    }
+    for y in (0..h).rev() {
+        for x in (0..w).rev() {
+            let mut c = g[y * w + x];
+            if x + 1 < w { let n = g[y * w + x + 1]; let cc = (n.0 + 1, n.1); if d2(cc) < d2(c) { c = cc; } }
+            if y + 1 < h { let n = g[(y + 1) * w + x]; let cc = (n.0, n.1 + 1); if d2(cc) < d2(c) { c = cc; } }
+            if x + 1 < w && y + 1 < h { let n = g[(y + 1) * w + x + 1]; let cc = (n.0 + 1, n.1 + 1); if d2(cc) < d2(c) { c = cc; } }
+            if x > 0 && y + 1 < h { let n = g[(y + 1) * w + x - 1]; let cc = (n.0 - 1, n.1 + 1); if d2(cc) < d2(c) { c = cc; } }
+            g[y * w + x] = c;
+        }
+    }
+    g
+}
+
+// turn a coverage mask into a wake SDF: RG = screen-space OUTWARD unit direction
+// (away from the words), B = distance to the words as a fraction of a screen
+// width (clamped to `maxdist`). `px_per_screen` = canvas px spanning one screen
+// width (= w for a screen-sized canvas, = w/3 for the 3x3 menu atlas).
+fn coverage_to_sdf(sharp: &[u8], w: u32, h: u32, px_per_screen: f32, maxdist: f32) -> Vec<u8> {
+    let g = edt8(sharp, w as usize, h as usize);
+    let n = (w * h) as usize;
+    let mut out = vec![0u8; n * 4];
+    let inv = 1.0 / maxdist;
+    for i in 0..n {
+        let (gx, gy) = g[i];
+        let l = ((gx * gx + gy * gy) as f32).sqrt();
+        let (dx, dy) = if l > 0.5 { (-(gx as f32) / l, -(gy as f32) / l) } else { (0.0, 0.0) };
+        let d = (l / px_per_screen * inv).min(1.0); // 0 at the words → 1 at maxdist
+        out[i * 4] = ((dx * 0.5 + 0.5) * 255.0).round().clamp(0.0, 255.0) as u8;
+        out[i * 4 + 1] = ((dy * 0.5 + 0.5) * 255.0).round().clamp(0.0, 255.0) as u8;
+        out[i * 4 + 2] = (d * 255.0).round().clamp(0.0, 255.0) as u8;
+        out[i * 4 + 3] = 255;
+    }
+    out
+}
+
+// wake SDF for the on-screen words (name + phrase), sampled in their moving frame
+fn bake_sdf(
+    ctx: &web_sys::CanvasRenderingContext2d,
+    sw: u32,
+    sh: u32,
+    css_w: f64,
+    phrase: &str,
+    maxdist: f32,
+) -> Vec<u8> {
+    let mut entries = name_layout(sw, sh, css_w);
+    entries.extend(phrase_layout(sw, sh, css_w, phrase).0);
+    let (_, sharp) = raster_layer(ctx, sw, sh, &entries);
+    coverage_to_sdf(&sharp, sw, sh, sw as f32, maxdist)
+}
+
+// wake SDF for the off-screen panel atlas (static, baked once). The atlas spans
+// 3 screens across `w`, so one screen width = w/3 px.
+fn bake_atlas_sdf(ctx: &web_sys::CanvasRenderingContext2d, w: u32, h: u32, maxdist: f32) -> Vec<u8> {
+    let entries = menu_atlas_entries(w, h);
+    let (_, sharp) = raster_atlas(ctx, w, h, &entries);
+    coverage_to_sdf(&sharp, w, h, w as f32 / 3.0, maxdist)
+}
+
+// the 8 off-screen panel words at their 3x3 atlas cell centres, sized for a
+// w x h canvas — shared by the live atlas raster and the wake-SDF bake
+fn menu_atlas_entries(w: u32, h: u32) -> Vec<(&'static str, f64, f64, f64)> {
+    let (cw, ch) = (w as f64, h as f64);
+    let pf = w as f64 * 0.033; // panel font (atlas is 3x screen → keep small)
+    vec![
+        ("NORTHWEST", pf, 0.1667 * cw, 0.1667 * ch),
+        ("MENU", pf, 0.5 * cw, 0.1667 * ch),
+        ("NORTHEAST", pf, 0.8333 * cw, 0.1667 * ch),
+        ("WEST", pf, 0.1667 * cw, 0.5 * ch),
+        ("EAST", pf, 0.8333 * cw, 0.5 * ch),
+        ("SOUTHWEST", pf, 0.1667 * cw, 0.8333 * ch),
+        ("SOUTH", pf, 0.5 * cw, 0.8333 * ch),
+        ("SOUTHEAST", pf, 0.8333 * cw, 0.8333 * ch),
+    ]
 }
 
 // interleave name(RG) + phrase(BA) coverage into one RGBA upload buffer
@@ -1171,18 +1301,7 @@ async fn run() {
 
     // MENU + placeholder map directions baked ONCE into a 3x3 world atlas:
     // centre cell empty (the name shows from the field), 8 fixed panels around
-    let (cw, ch) = (field_w as f64, field_h as f64);
-    let pf = field_w as f64 * 0.033; // panel font (atlas is 3x screen → keep small)
-    let menu_entries: Vec<(&str, f64, f64, f64)> = vec![
-        ("NORTHWEST", pf, 0.1667 * cw, 0.1667 * ch),
-        ("MENU", pf, 0.5 * cw, 0.1667 * ch),
-        ("NORTHEAST", pf, 0.8333 * cw, 0.1667 * ch),
-        ("WEST", pf, 0.1667 * cw, 0.5 * ch),
-        ("EAST", pf, 0.8333 * cw, 0.5 * ch),
-        ("SOUTHWEST", pf, 0.1667 * cw, 0.8333 * ch),
-        ("SOUTH", pf, 0.5 * cw, 0.8333 * ch),
-        ("SOUTHEAST", pf, 0.8333 * cw, 0.8333 * ch),
-    ];
+    let menu_entries = menu_atlas_entries(field_w, field_h);
     let (menu_blur, menu_sharp) = raster_atlas(&fctx, field_w, field_h, &menu_entries);
     let menu_zero = vec![0u8; menu_blur.len()];
     let menu_tex = device.create_texture(&wgpu::TextureDescriptor {
@@ -1198,6 +1317,53 @@ async fn run() {
     let menu_view = menu_tex.create_view(&wgpu::TextureViewDescriptor::default());
     upload_field(&queue, &menu_tex, field_w, field_h,
         &pack_rgba(&menu_blur, &menu_sharp, &menu_zero, &menu_zero));
+
+    // WAKE SDF: a low-res distance field of name+phrase (RG=outward dir, B=dist),
+    // re-baked per phrase at runtime so it always matches the responsive layout.
+    // Lazy cache + pre-warm live in the frame loop; this seeds the first phrase.
+    const SDF_MAXDIST: f32 = 0.35;
+    let sdf_w = 384u32;
+    let sdf_h = (((sdf_w as f32 * field_h as f32 / field_w as f32) as u32) + 3) & !3u32;
+    let scanvas: web_sys::HtmlCanvasElement =
+        document.create_element("canvas").unwrap().dyn_into().unwrap();
+    scanvas.set_width(sdf_w);
+    scanvas.set_height(sdf_h);
+    let sctx: web_sys::CanvasRenderingContext2d =
+        scanvas.get_context("2d").unwrap().unwrap().dyn_into().unwrap();
+    let sdf_tex = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("wake-sdf"),
+        size: wgpu::Extent3d { width: sdf_w, height: sdf_h, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let sdf_view = sdf_tex.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut sdf_cache: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
+    sdf_cache.insert(
+        first_phrase.clone(),
+        bake_sdf(&sctx, sdf_w, sdf_h, css_w, &first_phrase, SDF_MAXDIST),
+    );
+    upload_field(&queue, &sdf_tex, sdf_w, sdf_h, sdf_cache.get(&first_phrase).unwrap());
+
+    // wake SDF for the off-screen panel atlas — STATIC, so baked once. Sampled in
+    // the panned atlas frame + masked to the active cell, so the wake follows only
+    // the panel that's animating in.
+    let menu_sdf_tex = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("menu-sdf"),
+        size: wgpu::Extent3d { width: sdf_w, height: sdf_h, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let menu_sdf_view = menu_sdf_tex.create_view(&wgpu::TextureViewDescriptor::default());
+    upload_field(&queue, &menu_sdf_tex, sdf_w, sdf_h,
+        &bake_atlas_sdf(&sctx, sdf_w, sdf_h, SDF_MAXDIST));
 
     // ---- bind group layouts ----
     let common_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -1234,6 +1400,26 @@ async fn run() {
             wgpu::BindGroupLayoutEntry {
                 binding: 3,
                 visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 4, // name+phrase wake SDF — compute-only (the SIM samples it)
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 5, // off-screen panel wake SDF — compute-only
+                visibility: wgpu::ShaderStages::COMPUTE,
                 ty: wgpu::BindingType::Texture {
                     sample_type: wgpu::TextureSampleType::Float { filterable: true },
                     view_dimension: wgpu::TextureViewDimension::D2,
@@ -1315,6 +1501,8 @@ async fn run() {
             wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&field_view) },
             wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&lin_samp) },
             wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&menu_view) },
+            wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&sdf_view) },
+            wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::TextureView(&menu_sdf_view) },
         ],
     });
     let parts_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1538,6 +1726,15 @@ async fn run() {
         let phrase_tt: f64;
         if phase == 0 {
             phrase_tt = 0.0;
+            // pre-warm: bake the NEXT phrase's SDF during the quiet hold so the
+            // swap itself does zero work (cheap no-op once cached)
+            let phrases = current_phrases(&baked_phrases);
+            // bound the cache to the live phrase set (live editing won't leak)
+            sdf_cache.retain(|k, _| phrases.iter().any(|p| p == k));
+            let nxt = phrases[(phrase_idx + 1) % phrases.len()].clone();
+            if !sdf_cache.contains_key(&nxt) {
+                sdf_cache.insert(nxt.clone(), bake_sdf(&sctx, sdf_w, sdf_h, css_w, &nxt, SDF_MAXDIST));
+            }
             if el >= hold_dur {
                 phase = 1;
                 phase_start = now;
@@ -1557,6 +1754,14 @@ async fn run() {
                     field_h,
                     &pack_rgba(&name_blur, &name_sharp, &pb, &ps),
                 );
+                // wake SDF for the new phrase: cache hit (pre-warmed) → upload only,
+                // else bake it now (a couple ms, hidden in this transition), then HARD
+                // FAIL is impossible here since we just bake it.
+                let pkey = phrases[phrase_idx].clone();
+                if !sdf_cache.contains_key(&pkey) {
+                    sdf_cache.insert(pkey.clone(), bake_sdf(&sctx, sdf_w, sdf_h, css_w, &pkey, SDF_MAXDIST));
+                }
+                upload_field(&queue, &sdf_tex, sdf_w, sdf_h, sdf_cache.get(&pkey).unwrap());
                 phrase_cy = cy as f32;
                 phase = 2;
                 phase_start = now;
@@ -1701,8 +1906,8 @@ async fn run() {
             pad1: menu_cell.1,
             wake: dial("wake", 1.0),
             porosity: dial("porosity", 0.55),
-            pad2: 0.0,
-            pad3: 0.0,
+            pressed: if dragging > 0.5 { 1.0 } else { 0.0 },
+            wake_width: dial("wake_width", 0.09),
         };
         queue.write_buffer(&param_buf, 0, bytemuck::bytes_of(&params));
 

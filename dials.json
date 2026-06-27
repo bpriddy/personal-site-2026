@@ -9,9 +9,10 @@
   "text_sat": 0.72,
   "bg_speed": 2.5,
   "perturb": 0.5,
-  "wake": 3,
-  "porosity": 0.46,
+  "wake": 1.6,
+  "porosity": 0.54,
   "name_lead": 1,
-  "commit": 0.1,
-  "menu_lerp": 5
+  "commit": 0.2,
+  "menu_lerp": 1,
+  "wake_width": 0.04
 }
