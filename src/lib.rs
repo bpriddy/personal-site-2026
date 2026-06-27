@@ -1229,7 +1229,7 @@ async fn run() {
         let cb = Closure::<dyn FnMut(web_sys::WheelEvent)>::new(move |e: web_sys::WheelEvent| {
             e.prevent_default();
             let (ux, uy) = match e.delta_mode() {
-                1 => (16.0, 16.0),                 // lines → ~px
+                1 => (33.0, 33.0),                 // lines → px (~one notch ≈ 100px)
                 2 => (css_w as f64, css_h as f64), // pages → px
                 _ => (1.0, 1.0),                   // already pixels
             };

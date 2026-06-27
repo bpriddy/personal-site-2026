@@ -66,7 +66,7 @@ impl ScrollIntent {
             min_move: 0.015,
             step_threshold: 0.2,
             axis_mode: false,
-            forget_timeout: 0.5,
+            forget_timeout: 1.0,
             cooldown_idle: 0.18,
             enabled: true,
             accum: (0.0, 0.0),
