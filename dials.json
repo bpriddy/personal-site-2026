@@ -10,7 +10,7 @@
   "bg_speed": 2.5,
   "perturb": 0.5,
   "wake": 1.6,
-  "porosity": 0.6,
+  "porosity": 0.48,
   "name_lead": 1,
   "commit": 0.2,
   "menu_lerp": 1,

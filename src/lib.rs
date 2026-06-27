@@ -251,16 +251,28 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
   // it never reaches beyond wake_width (no expansion): a faster word carries
   // particles at its edge; a slower one lets the flow separate them. dist is in
   // screen-width units, so work in isotropic screen space (suv.y/aspect) and back.
-  // Engaged while pressed OR still moving, so the throw keeps plowing to the end.
+  // ANTI-TUNNEL: a fast word can step PAST a particle between frames without any
+  // frame catching the overlap. So we probe the wake SDF twice - at the word's
+  // current frame AND one step back along its path - and take the nearer (the
+  // word's swept "tail"). The back-step is mapped to velocity (no tail at the start
+  // of a slow drag) and capped at the line height (so it can't jump a line-gap and
+  // open a hole between words). Engaged while pressed OR still moving.
   if (engaged) {
     let aspect = P.res.x / P.res.y;
+    let line_h = 0.13; // back-probe cap ≈ text line height
     let scuv = vec2<f32>(pos.x * 0.5 + 0.5, 0.5 - pos.y * 0.5);
-    let nsdf = textureSampleLevel(sdftex, fsamp, scuv - vec2<f32>(P.text_du, P.text_dv), 0.0);
-    let nd = nsdf.b * 0.35;
+    // --- name + phrase ---
+    let suvA = scuv - vec2<f32>(P.text_du, P.text_dv);
+    let sa = textureSampleLevel(sdftex, fsamp, suvA, 0.0);
+    let trav = vec2<f32>(P.text_vx * 0.5, -P.text_vy * 0.5) * P.dt; // word's uv travel this frame
+    let tl = length(trav);
+    let noff = select(vec2<f32>(0.0, 0.0), trav / tl * min(tl, line_h), tl > 1e-6);
+    let sb = textureSampleLevel(sdftex, fsamp, suvA + noff, 0.0); // one step back along the path
+    var nd = sa.b * 0.35;
+    var nraw = sa.rg * 2.0 - vec2<f32>(1.0, 1.0);
+    if (sb.b < sa.b) { nd = sb.b * 0.35; nraw = sb.rg * 2.0 - vec2<f32>(1.0, 1.0); }
     // RENORMALIZE: linear filtering across the direction field's discontinuities
-    // (glyph gaps / interior-zero plateau) returns a sub-unit vector; without this
-    // the snap under-displaces and leaves particles inside the wake (residual skim).
-    let nraw = nsdf.rg * 2.0 - vec2<f32>(1.0, 1.0);
+    // returns a sub-unit vector; without this the snap under-displaces (residual skim).
     let nlen = length(nraw);
     let ns = select(vec2<f32>(0.0, 0.0), nraw / nlen, nlen > 1e-3); // isotropic-screen outward
     let nndc = vec2<f32>(ns.x, -ns.y * aspect); // NDC outward (aspect-correct)
@@ -273,12 +285,18 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
       let vin = dot(v, vn);
       if (vin < 0.0) { v -= vn * vin; } // drop inward velocity so it won't fight the edge
     }
+    // --- active off-screen panel (same dual probe, in the panned atlas frame /3) ---
     let scuv2 = vec2<f32>(pos.x * 0.5 + 0.5, 0.5 - pos.y * 0.5);
     let mu = (scuv2 + vec2<f32>(1.0, 1.0) - vec2<f32>(P.menu_du, P.menu_dv)) / 3.0;
     if (abs(mu.x - P.pad0) < 0.1667 && abs(mu.y - P.pad1) < 0.1667) {
-      let msd = textureSampleLevel(menusdf, fsamp, mu, 0.0);
-      let md2 = msd.b * 0.35;
-      let mraw = msd.rg * 2.0 - vec2<f32>(1.0, 1.0);
+      let ma = textureSampleLevel(menusdf, fsamp, mu, 0.0);
+      let mtrav = vec2<f32>(P.menu_vx * 0.5, -P.menu_vy * 0.5) * P.dt;
+      let mtl = length(mtrav);
+      let moff = select(vec2<f32>(0.0, 0.0), mtrav / mtl * min(mtl, line_h) / 3.0, mtl > 1e-6);
+      let mb = textureSampleLevel(menusdf, fsamp, mu + moff, 0.0);
+      var md2 = ma.b * 0.35;
+      var mraw = ma.rg * 2.0 - vec2<f32>(1.0, 1.0);
+      if (mb.b < ma.b) { md2 = mb.b * 0.35; mraw = mb.rg * 2.0 - vec2<f32>(1.0, 1.0); }
       let mlen = length(mraw);
       let ms = select(vec2<f32>(0.0, 0.0), mraw / mlen, mlen > 1e-3);
       let mndc = vec2<f32>(ms.x, -ms.y * aspect);
