@@ -69,8 +69,8 @@ struct Params {
     pressed: f32,    // 1.0 while a finger/mouse is down (mousedown..mouseup)
     wake_width: f32, // press-wake berth radius (fraction of screen width, live dial)
     press_z: f32,    // visible text z-scale: <1 recedes on press, eases back on release
-    pz0: f32,
-    pz1: f32,
+    menu_vx: f32,    // off-screen panel velocity (NDC/s, no name_lead) for its plow
+    menu_vy: f32,
     pz2: f32,
 }
 
@@ -88,7 +88,7 @@ struct Params {
   text_du: f32, text_dv: f32, text_vx: f32, text_vy: f32,
   menu_du: f32, menu_dv: f32, pad0: f32, pad1: f32,
   wake: f32, porosity: f32, pressed: f32, wake_width: f32,
-  press_z: f32, pz0: f32, pz1: f32, pz2: f32,
+  press_z: f32, menu_vx: f32, menu_vy: f32, pz2: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -190,33 +190,56 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
     // object dragged through water. sqrt(f) term widens the wake into the halo.
     v += vec2<f32>(P.text_vx, P.text_vy) * (f * 6.0 + sqrt(f) * 3.0) * P.wake * P.dt;
   }
-  // PRESS WAKE: while a finger/mouse is DOWN, push a WIDE, EVEN berth around the
-  // words using the baked wake SDF - RG is the screen-outward unit direction, B
-  // the distance to the words. Radial in every direction (corners included), with
-  // a smooth falloff out to wake_width. Sampled in the words' moving frame.
+  // PRESS WAKE: while DOWN, (a) push a wide even berth around the words (steady,
+  // baked SDF: RG = screen-outward unit dir, B = distance), and (b) SNOW-PLOW -
+  // any particle the MOVING word is bearing down on (closing > 0) has its outward
+  // velocity floored to outrun the approach, with the speed cap lifted for it, so
+  // the path is fully displaced instead of skimmed.
+  // the plow's outward target is saved here and APPLIED AFTER the speed cap, so the
+  // cap (which guards runaway) can never scale the plow away. >0 = a moving word is
+  // bearing down on this particle.
+  var plow_dir = vec2<f32>(0.0, 0.0);
+  var plow_target: f32 = 0.0;
   if (P.pressed > 0.5) {
     let suv = vec2<f32>(pt.pos.x * 0.5 + 0.5, 0.5 - pt.pos.y * 0.5)
               - vec2<f32>(P.text_du, P.text_dv);
     let suv0 = vec2<f32>(pt.pos.x * 0.5 + 0.5, 0.5 - pt.pos.y * 0.5);
+    let tv = vec2<f32>(P.text_vx, P.text_vy); // word velocity (NDC/s)
     let sdf = textureSampleLevel(sdftex, fsamp, suv, 0.0);
     let dist = sdf.b * 0.35; // decode (matches bake maxdist)
+    let sdir = sdf.rg * 2.0 - vec2<f32>(1.0, 1.0);
+    let ndir = vec2<f32>(sdir.x, -sdir.y); // NDC outward (screen +y down → NDC +y up)
     if (dist < P.wake_width) {
-      let dir = sdf.rg * 2.0 - vec2<f32>(1.0, 1.0); // screen-outward unit
-      let ff = 1.0 - smoothstep(0.0, P.wake_width, dist); // strong near words → 0 at edge
-      // screen (+y down) → NDC (+y up)
-      v += vec2<f32>(dir.x, -dir.y) * ff * P.push * (1.0 + P.wake) * 2.0 * P.dt;
+      let ff = 1.0 - smoothstep(0.0, P.wake_width, dist);
+      v += ndir * ff * P.push * (1.0 + P.wake) * 2.0 * P.dt; // steady radial berth
     }
-    // same berth around the ACTIVE off-screen panel as it animates in (the word in
-    // motion). Sampled in the panned atlas frame, masked to the active cell so only
-    // that panel - not the other seven - gets a wake.
+    if (dist < 0.12) { // plow reaches a bit past the berth so fast moves catch up early
+      let closing = dot(tv, ndir); // word's approach speed toward this particle
+      if (closing > 0.0) {
+        plow_dir = ndir;
+        plow_target = min(closing * 1.6, 12.0); // outrun it with margin, bounded
+      }
+    }
+    // same berth + plow around the ACTIVE off-screen panel as it animates in,
+    // masked to the active cell so only that panel - not the other seven - reacts
     let muv = (suv0 + vec2<f32>(1.0, 1.0) - vec2<f32>(P.menu_du, P.menu_dv)) / 3.0;
     if (abs(muv.x - P.pad0) < 0.1667 && abs(muv.y - P.pad1) < 0.1667) {
       let msdf = textureSampleLevel(menusdf, fsamp, muv, 0.0);
       let mdist = msdf.b * 0.35;
+      let msdir = msdf.rg * 2.0 - vec2<f32>(1.0, 1.0);
+      let mndir = vec2<f32>(msdir.x, -msdir.y);
       if (mdist < P.wake_width) {
-        let mdir = msdf.rg * 2.0 - vec2<f32>(1.0, 1.0);
         let mff = 1.0 - smoothstep(0.0, P.wake_width, mdist);
-        v += vec2<f32>(mdir.x, -mdir.y) * mff * P.push * (1.0 + P.wake) * 2.0 * P.dt;
+        v += mndir * mff * P.push * (1.0 + P.wake) * 2.0 * P.dt;
+      }
+      if (mdist < 0.12) {
+        // the panel rides tx_off directly (no name_lead), so use ITS own velocity
+        let mtv = vec2<f32>(P.menu_vx, P.menu_vy);
+        let mclosing = dot(mtv, mndir);
+        if (mclosing > 0.0) {
+          let mt = min(mclosing * 1.6, 12.0);
+          if (mt > plow_target) { plow_dir = mndir; plow_target = mt; } // strongest plow wins
+        }
       }
     }
   }
@@ -239,9 +262,17 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
     v += (md / max(sqrt(mr2), 0.02)) * P.mousef * exp(-mr2 * 26.0) * P.dt;
   }
 
-  // speed cap
+  // speed cap on the base velocity — keeps the flow bounded (no runaway via the
+  // persistent integrator)
   let sp = length(v);
   if (sp > 1.4) { v *= 1.4 / sp; }
+  // SNOW PLOW, applied AFTER the cap so it can't be scaled away: floor the OUTWARD
+  // velocity to outrun the advancing word → path is displaced, not skimmed. The
+  // target is bounded (<=12), so total stays bounded even though it bypasses the cap.
+  if (plow_target > 0.0) {
+    let pout = dot(v, plow_dir);
+    if (pout < plow_target) { v += plow_dir * (plow_target - pout); }
+  }
 
   var pos = pt.pos + v * P.dt;
 
@@ -277,7 +308,7 @@ struct Params {
   text_du: f32, text_dv: f32, text_vx: f32, text_vy: f32,
   menu_du: f32, menu_dv: f32, pad0: f32, pad1: f32,
   wake: f32, porosity: f32, pressed: f32, wake_width: f32,
-  press_z: f32, pz0: f32, pz1: f32, pz2: f32,
+  press_z: f32, menu_vx: f32, menu_vy: f32, pz2: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -495,7 +526,7 @@ struct Params {
   text_du: f32, text_dv: f32, text_vx: f32, text_vy: f32,
   menu_du: f32, menu_dv: f32, pad0: f32, pad1: f32,
   wake: f32, porosity: f32, pressed: f32, wake_width: f32,
-  press_z: f32, pz0: f32, pz1: f32, pz2: f32,
+  press_z: f32, menu_vx: f32, menu_vy: f32, pz2: f32,
 };
 @group(0) @binding(4) var<uniform> P: Params;
 @group(0) @binding(5) var menutex: texture_2d<f32>;
@@ -1928,8 +1959,8 @@ async fn run() {
             pressed: if dragging > 0.5 { 1.0 } else { 0.0 },
             wake_width: dial("wake_width", 0.09),
             press_z,
-            pz0: 0.0,
-            pz1: 0.0,
+            menu_vx: tx_vel.0 * 2.0,
+            menu_vy: tx_vel.1 * -2.0,
             pz2: 0.0,
         };
         queue.write_buffer(&param_buf, 0, bytemuck::bytes_of(&params));
