@@ -1925,9 +1925,10 @@ async fn run() {
         // one below (south). The offset is clamped to [-axis, +axis] so you can't
         // over-pull past a panel; the panel shown is the one you move toward.
         let (tdu, tdv, dragging) = drag_r.get();
-        let thr = dial("commit", 0.3); // live FEEL dial, shared by both intents
+        let thr = dial("commit", 0.3); // live FEEL dial (drag commit fraction)
         drag_intent.set_commit_threshold(thr);
-        scroll_intent.set_commit_threshold(thr);
+        // scroll keeps its OWN step threshold (different domain — accumulated scroll
+        // UV, not fraction-of-span), tuned by the `scroll` sensitivity dial below.
         let at_panel = committed.0.abs() + committed.1.abs() > 1e-4;
 
         // drain this frame's wheel delta. Scroll is the desktop sibling of the
@@ -2004,22 +2005,22 @@ async fn run() {
                 was_dragging = false;
             } else if scroll_step != (0.0, 0.0) {
                 // PAGINATED scroll: step one detent toward the scrolled direction.
-                // While resting on a panel, only step along that panel's axis
-                // (parity with the axis-locked drag); a cross-axis scroll is ignored
-                // until you step back to centre. The spring below animates the move.
-                let s = scroll_step;
-                let along_axis = if at_panel {
-                    let u = (last_dir.0.round(), last_dir.1.round());
-                    (s.0 * u.0 + s.1 * u.1).abs() > 0.5
-                } else {
-                    true
-                };
-                if along_axis {
-                    let cur = committed.0 * s.0 + committed.1 * s.1;
-                    let nxt = (cur + 1.0).clamp(-1.0, 1.0);
-                    snap_target = (s.0 * nxt, s.1 * nxt);
+                // Round to the detent axis the SAME way the drag rounds last_dir
+                // (cardinal → (0,±1)/(±1,0), diagonal → (±1,±1)) so committed /
+                // snap_target / last_dir stay on the drag's convention. While
+                // resting on a panel, only step along that panel's OWN axis (parity
+                // with the axis-locked drag); a different axis is ignored until you
+                // step back to centre. The spring below animates the move.
+                let u = (scroll_step.0.round(), scroll_step.1.round());
+                let lr = (last_dir.0.round(), last_dir.1.round());
+                let same_axis = (u.0 == lr.0 && u.1 == lr.1) || (u.0 == -lr.0 && u.1 == -lr.1);
+                let u2 = u.0 * u.0 + u.1 * u.1; // |u|^2: 1 cardinal, 2 diagonal
+                if u2 > 0.5 && (!at_panel || same_axis) {
+                    let idx = (committed.0 * u.0 + committed.1 * u.1) / u2; // detent -1/0/1
+                    let nxt = (idx + 1.0).clamp(-1.0, 1.0);
+                    snap_target = (u.0 * nxt, u.1 * nxt);
                     committed = snap_target;
-                    last_dir = s;
+                    last_dir = u;
                     tx_vel = (0.0, 0.0);
                 }
             }

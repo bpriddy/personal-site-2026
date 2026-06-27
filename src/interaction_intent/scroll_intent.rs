@@ -8,16 +8,17 @@
 //! stepping, not position scrubbing:
 //!
 //!   • deltas accumulate into a running vector, snapped to a direction (same
-//!     8-way / axis lock as a drag); between bursts the vector DECAYS rather than
-//!     resetting, so deliberate notch-by-notch scrolling still adds up to a step
-//!     while a stray notch long ago fades away;
-//!   • once the accumulated travel along the axis crosses a threshold, emit ONE
-//!     step (a unit direction toward the next detent) and enter a COOLDOWN;
-//!   • during cooldown every same-direction delta (the momentum tail) is
-//!     swallowed, so one flick = exactly one step. The cooldown lifts once the
-//!     wheel goes quiet — or immediately if a clearly different (reverse or
-//!     cross-axis) delta arrives, so you can change course without waiting out
-//!     the inertia.
+//!     8-way / axis lock as a drag). Partial progress is kept across the gaps
+//!     between deliberate notches and only FORGOTTEN after a quiet stretch
+//!     (`forget_timeout`), so notch-by-notch on a mouse wheel adds up to a step
+//!     while a stray notch from long ago fades;
+//!   • once the accumulated travel along the axis crosses `step_threshold`, emit
+//!     ONE step (a unit direction toward the next detent) and enter a COOLDOWN;
+//!   • during cooldown EVERY delta is swallowed as inertia, so one flick = exactly
+//!     one step — no matter how the momentum tail wobbles off-axis. The cooldown
+//!     lifts once the wheel goes quiet, or immediately on a clear REVERSAL (a
+//!     delta pointing back against the step), so you can change course without
+//!     waiting out the inertia.
 //!
 //! OMNIDIRECTIONAL: both axes accumulate, so a 2-axis trackpad can step toward any
 //! panel a drag can reach. DISABLED on touch devices ([`Self::set_enabled`]),
@@ -44,31 +45,33 @@ pub struct ScrollOut {
 
 pub struct ScrollIntent {
     min_move: f32, // minimum accumulated travel before a direction is read
-    // accumulated axis travel needed to fire one step (a fraction of the unit span
-    // to a panel) — set live from the same FEEL dial the drag commit uses
-    commit_threshold: f32,
-    axis_mode: bool, // lock to an axis (bidirectional) instead of a single direction
-    decay: f32,      // per-second decay of the accumulator between scroll bursts
-    cooldown_idle: f32, // seconds of quiet before the post-step cooldown lifts
-    enabled: bool,   // off on touch devices
+    // accumulated axis travel (in the scroll's own UV domain, NOT the drag's
+    // fraction-of-span) needed to fire one step
+    step_threshold: f32,
+    axis_mode: bool,    // lock to an axis (bidirectional) instead of a single direction
+    forget_timeout: f32, // quiet seconds before partial accumulation is dropped
+    cooldown_idle: f32,  // quiet seconds before the post-step cooldown lifts
+    enabled: bool,       // off on touch devices
     accum: (f32, f32),       // running accumulated travel
     cur: Option<(f32, f32)>, // current snapped direction (None until readable)
+    idle: f32,               // quiet time accrued while accumulating
     cooldown: bool,          // swallowing the momentum tail after a step
     cool_t: f32,             // quiet time accrued during the cooldown
-    last_step: (f32, f32),   // signed direction of the last step (to spot a course change)
+    last_step: (f32, f32),   // signed direction of the last step (to spot a reversal)
 }
 
 impl ScrollIntent {
     pub fn new() -> Self {
         Self {
             min_move: 0.015,
-            commit_threshold: 0.5,
+            step_threshold: 0.2,
             axis_mode: false,
-            decay: 3.0,
+            forget_timeout: 0.5,
             cooldown_idle: 0.18,
             enabled: true,
             accum: (0.0, 0.0),
             cur: None,
+            idle: 0.0,
             cooldown: false,
             cool_t: 0.0,
             last_step: (0.0, 0.0),
@@ -77,16 +80,13 @@ impl ScrollIntent {
 
     // --- mirror of DragIntent ------------------------------------------------
 
-    /// Accumulated axis travel (fraction of the span to a panel) needed to fire a
-    /// step. Mirrors [`super::drag_intent::DragIntent::set_commit_threshold`].
-    pub fn set_commit_threshold(&mut self, fraction: f32) {
-        self.commit_threshold = fraction;
-    }
-
-    /// The current commit threshold (fraction of span).
+    /// Accumulated travel (in scroll UV) needed to fire a step. Named to mirror
+    /// [`super::drag_intent::DragIntent::set_commit_threshold`], but note the
+    /// scroll threshold lives in a DIFFERENT domain than the drag's fraction-of-
+    /// span, so it is NOT driven from the drag's commit dial.
     #[allow(dead_code)]
-    pub fn commit_threshold(&self) -> f32 {
-        self.commit_threshold
+    pub fn set_commit_threshold(&mut self, travel: f32) {
+        self.step_threshold = travel;
     }
 
     /// Lock to an AXIS (a line) rather than a single 8-way direction. See
@@ -117,13 +117,14 @@ impl ScrollIntent {
     pub fn reset(&mut self) {
         self.accum = (0.0, 0.0);
         self.cur = None;
+        self.idle = 0.0;
         self.cooldown = false;
         self.cool_t = 0.0;
     }
 
     /// Feed this frame's accumulated scroll delta (already in the offset domain;
-    /// pass `(0.0, 0.0)` on frames with no scroll). Returns whether travel is
-    /// accumulating and, on the frame a tick fires, the unit direction to step.
+    /// pass `(0.0, 0.0)` on frames with no scroll). On the frame a tick fires,
+    /// the returned `step` is the unit direction to move one detent toward.
     pub fn update(&mut self, delta: (f32, f32), dt: f32) -> ScrollOut {
         let none = ScrollOut { step: (0.0, 0.0) };
         if !self.enabled {
@@ -131,41 +132,47 @@ impl ScrollIntent {
         }
         let moved = (delta.0 * delta.0 + delta.1 * delta.1).sqrt();
 
-        // COOLDOWN: swallow the momentum tail after a step. A delta still aligned
-        // with the step is inertia → eat it. A clearly different one (reverse or
-        // cross-axis) is a fresh intent → drop the cooldown and accumulate it.
+        // COOLDOWN: after a step, swallow the inertia tail. EVERY delta is eaten as
+        // momentum (however much it wobbles off-axis) — only a clear REVERSAL (a
+        // delta pointing back against the step) ends the cooldown, and even then we
+        // consume that delta here so it can never seed a fresh step on the same frame.
         if self.cooldown {
             if moved > 1e-7 {
                 let along = delta.0 * self.last_step.0 + delta.1 * self.last_step.1;
-                if along >= 0.5 * moved {
-                    self.cool_t = 0.0;
-                    return none; // momentum (or a repeat in the same direction)
-                }
-                self.cooldown = false;
-                self.accum = (0.0, 0.0); // course change — start clean
-            } else {
-                self.cool_t += dt;
-                if self.cool_t >= self.cooldown_idle {
-                    self.cooldown = false;
-                    self.accum = (0.0, 0.0);
+                if along < -0.25 * moved {
+                    self.reset(); // a real course reversal — start clean next frame
+                } else {
+                    self.cool_t = 0.0; // momentum still flowing
                 }
                 return none;
             }
+            self.cool_t += dt;
+            if self.cool_t >= self.cooldown_idle {
+                self.cooldown = false;
+                self.accum = (0.0, 0.0);
+                self.cur = None;
+            }
+            return none;
         }
 
-        // accumulate while scrolling; decay between bursts so partial progress
-        // from deliberate notch-by-notch survives but stale scroll fades.
+        // accumulate while scrolling; keep partial progress across the gaps between
+        // deliberate notches, but forget it after a quiet stretch.
         if moved > 1e-7 {
             self.accum = (self.accum.0 + delta.0, self.accum.1 + delta.1);
+            self.idle = 0.0;
         } else {
-            let k = (-self.decay * dt).exp();
-            self.accum = (self.accum.0 * k, self.accum.1 * k);
+            self.idle += dt;
+            if self.idle >= self.forget_timeout {
+                self.accum = (0.0, 0.0);
+                self.cur = None;
+            }
+            return none;
         }
 
         let m = (self.accum.0 * self.accum.0 + self.accum.1 * self.accum.1).sqrt();
         if m <= self.min_move {
             self.cur = None;
-            return ScrollOut { step: (0.0, 0.0) }; // not readable yet
+            return none; // not readable yet
         }
         let a = (self.accum.1.atan2(self.accum.0) / FRAC_PI_4).round() * FRAC_PI_4;
         let mut dir = (a.cos(), a.sin());
@@ -175,7 +182,7 @@ impl ScrollIntent {
         self.cur = Some(dir);
 
         let proj = self.accum.0 * dir.0 + self.accum.1 * dir.1; // travel along the axis
-        if proj.abs() >= self.commit_threshold {
+        if proj.abs() >= self.step_threshold {
             // crossed the threshold → one step toward the scrolled direction, then
             // cool down to absorb the inertia that follows.
             let step = if proj >= 0.0 { dir } else { (-dir.0, -dir.1) };
@@ -186,7 +193,7 @@ impl ScrollIntent {
             self.cur = None;
             return ScrollOut { step };
         }
-        ScrollOut { step: (0.0, 0.0) }
+        none
     }
 
     /// Is travel currently accumulating?
