@@ -33,25 +33,5 @@
     "id": "audiences-to-talks",
     "action_phrase": "AUDIENCES TO TALKS",
     "title": "AUDIENCES"
-  },
-  {
-    "id": "practices-craft",
-    "action_phrase": "PRACTICES CRAFT",
-    "title": ""
-  },
-  {
-    "id": "crafts-systems",
-    "action_phrase": "CRAFTS SYSTEMS",
-    "title": ""
-  },
-  {
-    "id": "systemizes-wonder",
-    "action_phrase": "SYSTEMIZES WONDER",
-    "title": ""
-  },
-  {
-    "id": "wonders-then-builds",
-    "action_phrase": "WONDERS, THEN BUILDS",
-    "title": ""
   }
 ]

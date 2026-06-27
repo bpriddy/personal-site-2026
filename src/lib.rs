@@ -2155,6 +2155,18 @@ async fn run() {
             phrase_op = pop;
             phrase_w = pop;
             phrase_z = 1.0;
+        } else if committed.0.abs() + committed.1.abs() > 1e-4
+            || tx_off.0.abs() + tx_off.1.abs() > 0.05
+        {
+            // navigating to / resting in a section: freeze the home phrase cycle so
+            // phrase_idx (and the east panel that tracks it) holds on THIS section
+            // instead of advancing — including mid-swipe, before commit. The phrase
+            // stays fully shown; cycling resumes once we settle back at centre.
+            phase = 0;
+            phase_start = now;
+            phrase_op = 1.0;
+            phrase_w = 1.0;
+            phrase_z = 1.0;
         } else {
         let exit_dur = 600.0;
         let enter_dur = 600.0;
