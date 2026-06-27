@@ -190,56 +190,30 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
     // object dragged through water. sqrt(f) term widens the wake into the halo.
     v += vec2<f32>(P.text_vx, P.text_vy) * (f * 6.0 + sqrt(f) * 3.0) * P.wake * P.dt;
   }
-  // PRESS WAKE: while DOWN, (a) push a wide even berth around the words (steady,
-  // baked SDF: RG = screen-outward unit dir, B = distance), and (b) SNOW-PLOW -
-  // any particle the MOVING word is bearing down on (closing > 0) has its outward
-  // velocity floored to outrun the approach, with the speed cap lifted for it, so
-  // the path is fully displaced instead of skimmed.
-  // the plow's outward target is saved here and APPLIED AFTER the speed cap, so the
-  // cap (which guards runaway) can never scale the plow away. >0 = a moving word is
-  // bearing down on this particle.
-  var plow_dir = vec2<f32>(0.0, 0.0);
-  var plow_target: f32 = 0.0;
+  // PRESS WAKE: while DOWN, push a soft even berth around the words (steady, baked
+  // SDF: RG = screen-outward unit dir, B = distance). This handles the STATIC clear;
+  // the moving-word "plow" is a position SNAP-TO-EDGE applied after integration below.
   if (P.pressed > 0.5) {
     let suv = vec2<f32>(pt.pos.x * 0.5 + 0.5, 0.5 - pt.pos.y * 0.5)
               - vec2<f32>(P.text_du, P.text_dv);
     let suv0 = vec2<f32>(pt.pos.x * 0.5 + 0.5, 0.5 - pt.pos.y * 0.5);
-    let tv = vec2<f32>(P.text_vx, P.text_vy); // word velocity (NDC/s)
     let sdf = textureSampleLevel(sdftex, fsamp, suv, 0.0);
     let dist = sdf.b * 0.35; // decode (matches bake maxdist)
-    let sdir = sdf.rg * 2.0 - vec2<f32>(1.0, 1.0);
-    let ndir = vec2<f32>(sdir.x, -sdir.y); // NDC outward (screen +y down → NDC +y up)
     if (dist < P.wake_width) {
+      let sdir = sdf.rg * 2.0 - vec2<f32>(1.0, 1.0);
+      let ndir = vec2<f32>(sdir.x, -sdir.y); // NDC outward (screen +y down → NDC +y up)
       let ff = 1.0 - smoothstep(0.0, P.wake_width, dist);
       v += ndir * ff * P.push * (1.0 + P.wake) * 2.0 * P.dt; // steady radial berth
     }
-    if (dist < 0.12) { // plow reaches a bit past the berth so fast moves catch up early
-      let closing = dot(tv, ndir); // word's approach speed toward this particle
-      if (closing > 0.0) {
-        plow_dir = ndir;
-        plow_target = min(closing * 1.6, 12.0); // outrun it with margin, bounded
-      }
-    }
-    // same berth + plow around the ACTIVE off-screen panel as it animates in,
-    // masked to the active cell so only that panel - not the other seven - reacts
     let muv = (suv0 + vec2<f32>(1.0, 1.0) - vec2<f32>(P.menu_du, P.menu_dv)) / 3.0;
     if (abs(muv.x - P.pad0) < 0.1667 && abs(muv.y - P.pad1) < 0.1667) {
       let msdf = textureSampleLevel(menusdf, fsamp, muv, 0.0);
       let mdist = msdf.b * 0.35;
-      let msdir = msdf.rg * 2.0 - vec2<f32>(1.0, 1.0);
-      let mndir = vec2<f32>(msdir.x, -msdir.y);
       if (mdist < P.wake_width) {
+        let msdir = msdf.rg * 2.0 - vec2<f32>(1.0, 1.0);
+        let mndir = vec2<f32>(msdir.x, -msdir.y);
         let mff = 1.0 - smoothstep(0.0, P.wake_width, mdist);
         v += mndir * mff * P.push * (1.0 + P.wake) * 2.0 * P.dt;
-      }
-      if (mdist < 0.12) {
-        // the panel rides tx_off directly (no name_lead), so use ITS own velocity
-        let mtv = vec2<f32>(P.menu_vx, P.menu_vy);
-        let mclosing = dot(mtv, mndir);
-        if (mclosing > 0.0) {
-          let mt = min(mclosing * 1.6, 12.0);
-          if (mt > plow_target) { plow_dir = mndir; plow_target = mt; } // strongest plow wins
-        }
       }
     }
   }
@@ -262,19 +236,59 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
     v += (md / max(sqrt(mr2), 0.02)) * P.mousef * exp(-mr2 * 26.0) * P.dt;
   }
 
-  // speed cap on the base velocity — keeps the flow bounded (no runaway via the
-  // persistent integrator)
+  // speed cap — keeps the flow bounded
   let sp = length(v);
   if (sp > 1.4) { v *= 1.4 / sp; }
-  // SNOW PLOW, applied AFTER the cap so it can't be scaled away: floor the OUTWARD
-  // velocity to outrun the advancing word → path is displaced, not skimmed. The
-  // target is bounded (<=12), so total stays bounded even though it bypasses the cap.
-  if (plow_target > 0.0) {
-    let pout = dot(v, plow_dir);
-    if (pout < plow_target) { v += plow_dir * (plow_target - pout); }
-  }
 
   var pos = pt.pos + v * P.dt;
+
+  // SNOW PLOW = position SNAP-TO-EDGE. A particle the MOVING word is bearing down on
+  // (closing > 0) may not end the frame INSIDE the wake — it's projected to the
+  // forward edge. Pure position constraint, so the word can't out-step it (no skim),
+  // it never reaches beyond wake_width (no expansion): a faster word carries
+  // particles at its edge; a slower one lets the flow separate them. dist is in
+  // screen-width units, so work in isotropic screen space (suv.y/aspect) and back.
+  if (P.pressed > 0.5) {
+    let aspect = P.res.x / P.res.y;
+    let scuv = vec2<f32>(pos.x * 0.5 + 0.5, 0.5 - pos.y * 0.5);
+    let nsdf = textureSampleLevel(sdftex, fsamp, scuv - vec2<f32>(P.text_du, P.text_dv), 0.0);
+    let nd = nsdf.b * 0.35;
+    // RENORMALIZE: linear filtering across the direction field's discontinuities
+    // (glyph gaps / interior-zero plateau) returns a sub-unit vector; without this
+    // the snap under-displaces and leaves particles inside the wake (residual skim).
+    let nraw = nsdf.rg * 2.0 - vec2<f32>(1.0, 1.0);
+    let nlen = length(nraw);
+    let ns = select(vec2<f32>(0.0, 0.0), nraw / nlen, nlen > 1e-3); // isotropic-screen outward
+    let nndc = vec2<f32>(ns.x, -ns.y * aspect); // NDC outward (aspect-correct)
+    let nclos = dot(vec2<f32>(P.text_vx, P.text_vy), nndc);
+    if (nd < P.wake_width && nclos > 0.0) {
+      let isp = vec2<f32>(scuv.x, scuv.y / aspect) + ns * (P.wake_width - nd);
+      let su = vec2<f32>(isp.x, isp.y * aspect);
+      pos = vec2<f32>(su.x * 2.0 - 1.0, 1.0 - su.y * 2.0);
+      let vn = normalize(nndc);
+      let vin = dot(v, vn);
+      if (vin < 0.0) { v -= vn * vin; } // drop inward velocity so it won't fight the edge
+    }
+    let scuv2 = vec2<f32>(pos.x * 0.5 + 0.5, 0.5 - pos.y * 0.5);
+    let mu = (scuv2 + vec2<f32>(1.0, 1.0) - vec2<f32>(P.menu_du, P.menu_dv)) / 3.0;
+    if (abs(mu.x - P.pad0) < 0.1667 && abs(mu.y - P.pad1) < 0.1667) {
+      let msd = textureSampleLevel(menusdf, fsamp, mu, 0.0);
+      let md2 = msd.b * 0.35;
+      let mraw = msd.rg * 2.0 - vec2<f32>(1.0, 1.0);
+      let mlen = length(mraw);
+      let ms = select(vec2<f32>(0.0, 0.0), mraw / mlen, mlen > 1e-3);
+      let mndc = vec2<f32>(ms.x, -ms.y * aspect);
+      let mclos = dot(vec2<f32>(P.menu_vx, P.menu_vy), mndc);
+      if (md2 < P.wake_width && mclos > 0.0) {
+        let isp2 = vec2<f32>(scuv2.x, scuv2.y / aspect) + ms * (P.wake_width - md2);
+        let su2 = vec2<f32>(isp2.x, isp2.y * aspect);
+        pos = vec2<f32>(su2.x * 2.0 - 1.0, 1.0 - su2.y * 2.0);
+        let vn2 = normalize(mndc);
+        let vin2 = dot(v, vn2);
+        if (vin2 < 0.0) { v -= vn2 * vin2; }
+      }
+    }
+  }
 
   // respawn: recycle only particles that exited DOWNSTREAM (or wandered far),
   // and re-enter them on a spawn line beyond the viewport's corner radius
@@ -1904,7 +1918,7 @@ async fn run() {
         // on press the visible text recedes slightly in z to meet the wake growth,
         // then eases back to normal more slowly on release
         let pz_target = if dragging > 0.5 { 0.93f32 } else { 1.0f32 };
-        let pz_rate = if dragging > 0.5 { 7.0f32 } else { 3.0f32 };
+        let pz_rate = if dragging > 0.5 { 14.0f32 } else { 3.0f32 };
         press_z += (pz_target - press_z) * (1.0 - (-pz_rate * dt).exp());
         // active panel cell centre in atlas-uv, for the shader mask (only this cell
         // shows). The active panel is on whichever SIDE of the axis the offset is,
