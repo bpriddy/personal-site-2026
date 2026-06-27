@@ -697,6 +697,33 @@ fn current_action_phrases(fallback: &[String]) -> Vec<String> {
     fallback.to_vec()
 }
 
+// a section's title, falling back to its action phrase when the title is unset —
+// this is what swiping into the section reveals.
+fn section_title(obj: &wasm_bindgen::JsValue) -> Option<String> {
+    js_sys::Reflect::get(obj, &"title".into())
+        .ok()
+        .and_then(|v| v.as_string())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| section_action_phrase(obj))
+}
+
+// the live section titles (title or action-phrase fallback), aligned index-for-
+// index with current_action_phrases; falls back to the baked titles.
+fn current_section_titles(fallback: &[String]) -> Vec<String> {
+    let arr = web_sys::window()
+        .and_then(|w| js_sys::Reflect::get(&w, &"__SECTIONS".into()).ok())
+        .and_then(|v| v.dyn_into::<js_sys::Array>().ok());
+    if let Some(a) = arr {
+        let mut out = Vec::new();
+        for i in 0..a.length() {
+            if let Some(t) = section_title(&a.get(i)) { out.push(t); }
+        }
+        if !out.is_empty() { return out; }
+    }
+    fallback.to_vec()
+}
+
 fn set_status(text: &str) {
     if let Some(el) = web_sys::window()
         .and_then(|w| w.document())
@@ -1132,30 +1159,35 @@ fn bake_sdf(
 
 // wake SDF for the off-screen panel atlas (static, baked once). The atlas spans
 // 3 screens across `w`, so one screen width = w/3 px.
-fn bake_atlas_sdf(ctx: &web_sys::CanvasRenderingContext2d, w: u32, h: u32, maxdist: f32) -> Vec<u8> {
-    let entries = menu_atlas_entries(w, h);
+fn bake_atlas_sdf(ctx: &web_sys::CanvasRenderingContext2d, w: u32, h: u32, maxdist: f32, east: &str) -> Vec<u8> {
+    let entries = menu_atlas_entries(w, h, east);
     let (_, sharp) = raster_atlas(ctx, w, h, &entries);
     coverage_to_sdf(&sharp, w, h, w as f32 / 3.0, maxdist)
 }
 
 // the 8 off-screen panel words at their 3x3 atlas cell centres, sized for a
-// w x h canvas — shared by the live atlas raster and the wake-SDF bake
-fn menu_atlas_entries(w: u32, h: u32) -> Vec<(&'static str, f64, f64, f64)> {
+// w x h canvas — shared by the live atlas raster and the wake-SDF bake. The EAST
+// cell is the live "current section" (its title), re-baked as the home cycles;
+// the rest are still fixed placeholders for now.
+fn menu_atlas_entries(w: u32, h: u32, east: &str) -> Vec<(String, f64, f64, f64)> {
     let (cw, ch) = (w as f64, h as f64);
     // panel font (atlas is 3x screen). On the phone tier the name jumps to ~0.205,
     // so the panels scale up to match - capped at 0.05 so the longest word
     // (NORTHWEST) still fits inside a 1/3-width cell.
     let phone = ch > cw * 1.6;
     let pf = if phone { cw * 0.05 } else { cw * 0.033 };
+    // the east cell is a live title (or long action-phrase fallback) — shrink its
+    // font so it still fits the 1/3-width cell rather than overflowing
+    let east_f = pf.min(cw * 0.5 / (east.chars().count().max(1) as f64));
     vec![
-        ("NORTHWEST", pf, 0.1667 * cw, 0.1667 * ch),
-        ("MENU", pf, 0.5 * cw, 0.1667 * ch),
-        ("NORTHEAST", pf, 0.8333 * cw, 0.1667 * ch),
-        ("WEST", pf, 0.1667 * cw, 0.5 * ch),
-        ("EAST", pf, 0.8333 * cw, 0.5 * ch),
-        ("SOUTHWEST", pf, 0.1667 * cw, 0.8333 * ch),
-        ("SOUTH", pf, 0.5 * cw, 0.8333 * ch),
-        ("SOUTHEAST", pf, 0.8333 * cw, 0.8333 * ch),
+        ("NORTHWEST".into(), pf, 0.1667 * cw, 0.1667 * ch),
+        ("MENU".into(), pf, 0.5 * cw, 0.1667 * ch),
+        ("NORTHEAST".into(), pf, 0.8333 * cw, 0.1667 * ch),
+        ("WEST".into(), pf, 0.1667 * cw, 0.5 * ch),
+        (east.to_string(), east_f, 0.8333 * cw, 0.5 * ch),
+        ("SOUTHWEST".into(), pf, 0.1667 * cw, 0.8333 * ch),
+        ("SOUTH".into(), pf, 0.5 * cw, 0.8333 * ch),
+        ("SOUTHEAST".into(), pf, 0.8333 * cw, 0.8333 * ch),
     ]
 }
 
@@ -1166,7 +1198,7 @@ fn raster_atlas(
     ctx: &web_sys::CanvasRenderingContext2d,
     w: u32,
     h: u32,
-    entries: &[(&str, f64, f64, f64)],
+    entries: &[(String, f64, f64, f64)],
 ) -> (Vec<u8>, Vec<u8>) {
     let (wf, hf) = (w as f64, h as f64);
     let draw = |ctx: &web_sys::CanvasRenderingContext2d| {
@@ -1246,7 +1278,7 @@ async fn run() {
     // sections.json: baked content sections, pushed to the editor panel (which
     // edits them as JSON → window.__SECTIONS). Reduce to action phrases for the
     // home-cycle fallback; other properties ride along untouched.
-    let baked_phrases: Vec<String> = {
+    let (baked_phrases, baked_titles): (Vec<String>, Vec<String>) = {
         let v = js_sys::JSON::parse(include_str!("../sections.json"))
             .unwrap_or(wasm_bindgen::JsValue::NULL);
         if let Ok(f) = js_sys::Reflect::get(&window, &"__initSections".into()) {
@@ -1254,14 +1286,18 @@ async fn run() {
                 func.call1(&wasm_bindgen::JsValue::NULL, &v).ok();
             }
         }
-        let mut out = Vec::new();
+        let mut ph = Vec::new();
+        let mut ti = Vec::new();
         if let Ok(arr) = v.dyn_into::<js_sys::Array>() {
             for i in 0..arr.length() {
-                if let Some(p) = section_action_phrase(&arr.get(i)) { out.push(p); }
+                let obj = arr.get(i);
+                if let Some(p) = section_action_phrase(&obj) { ph.push(p); }
+                if let Some(t) = section_title(&obj) { ti.push(t); }
             }
         }
-        if out.is_empty() { out.push("BUILDS TECHNOLOGY".to_string()); }
-        out
+        if ph.is_empty() { ph.push("BUILDS TECHNOLOGY".to_string()); }
+        if ti.is_empty() { ti.push("BUILDS".to_string()); }
+        (ph, ti)
     };
     let document = window.document().unwrap();
     let canvas: web_sys::HtmlCanvasElement =
@@ -1662,6 +1698,12 @@ async fn run() {
         .into_iter()
         .next()
         .unwrap_or_else(|| baked_phrases[0].clone());
+    // the EAST panel shows the CURRENT section's title (swipe left to reveal it);
+    // re-baked as the home cycles. Seed it with the first section.
+    let init_east = current_section_titles(&baked_titles)
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| baked_titles[0].clone());
     let (p_entries0, phrase_cy0) = phrase_layout(field_w, field_h, css_w, &first_phrase);
     let (pb0, ps0) = raster_layer(&fctx, field_w, field_h, &p_entries0);
     upload_field(
@@ -1674,7 +1716,7 @@ async fn run() {
 
     // MENU + placeholder map directions baked ONCE into a 3x3 world atlas:
     // centre cell empty (the name shows from the field), 8 fixed panels around
-    let menu_entries = menu_atlas_entries(field_w, field_h);
+    let menu_entries = menu_atlas_entries(field_w, field_h, &init_east);
     let (menu_blur, menu_sharp) = raster_atlas(&fctx, field_w, field_h, &menu_entries);
     let menu_zero = vec![0u8; menu_blur.len()];
     let menu_tex = device.create_texture(&wgpu::TextureDescriptor {
@@ -1751,7 +1793,7 @@ async fn run() {
     });
     let menu_sdf_view = menu_sdf_tex.create_view(&wgpu::TextureViewDescriptor::default());
     upload_field(&queue, &menu_sdf_tex, sdf_w, sdf_h,
-        &bake_atlas_sdf(&sctx, sdf_w, sdf_h, SDF_MAXDIST));
+        &bake_atlas_sdf(&sctx, sdf_w, sdf_h, SDF_MAXDIST, &init_east));
 
     // ---- bind group layouts ----
     let common_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -2059,6 +2101,7 @@ async fn run() {
     scroll_intent.set_axis_mode(true); // same axis lock as drag (functional parity)
     scroll_intent.set_enabled(!is_touch);
     let mut phrase_idx: usize = 0;
+    let mut cur_east = init_east; // section title currently baked into the east panel
     let mut phase: u8 = 0; // 0 hold, 1 exit (push back + fade), 2 enter (forward + fade in)
     let mut phase_start = t0;
     let mut phrase_cy = phrase_cy0 as f32;
@@ -2156,6 +2199,21 @@ async fn run() {
                     sdf_cache.insert(pkey.clone(), bake_sdf(&sctx, sdf_w, sdf_h, css_w, &pkey, SDF_MAXDIST));
                 }
                 upload_field(&queue, &sdf_tex, sdf_w, sdf_h, sdf_cache.get(&pkey).unwrap());
+                // EAST panel tracks the new current section: re-bake the atlas
+                // (coverage + wake SDF) with this section's title in the east cell
+                let new_east = current_section_titles(&baked_titles)
+                    .get(phrase_idx)
+                    .cloned()
+                    .unwrap_or_else(|| pkey.clone());
+                if new_east != cur_east {
+                    cur_east = new_east;
+                    let me = menu_atlas_entries(field_w, field_h, &cur_east);
+                    let (mb, ms) = raster_atlas(&fctx, field_w, field_h, &me);
+                    upload_field(&queue, &menu_tex, field_w, field_h,
+                        &pack_rgba(&mb, &ms, &menu_zero, &menu_zero));
+                    upload_field(&queue, &menu_sdf_tex, sdf_w, sdf_h,
+                        &bake_atlas_sdf(&sctx, sdf_w, sdf_h, SDF_MAXDIST, &cur_east));
+                }
                 phrase_cy = cy as f32;
                 phase = 2;
                 phase_start = now;
