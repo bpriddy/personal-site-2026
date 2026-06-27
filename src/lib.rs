@@ -190,10 +190,13 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
     // object dragged through water. sqrt(f) term widens the wake into the halo.
     v += vec2<f32>(P.text_vx, P.text_vy) * (f * 6.0 + sqrt(f) * 3.0) * P.wake * P.dt;
   }
-  // PRESS WAKE: while DOWN, push a soft even berth around the words (steady, baked
-  // SDF: RG = screen-outward unit dir, B = distance). This handles the STATIC clear;
-  // the moving-word "plow" is a position SNAP-TO-EDGE applied after integration below.
-  if (P.pressed > 0.5) {
+  // the wake stays engaged while the word block is DOWN *or* still moving, so a
+  // throw keeps displacing particles until the settle animation actually finishes
+  let engaged = P.pressed > 0.5 || length(vec2<f32>(P.text_vx, P.text_vy)) > 0.05;
+  // PRESS WAKE: push a soft even berth around the words (steady, baked SDF: RG =
+  // screen-outward unit dir, B = distance). This handles the STATIC clear; the
+  // moving-word "plow" is a position SNAP-TO-EDGE applied after integration below.
+  if (engaged) {
     let suv = vec2<f32>(pt.pos.x * 0.5 + 0.5, 0.5 - pt.pos.y * 0.5)
               - vec2<f32>(P.text_du, P.text_dv);
     let suv0 = vec2<f32>(pt.pos.x * 0.5 + 0.5, 0.5 - pt.pos.y * 0.5);
@@ -248,7 +251,8 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
   // it never reaches beyond wake_width (no expansion): a faster word carries
   // particles at its edge; a slower one lets the flow separate them. dist is in
   // screen-width units, so work in isotropic screen space (suv.y/aspect) and back.
-  if (P.pressed > 0.5) {
+  // Engaged while pressed OR still moving, so the throw keeps plowing to the end.
+  if (engaged) {
     let aspect = P.res.x / P.res.y;
     let scuv = vec2<f32>(pos.x * 0.5 + 0.5, 0.5 - pos.y * 0.5);
     let nsdf = textureSampleLevel(sdftex, fsamp, scuv - vec2<f32>(P.text_du, P.text_dv), 0.0);
