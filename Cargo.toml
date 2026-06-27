@@ -14,7 +14,7 @@ web-sys = { version = "0.3", features = [
   "Window", "Document", "Element", "HtmlCanvasElement", "Performance",
   # 2D canvas — used to rasterize the text and sample opaque pixels into
   # particle attraction points.
-  "CanvasRenderingContext2d", "ImageData",
+  "CanvasRenderingContext2d", "ImageData", "TextMetrics",
   # mouse tracking
   "MouseEvent", "EventTarget", "Event", "Location",
   "TouchEvent", "TouchList", "Touch",
