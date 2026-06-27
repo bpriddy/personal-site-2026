@@ -4,3 +4,4 @@
 //! component can opt into just the ones it needs.
 
 pub mod drag_intent;
+pub mod scroll_intent;

@@ -14,5 +14,6 @@
   "name_lead": 1,
   "commit": 0.2,
   "menu_lerp": 1,
-  "wake_width": 0.03
+  "wake_width": 0.03,
+  "scroll": 1
 }

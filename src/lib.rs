@@ -5,6 +5,7 @@ use wasm_bindgen::JsCast;
 
 mod interaction_intent;
 use interaction_intent::drag_intent::DragIntent;
+use interaction_intent::scroll_intent::ScrollIntent;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // "Words as rocks in a stream" — HDR edition.
@@ -1096,6 +1097,10 @@ async fn run() {
     let drag = Rc::new(Cell::new((0.0f32, 0.0f32, 0.0f32)));
     let anchor = Rc::new(Cell::new((0.0f32, 0.0f32, 0.0f32, 0.0f32)));
     let offset_pub = Rc::new(Cell::new((0.0f32, 0.0f32)));
+    // wheel/trackpad delta accumulated since the frame loop last drained it, in
+    // field-UV (px → UV, sign inverted so it reads as natural scrolling). The
+    // frame loop feeds it to ScrollIntent. Desktop only.
+    let scroll = Rc::new(Cell::new((0.0f32, 0.0f32)));
 
     // mouse move: drag the text if pressed, else perturb the stream
     {
@@ -1203,6 +1208,45 @@ async fn run() {
         let r = cb.as_ref().unchecked_ref();
         window.add_event_listener_with_callback("touchend", r).unwrap();
         window.add_event_listener_with_callback("touchcancel", r).unwrap();
+        cb.forget();
+    }
+    // touch-primary device? (coarse pointer). Scroll intent is desktop-only, so on
+    // touch we neither register the wheel listener (no needless preventDefault) nor
+    // enable the module.
+    let is_touch = window
+        .match_media("(pointer: coarse)")
+        .ok()
+        .flatten()
+        .map(|m| m.matches())
+        .unwrap_or(false);
+    // wheel / trackpad: accumulate deltas (the desktop sibling of touch-drag).
+    // Normalize line/page delta modes to pixels, convert to field-UV, and invert
+    // so scrolling toward a panel reveals it (natural scroll). preventDefault so
+    // the gesture never doubles as page scroll.
+    if !is_touch {
+        let sc = scroll.clone();
+        let (w, h) = (css_w as f32, css_h as f32);
+        let cb = Closure::<dyn FnMut(web_sys::WheelEvent)>::new(move |e: web_sys::WheelEvent| {
+            e.prevent_default();
+            let (ux, uy) = match e.delta_mode() {
+                1 => (16.0, 16.0),                 // lines → ~px
+                2 => (css_w as f64, css_h as f64), // pages → px
+                _ => (1.0, 1.0),                   // already pixels
+            };
+            let dx = -(e.delta_x() * ux) as f32 / w;
+            let dy = -(e.delta_y() * uy) as f32 / h;
+            let cur = sc.get();
+            sc.set((cur.0 + dx, cur.1 + dy));
+        });
+        let opts = web_sys::AddEventListenerOptions::new();
+        opts.set_passive(false); // required so preventDefault takes effect
+        canvas
+            .add_event_listener_with_callback_and_add_event_listener_options(
+                "wheel",
+                cb.as_ref().unchecked_ref(),
+                &opts,
+            )
+            .unwrap();
         cb.forget();
     }
 
@@ -1750,10 +1794,15 @@ async fn run() {
     let mut last_dir = (0.0f32, 1.0f32); // last 8-snapped drag direction
     let mut snap_target = (0.0f32, 0.0f32);
     let mut committed = (0.0f32, 0.0f32); // resting state: name (origin) or a panel
-    let mut was_dragging = false;
+    let mut was_dragging = false; // a finger/mouse drag was active last frame
     let mut press_z = 1.0f32; // visible-text recede: dips on press, eases back on release
     let mut drag_intent = DragIntent::new();
     drag_intent.set_axis_mode(true); // lock to an axis → drag both ways (up & down, etc.)
+    // SCROLL INTENT — the desktop sibling of drag, paginated to absorb inertia.
+    // Drives the same panels; off on touch devices (is_touch, computed above).
+    let mut scroll_intent = ScrollIntent::new();
+    scroll_intent.set_axis_mode(true); // same axis lock as drag (functional parity)
+    scroll_intent.set_enabled(!is_touch);
     let mut phrase_idx: usize = 0;
     let mut phase: u8 = 0; // 0 hold, 1 exit (push back + fade), 2 enter (forward + fade in)
     let mut phase_start = t0;
@@ -1765,6 +1814,7 @@ async fn run() {
     let mouse_r = mouse.clone();
     let drag_r = drag.clone();
     let offpub_r = offset_pub.clone();
+    let scroll_r = scroll.clone();
     *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
         let now = perf.now();
         let dt_ms = now - last;
@@ -1868,16 +1918,38 @@ async fn run() {
         phrase_z = (1.0 - 0.16 * phrase_tt) as f32;
         }
 
-        // The drag slides along ONE AXIS (a line) between three states: name
-        // centred (origin) and the two panels at +/- the axis. Axis mode lets the
-        // gesture go BOTH ways - lock the y axis, then drag DOWN to bring in the
-        // panel above (north) or UP to bring in the one below (south). The offset
-        // is clamped to [-axis, +axis] so you can't over-pull past a panel; the
-        // panel shown is the one on whichever side you drag toward.
+        // A gesture (drag on touch/mouse, or wheel scroll on desktop) slides along
+        // ONE AXIS (a line) between three states: name centred (origin) and the two
+        // panels at +/- the axis. Axis mode lets it go BOTH ways - lock the y axis,
+        // then pull DOWN to bring in the panel above (north) or UP to bring in the
+        // one below (south). The offset is clamped to [-axis, +axis] so you can't
+        // over-pull past a panel; the panel shown is the one you move toward.
         let (tdu, tdv, dragging) = drag_r.get();
-        drag_intent.set_commit_threshold(dial("commit", 0.3)); // live FEEL dial
+        let thr = dial("commit", 0.3); // live FEEL dial, shared by both intents
+        drag_intent.set_commit_threshold(thr);
+        scroll_intent.set_commit_threshold(thr);
         let at_panel = committed.0.abs() + committed.1.abs() > 1e-4;
-        if dragging > 0.5 {
+
+        // drain this frame's wheel delta. Scroll is the desktop sibling of the
+        // drag: kept fully inert while a finger/mouse drag is active (so it can
+        // never hijack the drag's release), else advanced as a PAGINATED stepper
+        // that returns a one-detent step direction when accumulated scroll crosses
+        // the threshold (it absorbs the inertia tail itself).
+        let sd = {
+            let d = scroll_r.get();
+            scroll_r.set((0.0, 0.0));
+            d
+        };
+        let ssens = dial("scroll", 1.0);
+        let drag_on = dragging > 0.5;
+        let scroll_step = if drag_on {
+            scroll_intent.reset();
+            (0.0f32, 0.0f32)
+        } else {
+            scroll_intent.update((sd.0 * ssens, sd.1 * ssens), dt).step
+        };
+
+        if drag_on {
             if !was_dragging {
                 drag_intent.begin((tdu, tdv));
             }
@@ -1918,7 +1990,6 @@ async fn run() {
                 let axis = (last_dir.0.round(), last_dir.1.round());
                 let plen2 = axis.0 * axis.0 + axis.1 * axis.1;
                 let f = if plen2 > 1e-5 { (tx_off.0 * axis.0 + tx_off.1 * axis.1) / plen2 } else { 0.0 };
-                let thr = drag_intent.commit_threshold();
                 let neg = (-axis.0, -axis.1);
                 let cs = committed.0 * axis.0 + committed.1 * axis.1; // side we were resting on
                 snap_target = if cs > 0.5 {
@@ -1931,6 +2002,26 @@ async fn run() {
                 committed = snap_target;
                 tx_vel = (0.0, 0.0); // clean settle - drop any clamp/flick velocity spike
                 was_dragging = false;
+            } else if scroll_step != (0.0, 0.0) {
+                // PAGINATED scroll: step one detent toward the scrolled direction.
+                // While resting on a panel, only step along that panel's axis
+                // (parity with the axis-locked drag); a cross-axis scroll is ignored
+                // until you step back to centre. The spring below animates the move.
+                let s = scroll_step;
+                let along_axis = if at_panel {
+                    let u = (last_dir.0.round(), last_dir.1.round());
+                    (s.0 * u.0 + s.1 * u.1).abs() > 0.5
+                } else {
+                    true
+                };
+                if along_axis {
+                    let cur = committed.0 * s.0 + committed.1 * s.1;
+                    let nxt = (cur + 1.0).clamp(-1.0, 1.0);
+                    snap_target = (s.0 * nxt, s.1 * nxt);
+                    committed = snap_target;
+                    last_dir = s;
+                    tx_vel = (0.0, 0.0);
+                }
             }
             // slightly over-damped spring so it never overshoots past the target
             let k = 130.0f32;
@@ -1944,8 +2035,8 @@ async fn run() {
         // as the name) so it drags and throws with identical feel - no lerp lag.
         // on press the visible text recedes slightly in z to meet the wake growth,
         // then eases back to normal more slowly on release
-        let pz_target = if dragging > 0.5 { 0.93f32 } else { 1.0f32 };
-        let pz_rate = if dragging > 0.5 { 14.0f32 } else { 3.0f32 };
+        let pz_target = if drag_on { 0.93f32 } else { 1.0f32 };
+        let pz_rate = if drag_on { 14.0f32 } else { 3.0f32 };
         press_z += (pz_target - press_z) * (1.0 - (-pz_rate * dt).exp());
         // active panel cell centre in atlas-uv, for the shader mask (only this cell
         // shows). The active panel is on whichever SIDE of the axis the offset is,

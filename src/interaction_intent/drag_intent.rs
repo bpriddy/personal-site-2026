@@ -63,6 +63,7 @@ impl DragIntent {
     }
 
     /// The current commit threshold (fraction of span). See [`Self::set_commit_threshold`].
+    #[allow(dead_code)]
     pub fn commit_threshold(&self) -> f32 {
         self.commit_threshold
     }

@@ -18,6 +18,8 @@ web-sys = { version = "0.3", features = [
   # mouse tracking
   "MouseEvent", "EventTarget", "Event", "Location",
   "TouchEvent", "TouchList", "Touch",
+  # wheel/trackpad scroll intent (desktop) + touch-device detection
+  "WheelEvent", "AddEventListenerOptions", "MediaQueryList",
   "console",
 ] }
 wgpu = "29"
