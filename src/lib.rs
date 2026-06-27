@@ -333,8 +333,10 @@ fn fs_bg(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
 
   // soft drop shadow from the blurred field (R). The type itself is NOT in
   // the scene — it's composited ABOVE the bloom in the final pass, so glow
-  // can never overlap the letter edges.
-  let fr = textureSampleLevel(field, fsamp, uv - vec2<f32>(P.text_du, P.text_dv), 0.0);
+  // can never overlap the letter edges. Recede it with the text (press_z) so a
+  // press doesn't leave the shadow as an outline at the original z.
+  let zuv = vec2<f32>(0.5, 0.5) + (uv - vec2<f32>(0.5, 0.5)) / max(P.press_z, 0.01);
+  let fr = textureSampleLevel(field, fsamp, zuv - vec2<f32>(P.text_du, P.text_dv), 0.0);
   let name_sh = fr.r * (1.0 - fr.g) * P.name_op;
   let phrase_sh = fr.b * P.phrase_w * (1.0 - fr.a);
   let shadow = max(name_sh, phrase_sh);
@@ -828,7 +830,11 @@ fn bake_atlas_sdf(ctx: &web_sys::CanvasRenderingContext2d, w: u32, h: u32, maxdi
 // w x h canvas — shared by the live atlas raster and the wake-SDF bake
 fn menu_atlas_entries(w: u32, h: u32) -> Vec<(&'static str, f64, f64, f64)> {
     let (cw, ch) = (w as f64, h as f64);
-    let pf = w as f64 * 0.033; // panel font (atlas is 3x screen → keep small)
+    // panel font (atlas is 3x screen). On the phone tier the name jumps to ~0.205,
+    // so the panels scale up to match - capped at 0.05 so the longest word
+    // (NORTHWEST) still fits inside a 1/3-width cell.
+    let phone = ch > cw * 1.6;
+    let pf = if phone { cw * 0.05 } else { cw * 0.033 };
     vec![
         ("NORTHWEST", pf, 0.1667 * cw, 0.1667 * ch),
         ("MENU", pf, 0.5 * cw, 0.1667 * ch),
