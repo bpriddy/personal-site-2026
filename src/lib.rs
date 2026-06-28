@@ -99,6 +99,10 @@ struct Params {
 @group(0) @binding(4) var sdftex: texture_2d<f32>; // wake distance field (RG=dir, B=dist)
 @group(0) @binding(5) var menusdf: texture_2d<f32>; // off-screen panel wake field
 @group(1) @binding(0) var<storage, read_write> parts: array<Particle>;
+// section-title transform (own group): x=scale, yz=offset(title uv), w=on
+@group(2) @binding(0) var<uniform> titlex: vec4<f32>;
+@group(2) @binding(1) var title_sdf: texture_2d<f32>;
+@group(2) @binding(2) var title_samp: sampler;
 
 fn pcg(v: u32) -> u32 {
   var s = v * 747796405u + 2891336453u;
@@ -219,6 +223,26 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
         let mndir = vec2<f32>(msdir.x, -msdir.y);
         let mff = 1.0 - smoothstep(0.0, P.wake_width, mdist);
         v += mndir * mff * P.push * (1.0 + P.wake) * 2.0 * P.dt;
+      }
+    }
+  }
+  // SECTION TITLE berth: when a section title is scaled up, part the particles
+  // around its SDF (the same berth as the words). The particles/bg never scale —
+  // only the sampling maps screen → title-uv, and the SDF distance scales with the
+  // title (×scale) so the berth stays a screen-space band hugging the giant glyph.
+  if (titlex.w > 0.5) {
+    let s = max(titlex.x, 0.001);
+    let suv0 = vec2<f32>(pt.pos.x * 0.5 + 0.5, 0.5 - pt.pos.y * 0.5);
+    let tuv = vec2<f32>(titlex.y, titlex.z)
+      + (suv0 - vec2<f32>(0.5, 0.5)) / s * vec2<f32>(1.0, P.res.y / P.res.x);
+    if (tuv.x > 0.0 && tuv.x < 1.0 && tuv.y > 0.0 && tuv.y < 1.0) {
+      let tsdf = textureSampleLevel(title_sdf, title_samp, tuv, 0.0);
+      let tdist = tsdf.b * 0.35 * s; // title-uv distance → screen-space distance
+      if (tdist < P.wake_width) {
+        let tdir = tsdf.rg * 2.0 - vec2<f32>(1.0, 1.0);
+        let tndir = vec2<f32>(tdir.x, -tdir.y);
+        let tff = 1.0 - smoothstep(0.0, P.wake_width, tdist);
+        v += tndir * tff * P.push * (1.0 + P.wake) * 2.0 * P.dt;
       }
     }
   }
@@ -2080,7 +2104,7 @@ async fn run() {
 
     let compute_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: None,
-        bind_group_layouts: &[Some(&common_bgl), Some(&parts_bgl)],
+        bind_group_layouts: &[Some(&common_bgl), Some(&parts_bgl), Some(&title_bgl)],
         immediate_size: 0,
     });
     let render_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -2566,6 +2590,7 @@ async fn run() {
                 cp.set_pipeline(&sim_pipeline);
                 cp.set_bind_group(0, &common_bg, &[]);
                 cp.set_bind_group(1, &parts_bg, &[]);
+                cp.set_bind_group(2, &title_bg, &[]);
                 cp.dispatch_workgroups(groups, 1, 1);
             }
             fn pass<'a>(
