@@ -238,9 +238,15 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (tuv.x > 0.0 && tuv.x < 1.0 && tuv.y > 0.0 && tuv.y < 1.0) {
       let tsdf = textureSampleLevel(title_sdf, title_samp, tuv, 0.0);
       let tdist = tsdf.b * 0.35 * s; // title-uv distance → screen-space distance
-      if (tdist < P.wake_width) {
-        let tdir = tsdf.rg * 2.0 - vec2<f32>(1.0, 1.0);
-        let tndir = vec2<f32>(tdir.x, -tdir.y);
+      // RENORMALIZE: linear filtering blends the dir field to a sub-unit vector in
+      // the medial channels between strokes (wide on screen at scale) → the push
+      // would collapse there. aspect-correct the NDC outward like the snap does.
+      let traw = tsdf.rg * 2.0 - vec2<f32>(1.0, 1.0);
+      let tlen = length(traw);
+      if (tdist < P.wake_width && tlen > 1e-3) {
+        let aspect = P.res.x / P.res.y;
+        let tn = traw / tlen;
+        let tndir = vec2<f32>(tn.x, -tn.y * aspect);
         let tff = 1.0 - smoothstep(0.0, P.wake_width, tdist);
         v += tndir * tff * P.push * (1.0 + P.wake) * 2.0 * P.dt;
       }
