@@ -230,7 +230,7 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
   // around its SDF (the same berth as the words). The particles/bg never scale —
   // only the sampling maps screen → title-uv, and the SDF distance scales with the
   // title (×scale) so the berth stays a screen-space band hugging the giant glyph.
-  if (titlex.w > 0.5) {
+  if (titlex.w > 0.02) {
     let s = max(titlex.x, 0.001);
     let suv0 = vec2<f32>(pt.pos.x * 0.5 + 0.5, 0.5 - pt.pos.y * 0.5);
     let tuv = vec2<f32>(titlex.y, titlex.z)
@@ -681,7 +681,7 @@ fn fs_comp(in: VOut) -> @location(0) vec4<f32> {
   // around the path offset, sample the title SDF, threshold to a crisp letterform.
   // The particles/bg keep in.uv (untouched); only the title is transformed.
   var title_c = 0.0;
-  if (titlex.w > 0.5) {
+  if (titlex.w > 0.02) {
     let s = max(titlex.x, 0.001);
     let tuv = vec2<f32>(titlex.y, titlex.z)
       + (in.uv - vec2<f32>(0.5, 0.5)) / s * vec2<f32>(1.0, P.res.y / P.res.x);
@@ -691,7 +691,9 @@ fn fs_comp(in: VOut) -> @location(0) vec4<f32> {
       title_c = 1.0 - smoothstep(0.0, aa, td);
     }
   }
-  let cover = max(max(max(name_c, phrase_c), menu_c), title_c);
+  // the home text (name/phrase/panel) fades out as the dive deepens (df = titlex.w)
+  let hf = 1.0 - smoothstep(0.2, 0.85, titlex.w);
+  let cover = max(max(max(name_c * hf, phrase_c * hf), menu_c * hf), title_c);
   if (cover > 0.001) {
     c = mix(c, aces(reliefCol(in.uv) * 0.92), cover);
   }
@@ -2242,6 +2244,7 @@ async fn run() {
     let mut title_t = 0.0f32; // scrub position along the title stroke path (0..1)
     let mut title_scale_cur = 1.0f32; // smoothed title scale (from stroke width at t)
     let mut prev_drag = (0.0f32, 0.0f32); // last frame's drag offset, for the scrub delta
+    let mut df = 0.0f32; // dive depth: 0 home, 1 deep in the section (swipe IS the zoom)
     let mut phase: u8 = 0; // 0 hold, 1 exit (push back + fade), 2 enter (forward + fade in)
     let mut phase_start = t0;
     let mut phrase_cy = phrase_cy0 as f32;
@@ -2408,16 +2411,25 @@ async fn run() {
         };
         let ssens = dial("scroll", 1.0);
         let drag_on = dragging > 0.5;
-        let title_on = dial("title_on", 0.0) > 0.5;
-        if title_on {
+        // committed to the section once the left/east swipe passes the threshold
+        // (committed.x < 0). Entry itself is the swipe (the dive, computed below).
+        let in_section = committed.0 < -0.5;
+        if in_section {
             // IN A SECTION: scroll + drag SCRUB the camera along the title's stroke
-            // path (continuous), instead of the panel nav. Scale comes from the
-            // stroke width at t below, so the stroke ~fills the viewport.
+            // path (continuous). Scrubbing back past the start exits (springs home).
             let scrub = -sd.1 * dial("scrub", 4.0)
                 + if drag_on { (tdv - prev_drag.1) * dial("drag_scrub", 2.5) } else { 0.0 };
-            title_t = (title_t + scrub).clamp(0.0, 1.0);
+            let nt = title_t + scrub;
+            if nt < 0.0 {
+                committed = (0.0, 0.0); // scrubbed back out → leave the section
+                snap_target = (0.0, 0.0);
+                title_t = 0.0;
+            } else {
+                title_t = nt.clamp(0.0, 1.0);
+            }
             scroll_intent.reset(); // don't accumulate paginated scroll while scrubbing
         } else {
+            title_t = 0.0; // a fresh dive always starts at the first letter
         let scroll_step = if drag_on {
             scroll_intent.reset();
             (0.0f32, 0.0f32)
@@ -2509,6 +2521,16 @@ async fn run() {
         } // end !title_on (panel nav)
         prev_drag = (tdu, tdv);
         offpub_r.set(tx_off);
+        // SWIPE IS THE ZOOM: the left/east swipe progress (how far tx_off slid left)
+        // drives the dive depth 1:1 while dragging; on release it eases to 1 (landed
+        // in the section) or 0 (cancelled). df gates + scales the title below.
+        let dive = (-tx_off.0).clamp(0.0, 1.0);
+        if drag_on && !in_section {
+            df = dive;
+        } else {
+            let target = if in_section { 1.0 } else { 0.0 };
+            df += (target - df) * (1.0 - (-12.0 * dt).exp());
+        }
         // the panel atlas pans DIRECTLY with the drag (menu uniforms use tx_off, same
         // as the name) so it drags and throws with identical feel - no lerp lag.
         // on press the visible text recedes slightly in z to meet the wake growth,
@@ -2581,16 +2603,28 @@ async fn run() {
         // skips it entirely (home unchanged).
         {
             let np = title_path.len() / 3;
-            let ton = dial("title_on", 0.0) > 0.5;
-            let (tox, toy, tw) = if np > 0 {
-                let i = ((title_t * (np - 1) as f32) as usize).min(np - 1);
+            // path point at the current scrub t (in section) or the first letter (diving)
+            let t_eval = if in_section { title_t } else { 0.0 };
+            let (px, py, tw) = if np > 0 {
+                let i = ((t_eval * (np - 1) as f32) as usize).min(np - 1);
                 (title_path[i * 3], title_path[i * 3 + 1], title_path[i * 3 + 2])
             } else {
                 (0.5, 0.5, 0.1)
             };
-            let target = (dial("zoom", 0.6) / tw.max(0.004)).clamp(1.0, 80.0);
-            title_scale_cur += (target - title_scale_cur) * (1.0 - (-10.0 * dt).exp());
-            let title_x: [f32; 4] = [title_scale_cur, tox, toy, if ton { 1.0 } else { 0.0 }];
+            let deep = (dial("zoom", 0.6) / tw.max(0.004)).clamp(1.0, 80.0);
+            let (tox, toy, scale) = if in_section {
+                // width-derived zoom, smoothed as you scrub the letters
+                title_scale_cur += (deep - title_scale_cur) * (1.0 - (-10.0 * dt).exp());
+                (px, py, title_scale_cur)
+            } else {
+                // DIVE: whole word (centre, scale ~1) → first letter (deep), by df
+                let ds = df * df * (3.0 - 2.0 * df); // smoothstep
+                let sc = 1.0 + (deep - 1.0) * ds;
+                title_scale_cur = sc;
+                (0.5 + (px - 0.5) * ds, 0.5 + (py - 0.5) * ds, sc)
+            };
+            // w channel carries df (0..1): the composite gates + fades home by it
+            let title_x: [f32; 4] = [scale, tox, toy, df];
             queue.write_buffer(&title_buf, 0, bytemuck::bytes_of(&title_x));
         }
 
