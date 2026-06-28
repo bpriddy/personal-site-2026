@@ -694,7 +694,9 @@ fn fs_comp(in: VOut) -> @location(0) vec4<f32> {
       + (in.uv - vec2<f32>(0.5, 0.5)) / s * vec2<f32>(1.0, P.res.y / P.res.x);
     if (tuv.x > 0.0 && tuv.x < 1.0 && tuv.y > 0.0 && tuv.y < 1.0) {
       let td = textureSampleLevel(title_sdf, title_samp, tuv, 0.0).b * 0.1; // exterior dist (maxdist 0.1)
-      let aa = max((1.0 / P.res.x) / s, 1e-5); // ~1 screen px in title-dist units
+      // AA band: ~1 screen px, but floored to ~1 SDF texel so the threshold spans a
+      // texel and smooths the pixel-grid steps (no jaggies) instead of snapping to them.
+      let aa = max((1.0 / P.res.x) / s, 0.0015);
       title_c = 1.0 - smoothstep(0.0, aa, td);
     }
   }
@@ -1832,7 +1834,7 @@ async fn run() {
     // centerline path (the camera spine) + a wake-format SDF (rendered crisp when
     // scaled up, and later fed to the wake). Square raster so path and SDF share
     // isotropic coords.
-    let (title_w, title_h) = (768u32, 768u32);
+    let (title_w, title_h) = (1024u32, 1024u32); // higher res → finer edge steps
     let (title_path, title_sdf_bytes) = {
         let pcanvas: web_sys::HtmlCanvasElement =
             document.create_element("canvas").unwrap().dyn_into().unwrap();
