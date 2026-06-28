@@ -414,6 +414,11 @@
           var t = e.target && e.target.tagName;
           if (t === "TEXTAREA" || t === "INPUT") return;
           if (e.key === "p" && !e.metaKey && !e.ctrlKey) togglePhrases();
+          // dev: 't' toggles the section-title scrub view (until swipe-entry, stage D)
+          if (e.key === "t" && !e.metaKey && !e.ctrlKey) {
+            window.__DIALS = window.__DIALS || {};
+            window.__DIALS.title_on = window.__DIALS.title_on > 0.5 ? 0 : 1;
+          }
         });
         function fillSections() {
           if (document.activeElement !== phraseText) {
