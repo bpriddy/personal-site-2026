@@ -573,6 +573,10 @@ struct Params {
 };
 @group(0) @binding(4) var<uniform> P: Params;
 @group(0) @binding(5) var menutex: texture_2d<f32>;
+// section-title transform (own bind group): x=scale, yz=offset(title uv), w=on
+@group(1) @binding(0) var<uniform> titlex: vec4<f32>;
+@group(1) @binding(1) var title_sdf: texture_2d<f32>;
+@group(1) @binding(2) var title_samp: sampler;
 
 // the TEXT's own relief — sampled in continuous screen space so one surface
 // spans the whole text block; rendered here, ABOVE scene + bloom
@@ -643,7 +647,21 @@ fn fs_comp(in: VOut) -> @location(0) vec4<f32> {
   let m_uv = (zuv + vec2<f32>(1.0, 1.0) - vec2<f32>(P.menu_du, P.menu_dv)) / 3.0;
   let m_in = abs(m_uv.x - P.pad0) < 0.1667 && abs(m_uv.y - P.pad1) < 0.1667;
   let menu_c = select(0.0, smoothstep(0.42, 0.55, textureSampleLevel(menutex, samp, m_uv, 0.0).g), m_in);
-  let cover = max(max(name_c, phrase_c), menu_c);
+  // SECTION TITLE — scaled up (not a scene zoom): map the screen into title-uv
+  // around the path offset, sample the title SDF, threshold to a crisp letterform.
+  // The particles/bg keep in.uv (untouched); only the title is transformed.
+  var title_c = 0.0;
+  if (titlex.w > 0.5) {
+    let s = max(titlex.x, 0.001);
+    let tuv = vec2<f32>(titlex.y, titlex.z)
+      + (in.uv - vec2<f32>(0.5, 0.5)) / s * vec2<f32>(1.0, P.res.y / P.res.x);
+    if (tuv.x > 0.0 && tuv.x < 1.0 && tuv.y > 0.0 && tuv.y < 1.0) {
+      let td = textureSampleLevel(title_sdf, title_samp, tuv, 0.0).b * 0.35; // exterior dist
+      let aa = max((1.0 / P.res.x) / s, 1e-5); // ~1 screen px in title-dist units
+      title_c = 1.0 - smoothstep(0.0, aa, td);
+    }
+  }
+  let cover = max(max(max(name_c, phrase_c), menu_c), title_c);
   if (cover > 0.001) {
     c = mix(c, aces(reliefCol(in.uv) * 0.92), cover);
   }
@@ -1799,6 +1817,13 @@ async fn run() {
     });
     let title_sdf_view = title_sdf_tex.create_view(&wgpu::TextureViewDescriptor::default());
     upload_field(&queue, &title_sdf_tex, title_w, title_h, &title_sdf_bytes);
+    // title transform uniform (own buffer, NOT in Params): [scale, off_x, off_y, on]
+    let title_buf = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("title-xform"),
+        size: 16,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
     let sdf_tex = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("wake-sdf"),
         size: wgpu::Extent3d { width: sdf_w, height: sdf_h, depth_or_array_layers: 1 },
@@ -2010,6 +2035,49 @@ async fn run() {
         ],
     });
 
+    // section-title group: own uniform + SDF + sampler. Wired into the composite
+    // (group 1) now and the sim wake later — keeps Params untouched.
+    let title_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("title"),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+        ],
+    });
+    let title_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("title"),
+        layout: &title_bgl,
+        entries: &[
+            wgpu::BindGroupEntry { binding: 0, resource: title_buf.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&title_sdf_view) },
+            wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&lin_samp) },
+        ],
+    });
+
     let compute_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: None,
         bind_group_layouts: &[Some(&common_bgl), Some(&parts_bgl)],
@@ -2027,7 +2095,7 @@ async fn run() {
     });
     let comp_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: None,
-        bind_group_layouts: &[Some(&comp_bgl)],
+        bind_group_layouts: &[Some(&comp_bgl), Some(&title_bgl)],
         immediate_size: 0,
     });
 
@@ -2461,6 +2529,22 @@ async fn run() {
             pz2: 0.0,
         };
         queue.write_buffer(&param_buf, 0, bytemuck::bytes_of(&params));
+        // SECTION TITLE transform (dial-driven for now): scale up + offset along the
+        // baked stroke path at t. on=0 → composite skips it entirely (home unchanged).
+        {
+            let np = title_path.len() / 3;
+            let ton = dial("title_on", 0.0);
+            let tscale = dial("title_scale", 6.0);
+            let tt = dial("title_t", 0.0).clamp(0.0, 1.0);
+            let (tox, toy) = if np > 0 {
+                let i = ((tt * (np - 1) as f32) as usize).min(np - 1);
+                (title_path[i * 3], title_path[i * 3 + 1])
+            } else {
+                (0.5, 0.5)
+            };
+            let title_x: [f32; 4] = [tscale, tox, toy, if ton > 0.5 { 1.0 } else { 0.0 }];
+            queue.write_buffer(&title_buf, 0, bytemuck::bytes_of(&title_x));
+        }
 
         let frame = match surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(t)
@@ -2533,6 +2617,7 @@ async fn run() {
                 // composite: scene + bloom, tonemapped, to the swapchain
                 let mut rp = pass(&mut enc, &view);
                 rp.set_bind_group(0, &comp_bg, &[]);
+                rp.set_bind_group(1, &title_bg, &[]);
                 rp.set_pipeline(&comp_pipeline);
                 rp.draw(0..3, 0..1);
             }
