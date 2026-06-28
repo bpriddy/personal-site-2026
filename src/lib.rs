@@ -2260,6 +2260,11 @@ async fn run() {
     // toward the scrubbed path point so it FLIES across the gaps between letters /
     // non-connected strokes instead of teleporting (snapping) point-to-point.
     let mut prev_drag = (0.0f32, 0.0f32); // last frame's drag offset, for the scrub delta
+    let mut prev_drag_on = false; // was a finger/mouse drag active last frame (edge-detect)
+    let mut scrub_drag = false; // the CURRENT drag began inside a section → it scrubs/exits
+    // only and must NEVER fall through to panel-nav (which would pan to a neighbour panel)
+    let mut scrub_exit_cool = 0.0f32; // wheel analog of scrub_drag: seconds left to swallow
+    // a scroll's inertia tail after it scrubbed out of a section (the wheel has no release)
     let mut entry_time = 0.0f32; // section-entry clock: 0 home → ENTRY_TOT fully in
     let mut phase: u8 = 0; // 0 hold, 1 exit (push back + fade), 2 enter (forward + fade in)
     let mut phase_start = t0;
@@ -2435,16 +2440,44 @@ async fn run() {
         let in_section = committed.0 < -0.5;
         // gestures scrub only AFTER the automatic entry animation has finished.
         let fully_in = in_section && entry_time >= entry_tot - 0.001;
+        // LATCH: a drag that BEGINS inside a section is a scrub/exit gesture. It scrubs
+        // the title (and may scrub back out), but must NEVER fall through to panel-nav.
+        // Without this, on mobile a "scroll" swipe that scrubs past the start exits the
+        // section and the SAME continuous drag then pans to a neighbour panel (south).
+        let drag_started = drag_on && !prev_drag_on;
+        if drag_started {
+            // SEED the scrub baseline on the first frame of every drag so the first
+            // delta is exactly 0. The drag Cell keeps its last (du,dv) after release,
+            // so without this a fresh in-section drag would scrub against a STALE
+            // vertical offset from the previous gesture → a one-frame jerk, or a
+            // spurious section exit on re-touch.
+            prev_drag = (tdu, tdv);
+        }
+        if drag_started && in_section {
+            scrub_drag = true;
+        }
+        if !drag_on {
+            scrub_drag = false;
+        }
         if fully_in {
             // IN A SECTION: scroll + drag SCRUB the camera along the title's stroke
-            // path (continuous). Scrubbing back past the start exits (springs home).
+            // path (continuous). The drag is INVERTED so a swipe-UP advances (the mobile
+            // page-scroll convention, matching desktop scroll-down = forward). Scrubbing
+            // back past the start exits (springs home); the latch keeps that from panning.
             let scrub = -sd.1 * dial("scrub", 0.4)
-                + if drag_on { (tdv - prev_drag.1) * dial("drag_scrub", 0.25) } else { 0.0 };
+                + if drag_on { -(tdv - prev_drag.1) * dial("drag_scrub", 0.25) } else { 0.0 };
             let nt = title_t + scrub;
             if nt < 0.0 {
                 committed = (0.0, 0.0); // scrubbed back out → leave the section
                 snap_target = (0.0, 0.0);
                 title_t = 0.0;
+                // WHEEL has no release event to end the gesture, so a scroll that
+                // scrubs out keeps flowing (inertia/notches) and would page a panel.
+                // Arm a short cooldown to swallow that tail (the wheel analog of the
+                // drag latch). Drag exits are already covered by scrub_drag + release.
+                if !drag_on {
+                    scrub_exit_cool = 0.25;
+                }
             } else {
                 title_t = nt.clamp(0.0, 1.0);
             }
@@ -2452,6 +2485,11 @@ async fn run() {
         } else if in_section {
             // committed, but the entry animation is still playing — let it run; no
             // panning, no scrubbing until it lands.
+            scroll_intent.reset();
+        } else if scrub_drag || scrub_exit_cool > 0.0 {
+            // this gesture scrubbed back out of a section: swallow the rest so it can't
+            // pan — a held drag until release (scrub_drag), or a wheel's inertia tail
+            // until it goes quiet (scrub_exit_cool). A fresh, deliberate input navigates.
             scroll_intent.reset();
         } else {
             title_t = 0.0; // a fresh dive always starts at the first letter
@@ -2539,10 +2577,11 @@ async fn run() {
         }
         } // end panel nav
         // SETTLE: spring tx_off toward snap_target whenever we're not actively
-        // panning — including while in a section, so the main text slides FULLY over
-        // (exactly like a normal east move). fieldAt follows tx_off, so the obstacle
-        // /particle-displacement moves off with it — no lingering ghost outline.
-        if in_section || !drag_on {
+        // panning — while in a section (so the main text slides FULLY over, like a
+        // normal east move) AND during a scrubbed-out exit (scrub_drag, so the home
+        // springs back immediately rather than hanging until release). fieldAt follows
+        // tx_off, so the obstacle/particle-displacement moves off with it — no ghost.
+        if in_section || scrub_drag || !drag_on {
             let k = 130.0f32;
             let c = 24.0f32;
             tx_vel = (tx_vel.0 + (-k * (tx_off.0 - snap_target.0) - c * tx_vel.0) * dt,
@@ -2550,6 +2589,15 @@ async fn run() {
             tx_off = (tx_off.0 + tx_vel.0 * dt, tx_off.1 + tx_vel.1 * dt);
         }
         prev_drag = (tdu, tdv);
+        prev_drag_on = drag_on;
+        // hold the wheel-exit cooldown alive while the scroll keeps flowing (the inertia
+        // tail), then let it decay once the wheel goes quiet. Only sustains an existing
+        // cooldown — never creates one — so normal in-section scrubbing is unaffected.
+        scrub_exit_cool = if sd.0.abs() + sd.1.abs() > 1e-6 && scrub_exit_cool > 0.0 {
+            0.25
+        } else {
+            (scrub_exit_cool - dt).max(0.0)
+        };
         offpub_r.set(tx_off);
         // SECTION ENTRY: the swipe-left commit (in_section) just TRIGGERS an
         // automatic 2-phase animation. Advance the entry clock toward ENTRY_TOT
