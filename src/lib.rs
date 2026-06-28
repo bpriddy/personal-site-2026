@@ -2239,6 +2239,9 @@ async fn run() {
     scroll_intent.set_enabled(!is_touch);
     let mut phrase_idx: usize = 0;
     let mut cur_east = init_east; // section title currently baked into the east panel
+    let mut title_t = 0.0f32; // scrub position along the title stroke path (0..1)
+    let mut title_scale_cur = 1.0f32; // smoothed title scale (from stroke width at t)
+    let mut prev_drag = (0.0f32, 0.0f32); // last frame's drag offset, for the scrub delta
     let mut phase: u8 = 0; // 0 hold, 1 exit (push back + fade), 2 enter (forward + fade in)
     let mut phase_start = t0;
     let mut phrase_cy = phrase_cy0 as f32;
@@ -2405,6 +2408,16 @@ async fn run() {
         };
         let ssens = dial("scroll", 1.0);
         let drag_on = dragging > 0.5;
+        let title_on = dial("title_on", 0.0) > 0.5;
+        if title_on {
+            // IN A SECTION: scroll + drag SCRUB the camera along the title's stroke
+            // path (continuous), instead of the panel nav. Scale comes from the
+            // stroke width at t below, so the stroke ~fills the viewport.
+            let scrub = -sd.1 * dial("scrub", 4.0)
+                + if drag_on { (tdv - prev_drag.1) * dial("drag_scrub", 2.5) } else { 0.0 };
+            title_t = (title_t + scrub).clamp(0.0, 1.0);
+            scroll_intent.reset(); // don't accumulate paginated scroll while scrubbing
+        } else {
         let scroll_step = if drag_on {
             scroll_intent.reset();
             (0.0f32, 0.0f32)
@@ -2493,6 +2506,8 @@ async fn run() {
                       tx_vel.1 + (-k * (tx_off.1 - snap_target.1) - c * tx_vel.1) * dt);
             tx_off = (tx_off.0 + tx_vel.0 * dt, tx_off.1 + tx_vel.1 * dt);
         }
+        } // end !title_on (panel nav)
+        prev_drag = (tdu, tdv);
         offpub_r.set(tx_off);
         // the panel atlas pans DIRECTLY with the drag (menu uniforms use tx_off, same
         // as the name) so it drags and throws with identical feel - no lerp lag.
@@ -2559,20 +2574,23 @@ async fn run() {
             pz2: 0.0,
         };
         queue.write_buffer(&param_buf, 0, bytemuck::bytes_of(&params));
-        // SECTION TITLE transform (dial-driven for now): scale up + offset along the
-        // baked stroke path at t. on=0 → composite skips it entirely (home unchanged).
+        // SECTION TITLE transform: offset follows the SCRUBBED position along the
+        // stroke path (title_t, driven by scroll+drag above); the scale is derived
+        // from the stroke WIDTH at t so the stroke ~fills the viewport (zoom dial =
+        // fill fraction), smoothed so the zoom glides as you scrub. on=0 → composite
+        // skips it entirely (home unchanged).
         {
             let np = title_path.len() / 3;
-            let ton = dial("title_on", 0.0);
-            let tscale = dial("title_scale", 6.0);
-            let tt = dial("title_t", 0.0).clamp(0.0, 1.0);
-            let (tox, toy) = if np > 0 {
-                let i = ((tt * (np - 1) as f32) as usize).min(np - 1);
-                (title_path[i * 3], title_path[i * 3 + 1])
+            let ton = dial("title_on", 0.0) > 0.5;
+            let (tox, toy, tw) = if np > 0 {
+                let i = ((title_t * (np - 1) as f32) as usize).min(np - 1);
+                (title_path[i * 3], title_path[i * 3 + 1], title_path[i * 3 + 2])
             } else {
-                (0.5, 0.5)
+                (0.5, 0.5, 0.1)
             };
-            let title_x: [f32; 4] = [tscale, tox, toy, if ton > 0.5 { 1.0 } else { 0.0 }];
+            let target = (dial("zoom", 0.6) / tw.max(0.004)).clamp(1.0, 80.0);
+            title_scale_cur += (target - title_scale_cur) * (1.0 - (-10.0 * dt).exp());
+            let title_x: [f32; 4] = [title_scale_cur, tox, toy, if ton { 1.0 } else { 0.0 }];
             queue.write_buffer(&title_buf, 0, bytemuck::bytes_of(&title_x));
         }
 
