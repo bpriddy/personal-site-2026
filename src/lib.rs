@@ -694,9 +694,9 @@ fn fs_comp(in: VOut) -> @location(0) vec4<f32> {
       + (in.uv - vec2<f32>(0.5, 0.5)) / s * vec2<f32>(1.0, P.res.y / P.res.x);
     if (tuv.x > 0.0 && tuv.x < 1.0 && tuv.y > 0.0 && tuv.y < 1.0) {
       let td = textureSampleLevel(title_sdf, title_samp, tuv, 0.0).b * 0.1; // exterior dist (maxdist 0.1)
-      // AA band: ~1 screen px, but floored to ~1 SDF texel so the threshold spans a
-      // texel and smooths the pixel-grid steps (no jaggies) instead of snapping to them.
-      let aa = max((1.0 / P.res.x) / s, 0.0015);
+      // AA band: ~1 screen px, but floored to ~1 SDF texel (2048²) so the threshold
+      // spans a texel and smooths the pixel-grid steps without over-blurring.
+      let aa = max((1.0 / P.res.x) / s, 0.0006);
       title_c = 1.0 - smoothstep(0.0, aa, td);
     }
   }
@@ -1834,7 +1834,7 @@ async fn run() {
     // centerline path (the camera spine) + a wake-format SDF (rendered crisp when
     // scaled up, and later fed to the wake). Square raster so path and SDF share
     // isotropic coords.
-    let (title_w, title_h) = (1024u32, 1024u32); // higher res → finer edge steps
+    let (title_w, title_h) = (2048u32, 2048u32); // higher res → finer edge steps
     let (title_path, title_sdf_bytes) = {
         let pcanvas: web_sys::HtmlCanvasElement =
             document.create_element("canvas").unwrap().dyn_into().unwrap();
@@ -2256,6 +2256,9 @@ async fn run() {
     let mut cur_east = init_east; // section title currently baked into the east panel
     let mut title_t = 0.0f32; // scrub position along the title stroke path (0..1)
     let mut title_scale_cur = 1.0f32; // smoothed title scale (from stroke width at t)
+    let mut title_off_cur = (0.5f32, 0.5f32); // smoothed title CAMERA position — eases
+    // toward the scrubbed path point so it FLIES across the gaps between letters /
+    // non-connected strokes instead of teleporting (snapping) point-to-point.
     let mut prev_drag = (0.0f32, 0.0f32); // last frame's drag offset, for the scrub delta
     let mut entry_time = 0.0f32; // section-entry clock: 0 home → ENTRY_TOT fully in
     let mut phase: u8 = 0; // 0 hold, 1 exit (push back + fade), 2 enter (forward + fade in)
@@ -2651,7 +2654,13 @@ async fn run() {
                 };
                 let deep = (zoom / tw.max(0.004)).clamp(1.0, 80.0);
                 title_scale_cur += (deep - title_scale_cur) * (1.0 - (-10.0 * dt).exp());
-                (px, py, title_scale_cur)
+                // EASE the camera toward the path point so it FLIES smoothly across the
+                // gaps between letters / non-connected strokes instead of snapping. The
+                // same lag also glides the within-stroke point-to-point steps.
+                let fly = 1.0 - (-dial("fly", 9.0) * dt).exp();
+                title_off_cur.0 += (px - title_off_cur.0) * fly;
+                title_off_cur.1 += (py - title_off_cur.1) * fly;
+                (title_off_cur.0, title_off_cur.1, title_scale_cur)
             } else {
                 // AUTOMATIC 2-PHASE ENTRY, each eased:
                 //  1) slide the whole word in from the right (scale ~1, off.x -0.5→0.5)
@@ -2661,7 +2670,11 @@ async fn run() {
                 let base_x = -0.5 + 1.0 * slide_p; // off-right → word centre (0.5)
                 let sc = 1.0 + (deep0 - 1.0) * zoom_p;
                 title_scale_cur = sc;
-                (base_x + (p0x - base_x) * zoom_p, 0.5 + (p0y - 0.5) * zoom_p, sc)
+                let ex = base_x + (p0x - base_x) * zoom_p;
+                let ey = 0.5 + (p0y - 0.5) * zoom_p;
+                title_off_cur = (ex, ey); // hold the eased camera at the entry position so
+                // it continues smoothly (no jump) into the scrub-fly phase
+                (ex, ey, sc)
             };
             // w = entry presence (0→1 over the slide): composite gates + fades home by it
             let vis = (entry_time / entry_slide).clamp(0.0, 1.0);
