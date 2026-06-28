@@ -15,5 +15,9 @@
   "commit": 0.2,
   "menu_lerp": 1,
   "wake_width": 0.03,
-  "scroll": 1
+  "scroll": 1,
+  "entry_slide": 0.35,
+  "entry_zoom": 0.43,
+  "fill": 0.6,
+  "scrub": 0.4
 }

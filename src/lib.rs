@@ -2400,6 +2400,9 @@ async fn run() {
         let (tdu, tdv, dragging) = drag_r.get();
         let thr = dial("commit", 0.3); // live FEEL dial (drag commit fraction)
         drag_intent.set_commit_threshold(thr);
+        // section-entry pacing, live-tunable: slide-in + zoom-in durations (seconds)
+        let entry_slide = dial("entry_slide", ENTRY_T1).max(0.01);
+        let entry_tot = entry_slide + dial("entry_zoom", ENTRY_TOT - ENTRY_T1).max(0.01);
         // scroll keeps its OWN step threshold (different domain — accumulated scroll
         // UV, not fraction-of-span), tuned by the `scroll` sensitivity dial below.
         let at_panel = committed.0.abs() + committed.1.abs() > 1e-4;
@@ -2420,7 +2423,7 @@ async fn run() {
         // (committed.x < 0). Entry itself is the swipe (the dive, computed below).
         let in_section = committed.0 < -0.5;
         // gestures scrub only AFTER the automatic entry animation has finished.
-        let fully_in = in_section && entry_time >= ENTRY_TOT - 0.001;
+        let fully_in = in_section && entry_time >= entry_tot - 0.001;
         if fully_in {
             // IN A SECTION: scroll + drag SCRUB the camera along the title's stroke
             // path (continuous). Scrubbing back past the start exits (springs home).
@@ -2536,7 +2539,7 @@ async fn run() {
         // automatic 2-phase animation. Advance the entry clock toward ENTRY_TOT
         // while committed, back to 0 when not; the title write eases each phase.
         if in_section {
-            entry_time = (entry_time + dt).min(ENTRY_TOT);
+            entry_time = (entry_time + dt).min(entry_tot);
         } else {
             entry_time = (entry_time - dt).max(0.0);
         }
@@ -2616,7 +2619,7 @@ async fn run() {
                 let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
                 t * t * (3.0 - 2.0 * t)
             };
-            let zoom = dial("zoom", 0.6);
+            let zoom = dial("fill", 0.6); // stroke-fill amount: deep scale = fill / width
             // path[0] (the start the entry zooms into) + its width-derived deep scale
             let (p0x, p0y, w0) = if np > 0 {
                 (title_path[0], title_path[1], title_path[2])
@@ -2624,7 +2627,7 @@ async fn run() {
                 (0.5, 0.5, 0.1)
             };
             let deep0 = (zoom / w0.max(0.004)).clamp(1.0, 80.0);
-            let fully_in = entry_time >= ENTRY_TOT - 0.001;
+            let fully_in = entry_time >= entry_tot - 0.001;
             let (tox, toy, scale) = if fully_in {
                 // landed: scroll/drag scrub the path; width-derived zoom, smoothed
                 let i = ((title_t * (np.max(1) - 1) as f32) as usize).min(np.max(1) - 1);
@@ -2640,15 +2643,15 @@ async fn run() {
                 // AUTOMATIC 2-PHASE ENTRY, each eased:
                 //  1) slide the whole word in from the right (scale ~1, off.x -0.5→0.5)
                 //  2) zoom into path[0] (scale 1→deep, off → path start)
-                let slide_p = smooth(0.0, ENTRY_T1, entry_time);
-                let zoom_p = smooth(ENTRY_T1, ENTRY_TOT, entry_time);
+                let slide_p = smooth(0.0, entry_slide, entry_time);
+                let zoom_p = smooth(entry_slide, entry_tot, entry_time);
                 let base_x = -0.5 + 1.0 * slide_p; // off-right → word centre (0.5)
                 let sc = 1.0 + (deep0 - 1.0) * zoom_p;
                 title_scale_cur = sc;
                 (base_x + (p0x - base_x) * zoom_p, 0.5 + (p0y - 0.5) * zoom_p, sc)
             };
             // w = entry presence (0→1 over the slide): composite gates + fades home by it
-            let vis = (entry_time / ENTRY_T1).clamp(0.0, 1.0);
+            let vis = (entry_time / entry_slide).clamp(0.0, 1.0);
             let title_x: [f32; 4] = [scale, tox, toy, vis];
             queue.write_buffer(&title_buf, 0, bytemuck::bytes_of(&title_x));
         }
