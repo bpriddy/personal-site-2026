@@ -123,8 +123,10 @@ fn fieldAt(p: vec2<f32>) -> f32 {
   // only the single active panel cell (pad0,pad1) contributes - never its neighbours
   let inCell = abs(muv.x - P.pad0) < 0.1667 && abs(muv.y - P.pad1) < 0.1667;
   let mr = select(0.0, textureSampleLevel(menu, fsamp, muv, 0.0).r, inCell);
-  // name (R) permanent; phrase (B) fades with z; panel (mr) pans in opposite the drag
-  return max(max(s.r * P.name_op, s.b * P.phrase_w), mr);
+  // name (R) permanent; phrase (B) fades with z; panel (mr) pans in opposite the
+  // drag — suppressed as a section title takes over (titlex.w) so the small east
+  // panel's obstacle doesn't ghost behind the big zoomed title.
+  return max(max(s.r * P.name_op, s.b * P.phrase_w), mr * (1.0 - titlex.w));
 }
 
 @compute @workgroup_size(64)
@@ -242,7 +244,7 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
       + (suv0 - vec2<f32>(0.5, 0.5)) / s * vec2<f32>(1.0, P.res.y / P.res.x);
     if (tuv.x > 0.0 && tuv.x < 1.0 && tuv.y > 0.0 && tuv.y < 1.0) {
       let tsdf = textureSampleLevel(title_sdf, title_samp, tuv, 0.0);
-      let tdist = tsdf.b * 0.35 * s; // title-uv distance → screen-space distance
+      let tdist = tsdf.b * 0.1 * s; // title-uv distance (maxdist 0.1) → screen-space
       // RENORMALIZE: linear filtering blends the dir field to a sub-unit vector in
       // the medial channels between strokes (wide on screen at scale) → the push
       // would collapse there. aspect-correct the NDC outward like the snap does.
@@ -691,14 +693,16 @@ fn fs_comp(in: VOut) -> @location(0) vec4<f32> {
     let tuv = vec2<f32>(titlex.y, titlex.z)
       + (in.uv - vec2<f32>(0.5, 0.5)) / s * vec2<f32>(1.0, P.res.y / P.res.x);
     if (tuv.x > 0.0 && tuv.x < 1.0 && tuv.y > 0.0 && tuv.y < 1.0) {
-      let td = textureSampleLevel(title_sdf, title_samp, tuv, 0.0).b * 0.35; // exterior dist
+      let td = textureSampleLevel(title_sdf, title_samp, tuv, 0.0).b * 0.1; // exterior dist (maxdist 0.1)
       let aa = max((1.0 / P.res.x) / s, 1e-5); // ~1 screen px in title-dist units
       title_c = 1.0 - smoothstep(0.0, aa, td);
     }
   }
-  // the home text (name/phrase/panel) fades out as the dive deepens (df = titlex.w)
-  let hf = 1.0 - smoothstep(0.2, 0.85, titlex.w);
-  let cover = max(max(max(name_c * hf, phrase_c * hf), menu_c * hf), title_c);
+  // the home name/phrase slide fully OVER via tx_off (sampled at zuv - text_du/dv),
+  // so they leave on their own — no fade. Only the small east panel is replaced by
+  // the big title, so suppress just that as the title comes in.
+  let menu_fade = 1.0 - smoothstep(0.0, 0.3, titlex.w);
+  let cover = max(max(max(name_c, phrase_c), menu_c * menu_fade), title_c);
   if (cover > 0.001) {
     c = mix(c, aces(reliefCol(in.uv) * 0.92), cover);
   }
@@ -1061,7 +1065,9 @@ fn raster_title_sharp(ctx: &web_sys::CanvasRenderingContext2d, w: u32, h: u32, t
 fn bake_title(ctx: &web_sys::CanvasRenderingContext2d, w: u32, h: u32, title: &str) -> (Vec<f32>, Vec<u8>) {
     let sharp = raster_title_sharp(ctx, w, h, title);
     let path = stroke_path_from(&sharp, w, h);
-    let sdf = coverage_to_sdf(&sharp, w, h, w as f32, 0.35); // 0.35 = SDF_MAXDIST
+    let sdf = coverage_to_sdf(&sharp, w, h, w as f32, 0.1); // small maxdist = finer
+    // edge precision near the glyph (sharper zoomed edges). MUST match the shader
+    // decodes (title_sdf .b * 0.1) in fs_comp and the sim title berth.
     (path, sdf)
 }
 
@@ -2525,14 +2531,19 @@ async fn run() {
                     tx_vel = (0.0, 0.0);
                 }
             }
-            // slightly over-damped spring so it never overshoots past the target
+        }
+        } // end panel nav
+        // SETTLE: spring tx_off toward snap_target whenever we're not actively
+        // panning — including while in a section, so the main text slides FULLY over
+        // (exactly like a normal east move). fieldAt follows tx_off, so the obstacle
+        // /particle-displacement moves off with it — no lingering ghost outline.
+        if in_section || !drag_on {
             let k = 130.0f32;
             let c = 24.0f32;
             tx_vel = (tx_vel.0 + (-k * (tx_off.0 - snap_target.0) - c * tx_vel.0) * dt,
                       tx_vel.1 + (-k * (tx_off.1 - snap_target.1) - c * tx_vel.1) * dt);
             tx_off = (tx_off.0 + tx_vel.0 * dt, tx_off.1 + tx_vel.1 * dt);
         }
-        } // end !title_on (panel nav)
         prev_drag = (tdu, tdv);
         offpub_r.set(tx_off);
         // SECTION ENTRY: the swipe-left commit (in_section) just TRIGGERS an
