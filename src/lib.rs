@@ -750,6 +750,10 @@ fn read_path_override() -> Option<Vec<f32>> {
     for i in 0..arr.length() {
         let row = arr.get(i);
         if let Ok(inner) = row.clone().dyn_into::<js_sys::Array>() {
+            if inner.length() != 3 {
+                return None; // nested rows must be exact [x,y,w] triples — reject the
+                // whole path (→ derived fallback) rather than mis-align x/y/w
+            }
             for j in 0..inner.length() {
                 out.push(inner.get(j).as_f64()? as f32);
             }

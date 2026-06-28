@@ -253,7 +253,9 @@ try {
     var parsed = null;
     try { parsed = JSON.parse(pathText.value); } catch (e) {}
     var ok = Array.isArray(parsed) && parsed.length > 0 && parsed.every(function (p) {
-      return Array.isArray(p) && p.length >= 3 &&
+      // exactly [x,y,w] — must match read_path_override's triple contract, else the
+      // renderer silently drops the path back to the derived skeleton
+      return Array.isArray(p) && p.length === 3 &&
         typeof p[0] === "number" && typeof p[1] === "number" && typeof p[2] === "number";
     });
     pathText.classList.toggle("invalid", !ok && pathText.value.trim() !== "");
