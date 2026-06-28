@@ -24,6 +24,11 @@ const LINE1: &str = "BEN PRIDDY";
 // the hidden ✎ panel → window.__SECTIONS as JSON). Each section's action_phrase
 // is the line that cycles under the name; PHRASE_SECONDS sets the cycle.
 const PHRASE_SECONDS: f64 = 4.5;
+// section entry: a swipe-left TRIGGERS an automatic 2-phase eased animation —
+// slide the word in from the right (0..ENTRY_T1), then zoom into the path start
+// (ENTRY_T1..ENTRY_TOT). Seconds.
+const ENTRY_T1: f32 = 0.35;
+const ENTRY_TOT: f32 = 0.78;
 
 const PARTICLES: u32 = 500_000;
 const WG: u32 = 64;
@@ -2244,7 +2249,7 @@ async fn run() {
     let mut title_t = 0.0f32; // scrub position along the title stroke path (0..1)
     let mut title_scale_cur = 1.0f32; // smoothed title scale (from stroke width at t)
     let mut prev_drag = (0.0f32, 0.0f32); // last frame's drag offset, for the scrub delta
-    let mut df = 0.0f32; // dive depth: 0 home, 1 deep in the section (swipe IS the zoom)
+    let mut entry_time = 0.0f32; // section-entry clock: 0 home → ENTRY_TOT fully in
     let mut phase: u8 = 0; // 0 hold, 1 exit (push back + fade), 2 enter (forward + fade in)
     let mut phase_start = t0;
     let mut phrase_cy = phrase_cy0 as f32;
@@ -2414,11 +2419,13 @@ async fn run() {
         // committed to the section once the left/east swipe passes the threshold
         // (committed.x < 0). Entry itself is the swipe (the dive, computed below).
         let in_section = committed.0 < -0.5;
-        if in_section {
+        // gestures scrub only AFTER the automatic entry animation has finished.
+        let fully_in = in_section && entry_time >= ENTRY_TOT - 0.001;
+        if fully_in {
             // IN A SECTION: scroll + drag SCRUB the camera along the title's stroke
             // path (continuous). Scrubbing back past the start exits (springs home).
-            let scrub = -sd.1 * dial("scrub", 4.0)
-                + if drag_on { (tdv - prev_drag.1) * dial("drag_scrub", 2.5) } else { 0.0 };
+            let scrub = -sd.1 * dial("scrub", 0.4)
+                + if drag_on { (tdv - prev_drag.1) * dial("drag_scrub", 0.25) } else { 0.0 };
             let nt = title_t + scrub;
             if nt < 0.0 {
                 committed = (0.0, 0.0); // scrubbed back out → leave the section
@@ -2428,6 +2435,10 @@ async fn run() {
                 title_t = nt.clamp(0.0, 1.0);
             }
             scroll_intent.reset(); // don't accumulate paginated scroll while scrubbing
+        } else if in_section {
+            // committed, but the entry animation is still playing — let it run; no
+            // panning, no scrubbing until it lands.
+            scroll_intent.reset();
         } else {
             title_t = 0.0; // a fresh dive always starts at the first letter
         let scroll_step = if drag_on {
@@ -2521,15 +2532,13 @@ async fn run() {
         } // end !title_on (panel nav)
         prev_drag = (tdu, tdv);
         offpub_r.set(tx_off);
-        // SWIPE IS THE ZOOM: the left/east swipe progress (how far tx_off slid left)
-        // drives the dive depth 1:1 while dragging; on release it eases to 1 (landed
-        // in the section) or 0 (cancelled). df gates + scales the title below.
-        let dive = (-tx_off.0).clamp(0.0, 1.0);
-        if drag_on && !in_section {
-            df = dive;
+        // SECTION ENTRY: the swipe-left commit (in_section) just TRIGGERS an
+        // automatic 2-phase animation. Advance the entry clock toward ENTRY_TOT
+        // while committed, back to 0 when not; the title write eases each phase.
+        if in_section {
+            entry_time = (entry_time + dt).min(ENTRY_TOT);
         } else {
-            let target = if in_section { 1.0 } else { 0.0 };
-            df += (target - df) * (1.0 - (-12.0 * dt).exp());
+            entry_time = (entry_time - dt).max(0.0);
         }
         // the panel atlas pans DIRECTLY with the drag (menu uniforms use tx_off, same
         // as the name) so it drags and throws with identical feel - no lerp lag.
@@ -2603,28 +2612,44 @@ async fn run() {
         // skips it entirely (home unchanged).
         {
             let np = title_path.len() / 3;
-            // path point at the current scrub t (in section) or the first letter (diving)
-            let t_eval = if in_section { title_t } else { 0.0 };
-            let (px, py, tw) = if np > 0 {
-                let i = ((t_eval * (np - 1) as f32) as usize).min(np - 1);
-                (title_path[i * 3], title_path[i * 3 + 1], title_path[i * 3 + 2])
+            let smooth = |a: f32, b: f32, x: f32| {
+                let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
+                t * t * (3.0 - 2.0 * t)
+            };
+            let zoom = dial("zoom", 0.6);
+            // path[0] (the start the entry zooms into) + its width-derived deep scale
+            let (p0x, p0y, w0) = if np > 0 {
+                (title_path[0], title_path[1], title_path[2])
             } else {
                 (0.5, 0.5, 0.1)
             };
-            let deep = (dial("zoom", 0.6) / tw.max(0.004)).clamp(1.0, 80.0);
-            let (tox, toy, scale) = if in_section {
-                // width-derived zoom, smoothed as you scrub the letters
+            let deep0 = (zoom / w0.max(0.004)).clamp(1.0, 80.0);
+            let fully_in = entry_time >= ENTRY_TOT - 0.001;
+            let (tox, toy, scale) = if fully_in {
+                // landed: scroll/drag scrub the path; width-derived zoom, smoothed
+                let i = ((title_t * (np.max(1) - 1) as f32) as usize).min(np.max(1) - 1);
+                let (px, py, tw) = if np > 0 {
+                    (title_path[i * 3], title_path[i * 3 + 1], title_path[i * 3 + 2])
+                } else {
+                    (0.5, 0.5, 0.1)
+                };
+                let deep = (zoom / tw.max(0.004)).clamp(1.0, 80.0);
                 title_scale_cur += (deep - title_scale_cur) * (1.0 - (-10.0 * dt).exp());
                 (px, py, title_scale_cur)
             } else {
-                // DIVE: whole word (centre, scale ~1) → first letter (deep), by df
-                let ds = df * df * (3.0 - 2.0 * df); // smoothstep
-                let sc = 1.0 + (deep - 1.0) * ds;
+                // AUTOMATIC 2-PHASE ENTRY, each eased:
+                //  1) slide the whole word in from the right (scale ~1, off.x -0.5→0.5)
+                //  2) zoom into path[0] (scale 1→deep, off → path start)
+                let slide_p = smooth(0.0, ENTRY_T1, entry_time);
+                let zoom_p = smooth(ENTRY_T1, ENTRY_TOT, entry_time);
+                let base_x = -0.5 + 1.0 * slide_p; // off-right → word centre (0.5)
+                let sc = 1.0 + (deep0 - 1.0) * zoom_p;
                 title_scale_cur = sc;
-                (0.5 + (px - 0.5) * ds, 0.5 + (py - 0.5) * ds, sc)
+                (base_x + (p0x - base_x) * zoom_p, 0.5 + (p0y - 0.5) * zoom_p, sc)
             };
-            // w channel carries df (0..1): the composite gates + fades home by it
-            let title_x: [f32; 4] = [scale, tox, toy, df];
+            // w = entry presence (0→1 over the slide): composite gates + fades home by it
+            let vis = (entry_time / ENTRY_T1).clamp(0.0, 1.0);
+            let title_x: [f32; 4] = [scale, tox, toy, vis];
             queue.write_buffer(&title_buf, 0, bytemuck::bytes_of(&title_x));
         }
 
