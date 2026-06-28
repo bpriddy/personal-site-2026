@@ -730,6 +730,55 @@ fn dial(name: &str, default: f32) -> f32 {
         .unwrap_or(default)
 }
 
+// read a plain numeric property off `window` (e.g. a version counter), or None.
+fn read_window_num(name: &str) -> Option<f64> {
+    let w = web_sys::window()?;
+    js_sys::Reflect::get(&w, &name.into()).ok().and_then(|v| v.as_f64())
+}
+
+// the hand-edited camera path override from window.__PATH (set by the PATH editor
+// panel). Accepts nested [[x,y,w],…] or flat [x,y,w,…]; returns a flat [x,y,w,…]
+// (normalized) when it parses to a clean array of triples, else None (→ derived).
+fn read_path_override() -> Option<Vec<f32>> {
+    let w = web_sys::window()?;
+    let v = js_sys::Reflect::get(&w, &"__PATH".into()).ok()?;
+    if v.is_undefined() || v.is_null() {
+        return None;
+    }
+    let arr = v.dyn_into::<js_sys::Array>().ok()?;
+    let mut out: Vec<f32> = Vec::new();
+    for i in 0..arr.length() {
+        let row = arr.get(i);
+        if let Ok(inner) = row.clone().dyn_into::<js_sys::Array>() {
+            for j in 0..inner.length() {
+                out.push(inner.get(j).as_f64()? as f32);
+            }
+        } else {
+            out.push(row.as_f64()? as f32);
+        }
+    }
+    if out.len() >= 3 && out.len() % 3 == 0 {
+        Some(out)
+    } else {
+        None
+    }
+}
+
+// downsample a dense [x,y,w,…] path to ~n evenly-spaced waypoints — a hand-editable
+// seed for the PATH panel (the raw font skeleton has thousands of points).
+fn simplify_path(path: &[f32], n: usize) -> Vec<f32> {
+    let np = path.len() / 3;
+    if np <= n || n < 2 {
+        return path.to_vec();
+    }
+    let mut out = Vec::with_capacity(n * 3);
+    for k in 0..n {
+        let i = (k * (np - 1)) / (n - 1);
+        out.extend_from_slice(&path[i * 3..i * 3 + 3]);
+    }
+    out
+}
+
 // extract the "action_phrase" string from one section object (a member of the
 // live __SECTIONS list or the baked sections.json). A section's other properties
 // are carried in the data but not read by the renderer yet.
@@ -1850,6 +1899,25 @@ async fn run() {
         &js_sys::Float32Array::from(title_path.as_slice()),
     )
     .ok();
+    // HAND-EDITABLE CAMERA PATH: push a simplified (editable) seed for the PATH panel,
+    // then bake paths.json (the shipped override) and hand it to the panel — same
+    // plumbing as dials.json / sections.json. The frame loop reads window.__PATH live
+    // (version-gated) and falls back to this derived skeleton when there's no override.
+    js_sys::Reflect::set(
+        &window,
+        &"__PATH_SEED".into(),
+        &js_sys::Float32Array::from(simplify_path(&title_path, 40).as_slice()),
+    )
+    .ok();
+    {
+        let baked_path = js_sys::JSON::parse(include_str!("../paths.json"))
+            .unwrap_or(wasm_bindgen::JsValue::NULL);
+        if let Ok(f) = js_sys::Reflect::get(&window, &"__initPath".into()) {
+            if let Some(func) = f.dyn_ref::<js_sys::Function>() {
+                func.call1(&wasm_bindgen::JsValue::NULL, &baked_path).ok();
+            }
+        }
+    }
     let title_sdf_tex = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("title-sdf"),
         size: wgpu::Extent3d { width: title_w, height: title_h, depth_or_array_layers: 1 },
@@ -2259,6 +2327,8 @@ async fn run() {
     let mut title_off_cur = (0.5f32, 0.5f32); // smoothed title CAMERA position — eases
     // toward the scrubbed path point so it FLIES across the gaps between letters /
     // non-connected strokes instead of teleporting (snapping) point-to-point.
+    let mut cur_path: Vec<f32> = Vec::new(); // live hand-edited path override (empty → derived)
+    let mut path_ver = f64::NEG_INFINITY; // last window.__PATH_VER seen (re-read on change)
     let mut prev_drag = (0.0f32, 0.0f32); // last frame's drag offset, for the scrub delta
     let mut prev_drag_on = false; // was a finger/mouse drag active last frame (edge-detect)
     let mut scrub_drag = false; // the CURRENT drag began inside a section → it scrubs/exits
@@ -2678,7 +2748,16 @@ async fn run() {
         // fill fraction), smoothed so the zoom glides as you scrub. on=0 → composite
         // skips it entirely (home unchanged).
         {
-            let np = title_path.len() / 3;
+            // PATH OVERRIDE: re-read window.__PATH only when its version counter changes
+            // (the PATH editor bumps __PATH_VER on every edit), so a live hand-edited
+            // path replaces the derived skeleton without per-frame JS parsing.
+            let pv = read_window_num("__PATH_VER").unwrap_or(f64::NEG_INFINITY);
+            if pv != path_ver {
+                path_ver = pv;
+                cur_path = read_path_override().unwrap_or_default();
+            }
+            let active_path: &Vec<f32> = if cur_path.len() >= 3 { &cur_path } else { &title_path };
+            let np = active_path.len() / 3;
             let smooth = |a: f32, b: f32, x: f32| {
                 let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
                 t * t * (3.0 - 2.0 * t)
@@ -2686,7 +2765,7 @@ async fn run() {
             let zoom = dial("fill", 0.6); // stroke-fill amount: deep scale = fill / width
             // path[0] (the start the entry zooms into) + its width-derived deep scale
             let (p0x, p0y, w0) = if np > 0 {
-                (title_path[0], title_path[1], title_path[2])
+                (active_path[0], active_path[1], active_path[2])
             } else {
                 (0.5, 0.5, 0.1)
             };
@@ -2696,7 +2775,7 @@ async fn run() {
                 // landed: scroll/drag scrub the path; width-derived zoom, smoothed
                 let i = ((title_t * (np.max(1) - 1) as f32) as usize).min(np.max(1) - 1);
                 let (px, py, tw) = if np > 0 {
-                    (title_path[i * 3], title_path[i * 3 + 1], title_path[i * 3 + 2])
+                    (active_path[i * 3], active_path[i * 3 + 1], active_path[i * 3 + 2])
                 } else {
                     (0.5, 0.5, 0.1)
                 };
