@@ -730,62 +730,6 @@ fn dial(name: &str, default: f32) -> f32 {
         .unwrap_or(default)
 }
 
-// read a plain numeric property off `window` (e.g. a version counter), or None.
-fn read_window_num(name: &str) -> Option<f64> {
-    let w = web_sys::window()?;
-    js_sys::Reflect::get(&w, &name.into()).ok().and_then(|v| v.as_f64())
-}
-
-// the hand-edited camera path override from window.__PATH (set by the PATH editor
-// panel). Accepts nested [[x,y,w],…] or flat [x,y,w,…]; returns a flat [x,y,w,…]
-// (normalized) when it parses to a clean array of triples, else None (→ derived).
-fn read_path_override() -> Option<Vec<f32>> {
-    let w = web_sys::window()?;
-    let v = js_sys::Reflect::get(&w, &"__PATH".into()).ok()?;
-    if v.is_undefined() || v.is_null() {
-        return None;
-    }
-    let arr = v.dyn_into::<js_sys::Array>().ok()?;
-    let mut out: Vec<f32> = Vec::new();
-    for i in 0..arr.length() {
-        let row = arr.get(i);
-        if let Ok(inner) = row.clone().dyn_into::<js_sys::Array>() {
-            if inner.length() != 3 {
-                return None; // nested rows must be exact [x,y,w] triples — reject the
-                // whole path (→ derived fallback) rather than mis-align x/y/w
-            }
-            for j in 0..inner.length() {
-                out.push(inner.get(j).as_f64()? as f32);
-            }
-        } else {
-            out.push(row.as_f64()? as f32);
-        }
-    }
-    if out.len() >= 3 && out.len() % 3 == 0 {
-        Some(out)
-    } else {
-        None
-    }
-}
-
-// downsample a dense [x,y,w,…] path to ~n evenly-spaced waypoints — a hand-editable
-// seed for the PATH panel (the raw font skeleton has thousands of points).
-fn simplify_path(path: &[f32], n: usize) -> Vec<f32> {
-    let np = path.len() / 3;
-    if np <= n || n < 2 {
-        return path.to_vec();
-    }
-    let mut out = Vec::with_capacity(n * 3);
-    for k in 0..n {
-        let i = (k * (np - 1)) / (n - 1);
-        out.extend_from_slice(&path[i * 3..i * 3 + 3]);
-    }
-    out
-}
-
-// extract the "action_phrase" string from one section object (a member of the
-// live __SECTIONS list or the baked sections.json). A section's other properties
-// are carried in the data but not read by the renderer yet.
 fn section_action_phrase(obj: &wasm_bindgen::JsValue) -> Option<String> {
     js_sys::Reflect::get(obj, &"action_phrase".into())
         .ok()
@@ -1027,69 +971,8 @@ fn coverage_to_sdf(sharp: &[u8], w: u32, h: u32, px_per_screen: f32, maxdist: f3
     out
 }
 
-// Zhang-Suen thinning: reduce a binary coverage (1 = inside a glyph) to a 1px
-// stroke skeleton, in place. The basis for the stroke-trace camera path.
-fn zhang_suen(g: &mut [u8], w: usize, h: usize) {
-    let idx = |x: usize, y: usize| y * w + x;
-    loop {
-        let mut removed = false;
-        for step in 0..2 {
-            let mut rem: Vec<usize> = Vec::new();
-            for y in 1..h - 1 {
-                for x in 1..w - 1 {
-                    if g[idx(x, y)] == 0 {
-                        continue;
-                    }
-                    let n = [
-                        g[idx(x, y - 1)], g[idx(x + 1, y - 1)], g[idx(x + 1, y)], g[idx(x + 1, y + 1)],
-                        g[idx(x, y + 1)], g[idx(x - 1, y + 1)], g[idx(x - 1, y)], g[idx(x - 1, y - 1)],
-                    ];
-                    let b: u8 = n.iter().sum();
-                    if b < 2 || b > 6 {
-                        continue;
-                    }
-                    let mut a = 0; // 0→1 transitions around the ring
-                    for k in 0..8 {
-                        if n[k] == 0 && n[(k + 1) % 8] == 1 {
-                            a += 1;
-                        }
-                    }
-                    if a != 1 {
-                        continue;
-                    }
-                    let (p2, p4, p6, p8) = (n[0], n[2], n[4], n[6]);
-                    if step == 0 {
-                        if p2 * p4 * p6 != 0 || p4 * p6 * p8 != 0 {
-                            continue;
-                        }
-                    } else if p2 * p4 * p8 != 0 || p2 * p6 * p8 != 0 {
-                        continue;
-                    }
-                    rem.push(idx(x, y));
-                }
-            }
-            if !rem.is_empty() {
-                removed = true;
-                for &i in &rem {
-                    g[i] = 0;
-                }
-            }
-        }
-        if !removed {
-            break;
-        }
-    }
-}
-
-// Extract an ordered stroke-centerline path from a title word. Rasterizes the
-// title large + centered, skeletonizes it, then greedily walks the skeleton in
-// reading order (preferring to continue straight at junctions; nearest-unvisited
-// restart when a stroke ends), tagging each point with the local stroke WIDTH
-// (2× the interior distance, from edt8 on the inverted mask). Returns a flat
-// [x, y, width, …] with x,y in 0..1 (normalized to the raster) and width as a
-// fraction of the raster width — the spine the section camera flies along.
 // rasterize a title word large + centered (shrunk to fit) into a sharp coverage
-// mask — shared by the stroke-path tracer and the title SDF bake.
+// mask — feeds the title SDF bake.
 fn raster_title_sharp(ctx: &web_sys::CanvasRenderingContext2d, w: u32, h: u32, title: &str) -> Vec<u8> {
     let (wf, hf) = (w as f64, h as f64);
     let (wu, hu) = (w as usize, h as usize);
@@ -1114,171 +997,15 @@ fn raster_title_sharp(ctx: &web_sys::CanvasRenderingContext2d, w: u32, h: u32, t
     (0..n).map(|i| img[i * 4]).collect()
 }
 
-// a section title's camera path + render/wake SDF, from ONE raster. Returns the
-// stroke-centerline path (flat [x,y,width,…], normalized) and a wake-format SDF
-// (RG outward dir, B distance as a fraction of the title width).
-fn bake_title(ctx: &web_sys::CanvasRenderingContext2d, w: u32, h: u32, title: &str) -> (Vec<f32>, Vec<u8>) {
+// the section title's render/wake SDF (RG outward dir, B = distance as a fraction
+// of the title width). maxdist 0.1 = fine edge precision near the glyph; MUST match
+// the shader decodes (title_sdf .b * 0.1) in fs_comp and the sim title berth.
+// (The stroke-centerline camera path was parked — see parked/line-tracing/.)
+fn bake_title(ctx: &web_sys::CanvasRenderingContext2d, w: u32, h: u32, title: &str) -> Vec<u8> {
     let sharp = raster_title_sharp(ctx, w, h, title);
-    let path = stroke_path_from(&sharp, w, h);
-    let sdf = coverage_to_sdf(&sharp, w, h, w as f32, 0.1); // small maxdist = finer
-    // edge precision near the glyph (sharper zoomed edges). MUST match the shader
-    // decodes (title_sdf .b * 0.1) in fs_comp and the sim title berth.
-    (path, sdf)
+    coverage_to_sdf(&sharp, w, h, w as f32, 0.1)
 }
 
-// trace an ordered stroke-centerline path from a sharp coverage mask: skeletonize
-// (Zhang-Suen), walk it in reading order (per letter, junctions resolved), tag
-// each point with stroke width. Flat [x,y,width,…]; x,y in 0..1, width a fraction
-// of the raster width.
-fn stroke_path_from(sharp: &[u8], w: u32, h: u32) -> Vec<f32> {
-    let (wf, hf) = (w as f64, h as f64);
-    let (wu, hu) = (w as usize, h as usize);
-    let n = wu * hu;
-
-    let mut g: Vec<u8> = sharp.iter().map(|&v| if v > 127 { 1 } else { 0 }).collect();
-    zhang_suen(&mut g, wu, hu);
-
-    let inv: Vec<u8> = sharp.iter().map(|&v| if v > 127 { 0 } else { 255 }).collect();
-    let interior = edt8(&inv, wu, hu); // inside→background offset = stroke half-width
-    let width_at = |i: usize| -> f32 {
-        let (dx, dy) = interior[i];
-        2.0 * ((dx * dx + dy * dy) as f32).sqrt()
-    };
-
-    let pts: Vec<usize> = (0..n).filter(|&i| g[i] == 1).collect();
-    if pts.is_empty() {
-        return Vec::new();
-    }
-    let xy = |i: usize| ((i % wu) as i32, (i / wu) as i32);
-    // label connected components (≈ letters) with a flood fill, so we can trace
-    // them in reading order and no thin letter gets stranded to the end.
-    let mut comp = vec![-1i32; n];
-    let mut comps: Vec<Vec<usize>> = Vec::new();
-    for &seed in &pts {
-        if comp[seed] >= 0 {
-            continue;
-        }
-        let cid = comps.len() as i32;
-        comp[seed] = cid;
-        let mut stack = vec![seed];
-        let mut members = Vec::new();
-        while let Some(p) = stack.pop() {
-            members.push(p);
-            let (px, py) = xy(p);
-            for ddy in -1..=1i32 {
-                for ddx in -1..=1i32 {
-                    if ddx == 0 && ddy == 0 {
-                        continue;
-                    }
-                    let (nx, ny) = (px + ddx, py + ddy);
-                    if nx < 0 || ny < 0 || nx >= wu as i32 || ny >= hu as i32 {
-                        continue;
-                    }
-                    let ni = (ny as usize) * wu + nx as usize;
-                    if g[ni] == 1 && comp[ni] < 0 {
-                        comp[ni] = cid;
-                        stack.push(ni);
-                    }
-                }
-            }
-        }
-        comps.push(members);
-    }
-    comps.sort_by_key(|m| m.iter().map(|&i| i % wu).min().unwrap());
-
-    let deg = |i: usize| -> usize {
-        let (px, py) = xy(i);
-        let mut d = 0;
-        for ddy in -1..=1i32 {
-            for ddx in -1..=1i32 {
-                if (ddx != 0 || ddy != 0)
-                    && px + ddx >= 0
-                    && py + ddy >= 0
-                    && px + ddx < wu as i32
-                    && py + ddy < hu as i32
-                    && g[((py + ddy) as usize) * wu + (px + ddx) as usize] == 1
-                {
-                    d += 1;
-                }
-            }
-        }
-        d
-    };
-    let mut visited = vec![false; n];
-    let mut order: Vec<usize> = Vec::new();
-    for members in &comps {
-        // start at the leftmost endpoint (degree 1), else the leftmost pixel
-        let mut cur = *members.iter().min_by_key(|&&i| (i % wu, i / wu)).unwrap();
-        if let Some(&ep) = members.iter().filter(|&&i| deg(i) == 1).min_by_key(|&&i| (i % wu, i / wu)) {
-            cur = ep;
-        }
-        visited[cur] = true;
-        order.push(cur);
-        let mut dir = (1i32, 0i32);
-        loop {
-            let (cx, cy) = xy(cur);
-            let mut best: Option<usize> = None;
-            let mut best_score = -2.0f32;
-            for ddy in -1..=1i32 {
-                for ddx in -1..=1i32 {
-                    if ddx == 0 && ddy == 0 {
-                        continue;
-                    }
-                    let (nx, ny) = (cx + ddx, cy + ddy);
-                    if nx < 0 || ny < 0 || nx >= wu as i32 || ny >= hu as i32 {
-                        continue;
-                    }
-                    let ni = (ny as usize) * wu + nx as usize;
-                    if g[ni] != 1 || visited[ni] || comp[ni] != comp[cur] {
-                        continue;
-                    }
-                    let dl = ((ddx * ddx + ddy * ddy) as f32).sqrt();
-                    let score = (ddx as f32 * dir.0 as f32 + ddy as f32 * dir.1 as f32) / dl;
-                    if score > best_score {
-                        best_score = score;
-                        best = Some(ni);
-                    }
-                }
-            }
-            let next = match best {
-                Some(ni) => ni,
-                None => {
-                    let mut nn: Option<usize> = None;
-                    let mut nd = i64::MAX;
-                    for &i in members.iter() {
-                        if visited[i] {
-                            continue;
-                        }
-                        let (ix, iy) = xy(i);
-                        let d = ((ix - cx) as i64).pow(2) + ((iy - cy) as i64).pow(2);
-                        if d < nd {
-                            nd = d;
-                            nn = Some(i);
-                        }
-                    }
-                    match nn {
-                        Some(i) => i,
-                        None => break,
-                    }
-                }
-            };
-            let (nx, ny) = xy(next);
-            dir = ((nx - cx).signum(), (ny - cy).signum());
-            visited[next] = true;
-            order.push(next);
-            cur = next;
-        }
-    }
-
-    let mut out: Vec<f32> = Vec::with_capacity(order.len() * 3);
-    for &i in &order {
-        let (ix, iy) = xy(i);
-        out.push(ix as f32 / wf as f32);
-        out.push(iy as f32 / hf as f32);
-        out.push(width_at(i) / wf as f32);
-    }
-    out
-}
 
 // wake SDF for the on-screen words (name + phrase), sampled in their moving frame
 fn bake_sdf(
@@ -1888,7 +1615,7 @@ async fn run() {
     // scaled up, and later fed to the wake). Square raster so path and SDF share
     // isotropic coords.
     let (title_w, title_h) = (2048u32, 2048u32); // higher res → finer edge steps
-    let (title_path, title_sdf_bytes) = {
+    let title_sdf_bytes = {
         let pcanvas: web_sys::HtmlCanvasElement =
             document.create_element("canvas").unwrap().dyn_into().unwrap();
         pcanvas.set_width(title_w);
@@ -1897,31 +1624,6 @@ async fn run() {
             pcanvas.get_context("2d").unwrap().unwrap().dyn_into().unwrap();
         bake_title(&pctx, title_w, title_h, "BUILDS")
     };
-    js_sys::Reflect::set(
-        &window,
-        &"__STROKE_PATH".into(),
-        &js_sys::Float32Array::from(title_path.as_slice()),
-    )
-    .ok();
-    // HAND-EDITABLE CAMERA PATH: push a simplified (editable) seed for the PATH panel,
-    // then bake paths.json (the shipped override) and hand it to the panel — same
-    // plumbing as dials.json / sections.json. The frame loop reads window.__PATH live
-    // (version-gated) and falls back to this derived skeleton when there's no override.
-    js_sys::Reflect::set(
-        &window,
-        &"__PATH_SEED".into(),
-        &js_sys::Float32Array::from(simplify_path(&title_path, 40).as_slice()),
-    )
-    .ok();
-    {
-        let baked_path = js_sys::JSON::parse(include_str!("../paths.json"))
-            .unwrap_or(wasm_bindgen::JsValue::NULL);
-        if let Ok(f) = js_sys::Reflect::get(&window, &"__initPath".into()) {
-            if let Some(func) = f.dyn_ref::<js_sys::Function>() {
-                func.call1(&wasm_bindgen::JsValue::NULL, &baked_path).ok();
-            }
-        }
-    }
     let title_sdf_tex = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("title-sdf"),
         size: wgpu::Extent3d { width: title_w, height: title_h, depth_or_array_layers: 1 },
@@ -2326,19 +2028,10 @@ async fn run() {
     scroll_intent.set_enabled(!is_touch);
     let mut phrase_idx: usize = 0;
     let mut cur_east = init_east; // section title currently baked into the east panel
-    let mut title_t = 0.0f32; // scrub position along the title stroke path (0..1)
-    let mut title_scale_cur = 1.0f32; // smoothed title scale (from stroke width at t)
-    let mut title_off_cur = (0.5f32, 0.5f32); // smoothed title CAMERA position — eases
-    // toward the scrubbed path point so it FLIES across the gaps between letters /
-    // non-connected strokes instead of teleporting (snapping) point-to-point.
-    let mut cur_path: Vec<f32> = Vec::new(); // live hand-edited path override (empty → derived)
-    let mut path_ver = f64::NEG_INFINITY; // last window.__PATH_VER seen (re-read on change)
-    let mut prev_drag = (0.0f32, 0.0f32); // last frame's drag offset, for the scrub delta
     let mut prev_drag_on = false; // was a finger/mouse drag active last frame (edge-detect)
-    let mut scrub_drag = false; // the CURRENT drag began inside a section → it scrubs/exits
-    // only and must NEVER fall through to panel-nav (which would pan to a neighbour panel)
-    let mut scrub_exit_cool = 0.0f32; // wheel analog of scrub_drag: seconds left to swallow
-    // a scroll's inertia tail after it scrubbed out of a section (the wheel has no release)
+    let mut drag_anchor = (0.0f32, 0.0f32); // drag offset captured at gesture start (exit test)
+    let mut section_drag = false; // the CURRENT drag began inside a section → it is captured
+    // there (drives exit; must NEVER fall through to panel-nav / a neighbour-panel pan)
     let mut entry_time = 0.0f32; // section-entry clock: 0 home → ENTRY_TOT fully in
     let mut phase: u8 = 0; // 0 hold, 1 exit (push back + fade), 2 enter (forward + fade in)
     let mut phase_start = t0;
@@ -2512,61 +2205,35 @@ async fn run() {
         // committed to the section once the left/east swipe passes the threshold
         // (committed.x < 0). Entry itself is the swipe (the dive, computed below).
         let in_section = committed.0 < -0.5;
-        // gestures scrub only AFTER the automatic entry animation has finished.
+        // fully landed once the automatic entry animation has finished.
         let fully_in = in_section && entry_time >= entry_tot - 0.001;
-        // LATCH: a drag that BEGINS inside a section is a scrub/exit gesture. It scrubs
-        // the title (and may scrub back out), but must NEVER fall through to panel-nav.
-        // Without this, on mobile a "scroll" swipe that scrubs past the start exits the
-        // section and the SAME continuous drag then pans to a neighbour panel (south).
+        // CAPTURE: a drag that BEGINS inside a section belongs to the section — its only
+        // job now is to swipe back out (east-reverse) to home. It must NEVER fall through
+        // to panel-nav, or that same continuous swipe would pan to a neighbour panel.
         let drag_started = drag_on && !prev_drag_on;
         if drag_started {
-            // SEED the scrub baseline on the first frame of every drag so the first
-            // delta is exactly 0. The drag Cell keeps its last (du,dv) after release,
-            // so without this a fresh in-section drag would scrub against a STALE
-            // vertical offset from the previous gesture → a one-frame jerk, or a
-            // spurious section exit on re-touch.
-            prev_drag = (tdu, tdv);
+            drag_anchor = (tdu, tdv); // gesture origin, for the rightward-exit test below
         }
         if drag_started && in_section {
-            scrub_drag = true;
+            section_drag = true;
         }
         if !drag_on {
-            scrub_drag = false;
+            section_drag = false;
         }
-        if fully_in {
-            // IN A SECTION: scroll + drag SCRUB the camera along the title's stroke
-            // path (continuous). The drag is INVERTED so a swipe-UP advances (the mobile
-            // page-scroll convention, matching desktop scroll-down = forward). Scrubbing
-            // back past the start exits (springs home); the latch keeps that from panning.
-            let scrub = -sd.1 * dial("scrub", 0.4)
-                + if drag_on { -(tdv - prev_drag.1) * dial("drag_scrub", 0.25) } else { 0.0 };
-            let nt = title_t + scrub;
-            if nt < 0.0 {
-                committed = (0.0, 0.0); // scrubbed back out → leave the section
-                snap_target = (0.0, 0.0);
-                title_t = 0.0;
-                // WHEEL has no release event to end the gesture, so a scroll that
-                // scrubs out keeps flowing (inertia/notches) and would page a panel.
-                // Arm a short cooldown to swallow that tail (the wheel analog of the
-                // drag latch). Drag exits are already covered by scrub_drag + release.
-                if !drag_on {
-                    scrub_exit_cool = 0.25;
-                }
-            } else {
-                title_t = nt.clamp(0.0, 1.0);
-            }
-            scroll_intent.reset(); // don't accumulate paginated scroll while scrubbing
-        } else if in_section {
-            // committed, but the entry animation is still playing — let it run; no
-            // panning, no scrubbing until it lands.
+        if in_section {
+            // IN A SECTION: the word is expanded (or expanding). No path movement — a
+            // clear rightward swipe (the reverse of the swipe-left entry) returns home;
+            // every other gesture is swallowed so it can't pan to a neighbour panel.
             scroll_intent.reset();
-        } else if scrub_drag || scrub_exit_cool > 0.0 {
-            // this gesture scrubbed back out of a section: swallow the rest so it can't
-            // pan — a held drag until release (scrub_drag), or a wheel's inertia tail
-            // until it goes quiet (scrub_exit_cool). A fresh, deliberate input navigates.
+            if fully_in && drag_on && (tdu - drag_anchor.0) > thr {
+                committed = (0.0, 0.0); // swiped back out → leave the section (springs home)
+                snap_target = (0.0, 0.0);
+            }
+        } else if section_drag {
+            // this drag began in a section and just swiped back out: swallow the rest of
+            // the gesture so it can't pan. A fresh touch (after release) navigates.
             scroll_intent.reset();
         } else {
-            title_t = 0.0; // a fresh dive always starts at the first letter
         let scroll_step = if drag_on {
             scroll_intent.reset();
             (0.0f32, 0.0f32)
@@ -2652,26 +2319,17 @@ async fn run() {
         } // end panel nav
         // SETTLE: spring tx_off toward snap_target whenever we're not actively
         // panning — while in a section (so the main text slides FULLY over, like a
-        // normal east move) AND during a scrubbed-out exit (scrub_drag, so the home
+        // normal east move) AND during a swiped-out exit (section_drag, so the home
         // springs back immediately rather than hanging until release). fieldAt follows
         // tx_off, so the obstacle/particle-displacement moves off with it — no ghost.
-        if in_section || scrub_drag || !drag_on {
+        if in_section || section_drag || !drag_on {
             let k = 130.0f32;
             let c = 24.0f32;
             tx_vel = (tx_vel.0 + (-k * (tx_off.0 - snap_target.0) - c * tx_vel.0) * dt,
                       tx_vel.1 + (-k * (tx_off.1 - snap_target.1) - c * tx_vel.1) * dt);
             tx_off = (tx_off.0 + tx_vel.0 * dt, tx_off.1 + tx_vel.1 * dt);
         }
-        prev_drag = (tdu, tdv);
         prev_drag_on = drag_on;
-        // hold the wheel-exit cooldown alive while the scroll keeps flowing (the inertia
-        // tail), then let it decay once the wheel goes quiet. Only sustains an existing
-        // cooldown — never creates one — so normal in-section scrubbing is unaffected.
-        scrub_exit_cool = if sd.0.abs() + sd.1.abs() > 1e-6 && scrub_exit_cool > 0.0 {
-            0.25
-        } else {
-            (scrub_exit_cool - dt).max(0.0)
-        };
         offpub_r.set(tx_off);
         // SECTION ENTRY: the swipe-left commit (in_section) just TRIGGERS an
         // automatic 2-phase animation. Advance the entry clock toward ENTRY_TOT
@@ -2746,67 +2404,22 @@ async fn run() {
             pz2: 0.0,
         };
         queue.write_buffer(&param_buf, 0, bytemuck::bytes_of(&params));
-        // SECTION TITLE transform: offset follows the SCRUBBED position along the
-        // stroke path (title_t, driven by scroll+drag above); the scale is derived
-        // from the stroke WIDTH at t so the stroke ~fills the viewport (zoom dial =
-        // fill fraction), smoothed so the zoom glides as you scrub. on=0 → composite
-        // skips it entirely (home unchanged).
+        // SECTION TITLE transform: a swipe-left enters a section, playing an automatic
+        // eased 2-phase entry — (1) slide the word in from the right, then (2) scale it
+        // up, centred, to the `expand` dial — and HOLD there. No path movement (that was
+        // parked, see parked/line-tracing/). on=0 → composite skips it (home unchanged).
         {
-            // PATH OVERRIDE: re-read window.__PATH only when its version counter changes
-            // (the PATH editor bumps __PATH_VER on every edit), so a live hand-edited
-            // path replaces the derived skeleton without per-frame JS parsing.
-            let pv = read_window_num("__PATH_VER").unwrap_or(f64::NEG_INFINITY);
-            if pv != path_ver {
-                path_ver = pv;
-                cur_path = read_path_override().unwrap_or_default();
-            }
-            let active_path: &Vec<f32> = if cur_path.len() >= 3 { &cur_path } else { &title_path };
-            let np = active_path.len() / 3;
             let smooth = |a: f32, b: f32, x: f32| {
                 let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
                 t * t * (3.0 - 2.0 * t)
             };
-            let zoom = dial("fill", 0.6); // stroke-fill amount: deep scale = fill / width
-            // path[0] (the start the entry zooms into) + its width-derived deep scale
-            let (p0x, p0y, w0) = if np > 0 {
-                (active_path[0], active_path[1], active_path[2])
-            } else {
-                (0.5, 0.5, 0.1)
-            };
-            let deep0 = (zoom / w0.max(0.004)).clamp(1.0, 80.0);
-            let fully_in = entry_time >= entry_tot - 0.001;
-            let (tox, toy, scale) = if fully_in {
-                // landed: scroll/drag scrub the path; width-derived zoom, smoothed
-                let i = ((title_t * (np.max(1) - 1) as f32) as usize).min(np.max(1) - 1);
-                let (px, py, tw) = if np > 0 {
-                    (active_path[i * 3], active_path[i * 3 + 1], active_path[i * 3 + 2])
-                } else {
-                    (0.5, 0.5, 0.1)
-                };
-                let deep = (zoom / tw.max(0.004)).clamp(1.0, 80.0);
-                title_scale_cur += (deep - title_scale_cur) * (1.0 - (-10.0 * dt).exp());
-                // EASE the camera toward the path point so it FLIES smoothly across the
-                // gaps between letters / non-connected strokes instead of snapping. The
-                // same lag also glides the within-stroke point-to-point steps.
-                let fly = 1.0 - (-dial("fly", 9.0) * dt).exp();
-                title_off_cur.0 += (px - title_off_cur.0) * fly;
-                title_off_cur.1 += (py - title_off_cur.1) * fly;
-                (title_off_cur.0, title_off_cur.1, title_scale_cur)
-            } else {
-                // AUTOMATIC 2-PHASE ENTRY, each eased:
-                //  1) slide the whole word in from the right (scale ~1, off.x -0.5→0.5)
-                //  2) zoom into path[0] (scale 1→deep, off → path start)
-                let slide_p = smooth(0.0, entry_slide, entry_time);
-                let zoom_p = smooth(entry_slide, entry_tot, entry_time);
-                let base_x = -0.5 + 1.0 * slide_p; // off-right → word centre (0.5)
-                let sc = 1.0 + (deep0 - 1.0) * zoom_p;
-                title_scale_cur = sc;
-                let ex = base_x + (p0x - base_x) * zoom_p;
-                let ey = 0.5 + (p0y - 0.5) * zoom_p;
-                title_off_cur = (ex, ey); // hold the eased camera at the entry position so
-                // it continues smoothly (no jump) into the scrub-fly phase
-                (ex, ey, sc)
-            };
+            let expand = dial("expand", 2.0).max(1.0); // landed scale of the word
+            let slide_p = smooth(0.0, entry_slide, entry_time); // phase 1: slide in 0→1
+            let zoom_p = smooth(entry_slide, entry_tot, entry_time); // phase 2: expand 0→1
+            let base_x = -0.5 + 1.0 * slide_p; // off-right → word centre (0.5)
+            let tox = base_x + (0.5 - base_x) * zoom_p; // settle to centre
+            let toy = 0.5; // vertically centred throughout
+            let scale = 1.0 + (expand - 1.0) * zoom_p; // 1 → expand
             // w = entry presence (0→1 over the slide): composite gates + fades home by it
             let vis = (entry_time / entry_slide).clamp(0.0, 1.0);
             let title_x: [f32; 4] = [scale, tox, toy, vis];

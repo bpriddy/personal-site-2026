@@ -105,11 +105,6 @@ try {
     var t = e.target && e.target.tagName;
     if (t === "TEXTAREA" || t === "INPUT") return;
     if (e.key === "p" && !e.metaKey && !e.ctrlKey) togglePhrases();
-    // dev: 't' toggles the section-title scrub view (until swipe-entry, stage D)
-    if (e.key === "t" && !e.metaKey && !e.ctrlKey) {
-      window.__DIALS = window.__DIALS || {};
-      window.__DIALS.title_on = window.__DIALS.title_on > 0.5 ? 0 : 1;
-    }
   });
   function fillSections() {
     if (document.activeElement !== phraseText) {
@@ -198,90 +193,6 @@ try {
   document.getElementById("phrase-close").addEventListener("click", function () {
     phrasePanel.classList.add("hidden");
     if (isDev) phraseBtn.style.display = "block";
-  });
-
-  // ── camera-path editor: window.__PATH (nested [[x,y,w],…]) read LIVE by the wasm ──
-  // The wasm pushes a simplified seed (window.__PATH_SEED, flat) plus the baked
-  // paths.json (via __initPath). Editing sets window.__PATH and bumps __PATH_VER so
-  // the frame loop re-reads it; SAVE downloads paths.json for the repo. Empty/no
-  // override → the renderer keeps the dense derived skeleton.
-  var pathPanel = document.getElementById("paths");
-  var pathBtn = document.getElementById("path-btn");
-  var pathText = document.getElementById("path-text");
-  if (!isDev) pathBtn.style.display = "none";
-  // one waypoint per line, 3-decimal precision — editable, still valid JSON
-  function fmtPath(arr) {
-    return "[\n" + arr.map(function (p) {
-      return "  [" + p.map(function (n) { return Number(n).toFixed(3); }).join(", ") + "]";
-    }).join(",\n") + "\n]";
-  }
-  function seedPath() {
-    var s = window.__PATH_SEED, out = [];
-    if (s) for (var i = 0; i + 2 < s.length; i += 3) out.push([s[i], s[i + 1], s[i + 2]]);
-    return out;
-  }
-  function applyPath(arr) { // live override + version bump so the wasm re-reads
-    window.__PATH = arr;
-    window.__PATH_VER = (window.__PATH_VER || 0) + 1;
-  }
-  function fillPath(arr) {
-    if (document.activeElement !== pathText) pathText.value = fmtPath(arr);
-  }
-  // wasm calls this with the baked paths.json (may be empty); localStorage wins.
-  window.__initPath = function (baked) {
-    var saved = null;
-    try { saved = JSON.parse(localStorage.getItem("path") || "null"); } catch (e) {}
-    var chosen = (Array.isArray(saved) && saved.length) ? saved
-      : (Array.isArray(baked) && baked.length) ? Array.prototype.slice.call(baked) : null;
-    if (chosen) { applyPath(chosen); fillPath(chosen); }
-    else fillPath(seedPath()); // no override → show the seed for editing, but leave
-    // __PATH unset so the renderer keeps the full-resolution derived skeleton
-  };
-  function togglePaths() {
-    pathPanel.classList.toggle("hidden");
-    var open = !pathPanel.classList.contains("hidden");
-    if (isDev) pathBtn.style.display = open ? "none" : "block";
-    if (open && !pathText.value.trim()) fillPath(seedPath());
-  }
-  pathBtn.addEventListener("click", togglePaths);
-  document.addEventListener("keydown", function (e) {
-    var t = e.target && e.target.tagName;
-    if (t === "TEXTAREA" || t === "INPUT") return;
-    if (e.key === "w" && !e.metaKey && !e.ctrlKey) togglePaths();
-  });
-  pathText.addEventListener("input", function () {
-    var parsed = null;
-    try { parsed = JSON.parse(pathText.value); } catch (e) {}
-    var ok = Array.isArray(parsed) && parsed.length > 0 && parsed.every(function (p) {
-      // exactly [x,y,w] — must match read_path_override's triple contract, else the
-      // renderer silently drops the path back to the derived skeleton
-      return Array.isArray(p) && p.length === 3 &&
-        typeof p[0] === "number" && typeof p[1] === "number" && typeof p[2] === "number";
-    });
-    pathText.classList.toggle("invalid", !ok && pathText.value.trim() !== "");
-    if (ok) {
-      applyPath(parsed);
-      try { localStorage.setItem("path", JSON.stringify(parsed)); } catch (e) {}
-    }
-  });
-  document.getElementById("path-reseed").addEventListener("click", function () {
-    var s = seedPath();
-    pathText.value = fmtPath(s);
-    applyPath(s);
-    try { localStorage.setItem("path", JSON.stringify(s)); } catch (e) {}
-  });
-  document.getElementById("path-close").addEventListener("click", function () {
-    pathPanel.classList.add("hidden");
-    if (isDev) pathBtn.style.display = "block";
-  });
-  document.getElementById("path-save").addEventListener("click", function () {
-    var arr = (Array.isArray(window.__PATH) && window.__PATH.length) ? window.__PATH : seedPath();
-    var json = fmtPath(arr) + "\n";
-    try { navigator.clipboard.writeText(json); } catch (e) {}
-    var a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([json], { type: "application/json" }));
-    a.download = "paths.json";
-    a.click();
   });
 
   // both dial menus share one __DIALS object + one dials.json
