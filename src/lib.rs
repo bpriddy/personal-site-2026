@@ -78,7 +78,7 @@ struct Params {
     press_z: f32,    // visible text z-scale: <1 recedes on press, eases back on release
     menu_vx: f32,    // off-screen panel velocity (NDC/s, no name_lead) for its plow
     menu_vy: f32,
-    pz2: f32,
+    bump: f32, // CAMERA wall-push strength: swipe shoves particles into the revealed area
 }
 
 // Compute: integrate particles against the obstacle field (channel R).
@@ -95,7 +95,7 @@ struct Params {
   text_du: f32, text_dv: f32, text_vx: f32, text_vy: f32,
   menu_du: f32, menu_dv: f32, pad0: f32, pad1: f32,
   wake: f32, porosity: f32, pressed: f32, wake_width: f32,
-  press_z: f32, menu_vx: f32, menu_vy: f32, pz2: f32,
+  press_z: f32, menu_vx: f32, menu_vy: f32, bump: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -150,6 +150,13 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
   let lane = 0.5 + 0.5 * sin(pt.pos.y * 7.0 + h1 * 6.2832);
   let goal = mdir * (P.stream * (0.55 + 0.9 * lane));
   var v = pt.vel + (goal - pt.vel) * min(2.6 * P.dt, 1.0);
+
+  // CAMERA WALL-PUSH: a swipe pans the camera over the world; shove the particles
+  // toward the newly revealed area (OPPOSITE the camera's travel velocity — the words
+  // slide off one edge, so the fresh region is the other edge) so the stream FLOODS in
+  // like it's being bumped by a wall, instead of arriving empty. Scales with the camera
+  // speed (text_vx/vy), so it only acts while panning and settles once the pan stops.
+  v -= vec2<f32>(P.text_vx, P.text_vy) * P.bump;
 
   // three octaves of drifting pseudo-curl: broad swells, mid eddy-chop, shimmer
   v += vec2<f32>(
@@ -388,7 +395,7 @@ struct Params {
   text_du: f32, text_dv: f32, text_vx: f32, text_vy: f32,
   menu_du: f32, menu_dv: f32, pad0: f32, pad1: f32,
   wake: f32, porosity: f32, pressed: f32, wake_width: f32,
-  press_z: f32, menu_vx: f32, menu_vy: f32, pz2: f32,
+  press_z: f32, menu_vx: f32, menu_vy: f32, bump: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var field: texture_2d<f32>;
@@ -416,7 +423,11 @@ fn fs_bg(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
   let ba = 0.8 * sin(t * 0.17) + 0.5 * sin(t * 0.063 + 1.3);
   let ca = cos(ba);
   let sa = sin(ba);
-  let p0 = vec2<f32>((uv.x - 0.5) * aspect, uv.y - 0.5) * 3.0 * P.bg_freq;
+  // CAMERA: the bg is one continuous world — pan it with the swipe so it EXTENDS into
+  // the revealed off-screen areas. Sample the infinite sine field at the camera offset,
+  // matching the text/shadow's -text_du/dv (line below) so the whole world moves as one.
+  let buv = uv - vec2<f32>(P.text_du, P.text_dv);
+  let p0 = vec2<f32>((buv.x - 0.5) * aspect, buv.y - 0.5) * 3.0 * P.bg_freq;
   let p = vec2<f32>(p0.x * ca - p0.y * sa, p0.x * sa + p0.y * ca)
         + vec2<f32>(t * 0.55, -t * 0.34);
 
@@ -606,7 +617,7 @@ struct Params {
   text_du: f32, text_dv: f32, text_vx: f32, text_vy: f32,
   menu_du: f32, menu_dv: f32, pad0: f32, pad1: f32,
   wake: f32, porosity: f32, pressed: f32, wake_width: f32,
-  press_z: f32, menu_vx: f32, menu_vy: f32, pz2: f32,
+  press_z: f32, menu_vx: f32, menu_vy: f32, bump: f32,
 };
 @group(0) @binding(4) var<uniform> P: Params;
 @group(0) @binding(5) var menutex: texture_2d<f32>;
@@ -2401,7 +2412,7 @@ async fn run() {
             press_z,
             menu_vx: tx_vel.0 * 2.0,
             menu_vy: tx_vel.1 * -2.0,
-            pz2: 0.0,
+            bump: dial("bump", 0.12),
         };
         queue.write_buffer(&param_buf, 0, bytemuck::bytes_of(&params));
         // SECTION TITLE transform: a swipe-left enters a section, playing an automatic
