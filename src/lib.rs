@@ -16,10 +16,9 @@ use wasm_bindgen::JsCast;
 // composite it to the surface, so sparkle glints genuinely glow hot.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const LINE1: &str = "BEN PRIDDY";
 // Content sections live in sections.json (baked at build time, editable live via
 // the hidden ✎ panel → window.__SECTIONS as JSON). Each section's action_phrase
-// is the line that cycles under the name; PHRASE_SECONDS sets the cycle.
+// is the line that cycles (centered); PHRASE_SECONDS sets the cycle.
 const PHRASE_SECONDS: f64 = 4.5;
 // section entry: a swipe-left TRIGGERS an automatic 2-phase eased animation —
 // slide the word in from the right (0..ENTRY_T1), then zoom into the path start
@@ -810,29 +809,14 @@ fn tier_fonts(w: u32, h: u32, css_w: f64) -> (bool, bool, f64, f64) {
     (phone, portrait, f1, f2)
 }
 
-// the NAME is anchored at a FIXED y per tier — it never moves as phrases change
-fn name_layout(w: u32, h: u32, css_w: f64) -> Vec<(String, f64, f64)> {
-    let (wf, hf) = (w as f64, h as f64);
-    let (phone, portrait, f1, _f2) = tier_fonts(w, h, css_w);
-    let mut e = Vec::new();
-    if phone {
-        let f1p = wf * 0.205;
-        let gap1 = f1p * 1.08;
-        let mut y = hf * 0.27;
-        for wd in LINE1.split(' ') {
-            e.push((wd.to_string(), f1p, y));
-            y += gap1;
-        }
-    } else if portrait {
-        e.push((LINE1.to_string(), f1, hf * 0.40));
-    } else {
-        e.push((LINE1.to_string(), f1, hf * 0.5 - f1 * 0.46));
-    }
-    e
+// NAME removed (see restructure): the cycling phrase is the only text now. Kept as an
+// empty layout so the field's R/G "name" channels stay blank everywhere it's rastered.
+fn name_layout(_w: u32, _h: u32, _css_w: f64) -> Vec<(String, f64, f64)> {
+    Vec::new()
 }
 
-// the PHRASE lays out below the anchored name; returns its lines + block center
-// (uv.y), which the composite uses as the z-scale pivot
+// the PHRASE is centered on the screen middle (the name is gone); returns its lines
+// + block center (uv.y = 0.5), which the composite uses as the z-scale pivot
 fn phrase_layout(w: u32, h: u32, css_w: f64, phrase: &str) -> (Vec<(String, f64, f64)>, f64) {
     let (wf, hf) = (w as f64, h as f64);
     let (phone, portrait, _f1, f2) = tier_fonts(w, h, css_w);
@@ -841,17 +825,17 @@ fn phrase_layout(w: u32, h: u32, css_w: f64, phrase: &str) -> (Vec<(String, f64,
     if phone {
         let f2p = wf * 0.108;
         let gap2 = f2p * 1.25;
-        let top = hf * 0.58;
         let words: Vec<&str> = phrase.split(' ').collect();
+        // center the whole block on the screen middle
+        let top = hf * 0.5 - gap2 * (words.len() as f64 - 1.0) * 0.5;
         let mut y = top;
         for wd in &words {
             e.push((wd.to_string(), f2p, y));
             y += gap2;
         }
-        cy = (top + gap2 * (words.len() as f64 - 1.0) * 0.5) / hf;
+        cy = 0.5;
     } else if portrait {
         let words: Vec<&str> = phrase.split(' ').collect();
-        let top = hf * 0.55;
         if words.len() >= 2 {
             let mut best = 1usize;
             let mut bestdiff = usize::MAX;
@@ -864,18 +848,18 @@ fn phrase_layout(w: u32, h: u32, css_w: f64, phrase: &str) -> (Vec<(String, f64,
             }
             let f2s = wf * 0.088;
             let gap = f2s * 1.28;
+            let top = hf * 0.5 - gap * 0.5; // two lines centered on the middle
             e.push((words[..best].join(" "), f2s, top));
             e.push((words[best..].join(" "), f2s, top + gap));
-            cy = (top + gap * 0.5) / hf;
+            cy = 0.5;
         } else {
             let f2s = wf * 0.082;
-            e.push((phrase.to_string(), f2s, top));
-            cy = top / hf;
+            e.push((phrase.to_string(), f2s, hf * 0.5));
+            cy = 0.5;
         }
     } else {
-        let py = hf * 0.5 + f2 * 1.05;
-        e.push((phrase.to_string(), f2, py));
-        cy = py / hf;
+        e.push((phrase.to_string(), f2, hf * 0.5));
+        cy = 0.5;
     }
     (e, cy)
 }
