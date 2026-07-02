@@ -796,48 +796,53 @@ fn name_layout(_w: u32, _h: u32, _css_w: f64) -> Vec<(String, f64, f64)> {
 fn phrase_layout(w: u32, h: u32, css_w: f64, phrase: &str) -> (Vec<(String, f64, f64)>, f64) {
     let (wf, hf) = (w as f64, h as f64);
     let (phone, portrait, _f1, f2) = tier_fonts(w, h, css_w);
-    let mut e = Vec::new();
-    let cy;
-    if phone {
-        let f2p = wf * 0.108;
-        let gap2 = f2p * 1.25;
-        let words: Vec<&str> = phrase.split(' ').collect();
-        // center the whole block on the screen middle
-        let top = hf * 0.5 - gap2 * (words.len() as f64 - 1.0) * 0.5;
-        let mut y = top;
-        for wd in &words {
-            e.push((wd.to_string(), f2p, y));
-            y += gap2;
-        }
-        cy = 0.5;
+    // GREEDY WORD-WRAP into as many centered lines as the phrase needs (no 2-line cap).
+    // Font size + wrap width (chars/line) are per tier; a tall block scales down to fit.
+    let (base, target) = if phone {
+        (wf * 0.108, 10usize) // big type on a narrow screen → wraps often
     } else if portrait {
-        let words: Vec<&str> = phrase.split(' ').collect();
-        if words.len() >= 2 {
-            let mut best = 1usize;
-            let mut bestdiff = usize::MAX;
-            for k in 1..words.len() {
-                let d = words[..k].join(" ").len().abs_diff(words[k..].join(" ").len());
-                if d < bestdiff {
-                    bestdiff = d;
-                    best = k;
-                }
-            }
-            let f2s = wf * 0.088;
-            let gap = f2s * 1.28;
-            let top = hf * 0.5 - gap * 0.5; // two lines centered on the middle
-            e.push((words[..best].join(" "), f2s, top));
-            e.push((words[best..].join(" "), f2s, top + gap));
-            cy = 0.5;
-        } else {
-            let f2s = wf * 0.082;
-            e.push((phrase.to_string(), f2s, hf * 0.5));
-            cy = 0.5;
-        }
+        (wf * 0.088, 13usize)
     } else {
-        e.push((phrase.to_string(), f2, hf * 0.5));
-        cy = 0.5;
+        (f2, 22usize) // wide screen → only long phrases wrap
+    };
+    let mut lines: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    for wd in phrase.split(' ') {
+        if cur.is_empty() {
+            cur = wd.to_string();
+        } else if cur.chars().count() + 1 + wd.chars().count() <= target {
+            cur.push(' ');
+            cur.push_str(wd);
+        } else {
+            lines.push(std::mem::take(&mut cur));
+            cur = wd.to_string();
+        }
     }
-    (e, cy)
+    if !cur.is_empty() {
+        lines.push(cur);
+    }
+    if lines.is_empty() {
+        lines.push(phrase.to_string());
+    }
+    let n = lines.len() as f64;
+    let mut fs = base;
+    let mut gap = fs * 1.28;
+    // scale the whole block down if it would exceed ~78% of the screen height
+    let block_h = gap * (n - 1.0) + fs;
+    let max_h = hf * 0.78;
+    if block_h > max_h {
+        let s = max_h / block_h;
+        fs *= s;
+        gap *= s;
+    }
+    let mut e = Vec::new();
+    let top = hf * 0.5 - gap * (n - 1.0) * 0.5; // center the block on the middle
+    let mut y = top;
+    for ln in &lines {
+        e.push((ln.clone(), fs, y));
+        y += gap;
+    }
+    (e, 0.5)
 }
 
 // rasterize a set of text entries into a (blur, sharp) coverage pair (R channel)
