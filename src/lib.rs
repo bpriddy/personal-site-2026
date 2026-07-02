@@ -16,9 +16,9 @@ use wasm_bindgen::JsCast;
 // composite it to the surface, so sparkle glints genuinely glow hot.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Content sections live in sections.json (baked at build time, editable live via
-// the hidden ✎ panel → window.__SECTIONS as JSON). Each section's action_phrase
-// is the line that cycles (centered); PHRASE_SECONDS sets the cycle.
+// The cycling phrases live in phrases.json (a plain JSON string array, baked at build
+// time, editable live via the hidden ✎ panel → window.__PHRASES). Each string is a
+// line that cycles (centered); PHRASE_SECONDS sets the cycle.
 const PHRASE_SECONDS: f64 = 4.5;
 // section entry: a swipe-left TRIGGERS an automatic 2-phase eased animation —
 // slide the word in from the right (0..ENTRY_T1), then zoom into the path start
@@ -738,52 +738,28 @@ fn dial(name: &str, default: f32) -> f32 {
         .unwrap_or(default)
 }
 
-fn section_action_phrase(obj: &wasm_bindgen::JsValue) -> Option<String> {
-    js_sys::Reflect::get(obj, &"action_phrase".into())
-        .ok()
-        .and_then(|v| v.as_string())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
+// one phrase from window.__PHRASES: a plain string (the phrases.json format), or an
+// object with an `action_phrase` field (legacy sections.json compat). trimmed/non-empty.
+fn phrase_entry(v: &wasm_bindgen::JsValue) -> Option<String> {
+    let s = v.as_string().or_else(|| {
+        js_sys::Reflect::get(v, &"action_phrase".into())
+            .ok()
+            .and_then(|x| x.as_string())
+    })?;
+    let s = s.trim().to_string();
+    if s.is_empty() { None } else { Some(s) }
 }
 
-// the live section list from window.__SECTIONS (editor panel), reduced to their
-// action phrases for the home cycle; falls back to the baked sections.json when
-// unset or empty so the viz never breaks
+// the live phrase list from window.__PHRASES (editor panel); falls back to the baked
+// phrases.json when unset or empty so the viz never breaks.
 fn current_action_phrases(fallback: &[String]) -> Vec<String> {
     let arr = web_sys::window()
-        .and_then(|w| js_sys::Reflect::get(&w, &"__SECTIONS".into()).ok())
+        .and_then(|w| js_sys::Reflect::get(&w, &"__PHRASES".into()).ok())
         .and_then(|v| v.dyn_into::<js_sys::Array>().ok());
     if let Some(a) = arr {
         let mut out = Vec::new();
         for i in 0..a.length() {
-            if let Some(p) = section_action_phrase(&a.get(i)) { out.push(p); }
-        }
-        if !out.is_empty() { return out; }
-    }
-    fallback.to_vec()
-}
-
-// a section's title, falling back to its action phrase when the title is unset —
-// this is what swiping into the section reveals.
-fn section_title(obj: &wasm_bindgen::JsValue) -> Option<String> {
-    js_sys::Reflect::get(obj, &"title".into())
-        .ok()
-        .and_then(|v| v.as_string())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .or_else(|| section_action_phrase(obj))
-}
-
-// the live section titles (title or action-phrase fallback), aligned index-for-
-// index with current_action_phrases; falls back to the baked titles.
-fn current_section_titles(fallback: &[String]) -> Vec<String> {
-    let arr = web_sys::window()
-        .and_then(|w| js_sys::Reflect::get(&w, &"__SECTIONS".into()).ok())
-        .and_then(|v| v.dyn_into::<js_sys::Array>().ok());
-    if let Some(a) = arr {
-        let mut out = Vec::new();
-        for i in 0..a.length() {
-            if let Some(t) = section_title(&a.get(i)) { out.push(t); }
+            if let Some(p) = phrase_entry(&a.get(i)) { out.push(p); }
         }
         if !out.is_empty() { return out; }
     }
@@ -1133,29 +1109,24 @@ async fn run() {
             func.call1(&wasm_bindgen::JsValue::NULL, &baked).ok();
         }
     }
-    // sections.json: baked content sections, pushed to the editor panel (which
-    // edits them as JSON → window.__SECTIONS). Reduce to action phrases for the
-    // home-cycle fallback; other properties ride along untouched.
-    let (baked_phrases, baked_titles): (Vec<String>, Vec<String>) = {
-        let v = js_sys::JSON::parse(include_str!("../sections.json"))
+    // phrases.json: baked phrase list, pushed to the editor panel (which edits it as a
+    // JSON string array → window.__PHRASES). Falls back to a default if empty.
+    let baked_phrases: Vec<String> = {
+        let v = js_sys::JSON::parse(include_str!("../phrases.json"))
             .unwrap_or(wasm_bindgen::JsValue::NULL);
-        if let Ok(f) = js_sys::Reflect::get(&window, &"__initSections".into()) {
+        if let Ok(f) = js_sys::Reflect::get(&window, &"__initPhrases".into()) {
             if let Some(func) = f.dyn_ref::<js_sys::Function>() {
                 func.call1(&wasm_bindgen::JsValue::NULL, &v).ok();
             }
         }
         let mut ph = Vec::new();
-        let mut ti = Vec::new();
         if let Ok(arr) = v.dyn_into::<js_sys::Array>() {
             for i in 0..arr.length() {
-                let obj = arr.get(i);
-                if let Some(p) = section_action_phrase(&obj) { ph.push(p); }
-                if let Some(t) = section_title(&obj) { ti.push(t); }
+                if let Some(p) = phrase_entry(&arr.get(i)) { ph.push(p); }
             }
         }
         if ph.is_empty() { ph.push("BUILDS TECHNOLOGY".to_string()); }
-        if ti.is_empty() { ti.push("BUILDS".to_string()); }
-        (ph, ti)
+        ph
     };
     let document = window.document().unwrap();
     let canvas: web_sys::HtmlCanvasElement =
@@ -1467,12 +1438,9 @@ async fn run() {
         .into_iter()
         .next()
         .unwrap_or_else(|| baked_phrases[0].clone());
-    // the EAST panel shows the CURRENT section's title (swipe left to reveal it);
-    // re-baked as the home cycles. Seed it with the first section.
-    let init_east = current_section_titles(&baked_titles)
-        .into_iter()
-        .next()
-        .unwrap_or_else(|| baked_titles[0].clone());
+    // the (parked, inert) menu atlas still bakes at setup — feed it the first phrase
+    // so it compiles; menu_du is off-screen so it never shows.
+    let init_east = first_phrase.clone();
     let (p_entries0, phrase_cy0) = phrase_layout(field_w, field_h, css_w, &first_phrase);
     let (pb0, ps0) = raster_layer(&fctx, field_w, field_h, &p_entries0);
     upload_field(
