@@ -3,6 +3,9 @@ use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
+mod interaction_intent;
+use interaction_intent::drag_intent::DragIntent;
+use interaction_intent::scroll_intent::ScrollIntent;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // "Words as rocks in a stream" — HDR edition.
@@ -275,12 +278,11 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
   }
 
-  // mouse/touch PERTURBATION — the primary interaction now (boosted): a wider, softer
-  // "finger through the water" that shoves the stream around the cursor.
+  // gentle mouse drag — a finger through the water
   let md = pt.pos - P.mouse;
   let mr2 = dot(md, md);
-  if (P.mousef > 0.001 && mr2 < 0.22) {
-    v += (md / max(sqrt(mr2), 0.02)) * P.mousef * exp(-mr2 * 13.0) * P.dt;
+  if (P.mousef > 0.001 && mr2 < 0.09) {
+    v += (md / max(sqrt(mr2), 0.02)) * P.mousef * exp(-mr2 * 26.0) * P.dt;
   }
 
   // speed cap — keeps the flow bounded
@@ -1239,75 +1241,164 @@ async fn run() {
     let fctx: web_sys::CanvasRenderingContext2d =
         fcanvas.get_context("2d").unwrap().unwrap().dyn_into().unwrap();
 
-    // mouse/touch → NDC, drives the particle PERTURBATION (the primary interaction now
-    // that dragging/nav is parked). `drag`.2 is just "a finger/mouse is down" → press wake.
-    let mouse = Rc::new(Cell::new((0.0f32, 0.0f32, 0.0f32))); // x, y, active
-    let drag = Rc::new(Cell::new((0.0f32, 0.0f32, 0.0f32))); // _, _, pressed
-    // mouse move → perturb the stream (a finger through the water)
+    // mouse → NDC, shared with the frame loop
+    let mouse = Rc::new(Cell::new((0.0f32, 0.0f32, 0.0f32))); // x, y, active (perturbance)
+    // text drag: (target_du, target_dv, dragging) in field-UV; anchor = grab uv
+    // + offset-at-grab; offset_pub is the live offset the frame loop publishes
+    // so a fresh grab continues from where the text currently is
+    let drag = Rc::new(Cell::new((0.0f32, 0.0f32, 0.0f32)));
+    let anchor = Rc::new(Cell::new((0.0f32, 0.0f32, 0.0f32, 0.0f32)));
+    let offset_pub = Rc::new(Cell::new((0.0f32, 0.0f32)));
+    // wheel/trackpad delta accumulated since the frame loop last drained it, in
+    // field-UV (px → UV, sign inverted so it reads as natural scrolling). The
+    // frame loop feeds it to ScrollIntent. Desktop only.
+    let scroll = Rc::new(Cell::new((0.0f32, 0.0f32)));
+
+    // mouse move: drag the text if pressed, else perturb the stream
     {
         let m = mouse.clone();
+        let dr = drag.clone();
+        let an = anchor.clone();
         let (w, h) = (css_w as f32, css_h as f32);
         let cb = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |e: web_sys::MouseEvent| {
-            let x = (e.client_x() as f32 / w) * 2.0 - 1.0;
-            let y = -((e.client_y() as f32 / h) * 2.0 - 1.0);
-            m.set((x, y, 1.0));
+            if dr.get().2 > 0.5 {
+                let (pu, pv, bu, bv) = an.get();
+                let du = bu + (e.client_x() as f32 / w - pu);
+                let dv = bv + (e.client_y() as f32 / h - pv);
+                dr.set((du, dv, 1.0));
+            } else {
+                let x = (e.client_x() as f32 / w) * 2.0 - 1.0;
+                let y = -((e.client_y() as f32 / h) * 2.0 - 1.0);
+                m.set((x, y, 1.0));
+            }
         });
-        window.add_event_listener_with_callback("mousemove", cb.as_ref().unchecked_ref()).unwrap();
+        window
+            .add_event_listener_with_callback("mousemove", cb.as_ref().unchecked_ref())
+            .unwrap();
         cb.forget();
     }
-    // mouse down / up → press wake (pressed flag only)
+    {
+        let dr = drag.clone();
+        let an = anchor.clone();
+        let op = offset_pub.clone();
+        let (w, h) = (css_w as f32, css_h as f32);
+        let cb = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |e: web_sys::MouseEvent| {
+            let (bu, bv) = op.get();
+            an.set((e.client_x() as f32 / w, e.client_y() as f32 / h, bu, bv));
+            dr.set((bu, bv, 1.0));
+        });
+        canvas
+            .add_event_listener_with_callback("mousedown", cb.as_ref().unchecked_ref())
+            .unwrap();
+        cb.forget();
+    }
     {
         let dr = drag.clone();
         let cb = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |_e: web_sys::MouseEvent| {
-            let d = dr.get(); dr.set((d.0, d.1, 1.0));
+            let (du, dv, _) = dr.get();
+            dr.set((du, dv, 0.0));
         });
-        canvas.add_event_listener_with_callback("mousedown", cb.as_ref().unchecked_ref()).unwrap();
-        cb.forget();
-    }
-    {
-        let dr = drag.clone();
-        let cb = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |_e: web_sys::MouseEvent| {
-            let d = dr.get(); dr.set((d.0, d.1, 0.0));
-        });
-        window.add_event_listener_with_callback("mouseup", cb.as_ref().unchecked_ref()).unwrap();
+        window
+            .add_event_listener_with_callback("mouseup", cb.as_ref().unchecked_ref())
+            .unwrap();
         cb.forget();
     }
     {
         let m = mouse.clone();
         let cb = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |_e: web_sys::MouseEvent| {
-            let (x, y, _) = m.get(); m.set((x, y, 0.0));
+            let (x, y, _) = m.get();
+            m.set((x, y, 0.0));
         });
-        document.add_event_listener_with_callback("mouseleave", cb.as_ref().unchecked_ref()).unwrap();
+        document
+            .add_event_listener_with_callback("mouseleave", cb.as_ref().unchecked_ref())
+            .unwrap();
         cb.forget();
     }
-    // touch → perturb (position) + press wake; no dragging
+    // touch: press-drag throws the text (its moving obstacle stirs the field)
     {
-        let m = mouse.clone();
         let dr = drag.clone();
+        let an = anchor.clone();
+        let op = offset_pub.clone();
         let (w, h) = (css_w as f32, css_h as f32);
         let cb = Closure::<dyn FnMut(web_sys::TouchEvent)>::new(move |e: web_sys::TouchEvent| {
             if let Some(t) = e.touches().get(0) {
-                let x = (t.client_x() as f32 / w) * 2.0 - 1.0;
-                let y = -((t.client_y() as f32 / h) * 2.0 - 1.0);
-                m.set((x, y, 1.0));
-                let d = dr.get(); dr.set((d.0, d.1, 1.0));
+                let (bu, bv) = op.get();
+                an.set((t.client_x() as f32 / w, t.client_y() as f32 / h, bu, bv));
+                dr.set((bu, bv, 1.0));
             }
         });
-        let r = cb.as_ref().unchecked_ref();
-        canvas.add_event_listener_with_callback("touchstart", r).unwrap();
-        window.add_event_listener_with_callback("touchmove", r).unwrap();
+        canvas
+            .add_event_listener_with_callback("touchstart", cb.as_ref().unchecked_ref())
+            .unwrap();
         cb.forget();
     }
     {
-        let m = mouse.clone();
+        let dr = drag.clone();
+        let an = anchor.clone();
+        let (w, h) = (css_w as f32, css_h as f32);
+        let cb = Closure::<dyn FnMut(web_sys::TouchEvent)>::new(move |e: web_sys::TouchEvent| {
+            if dr.get().2 > 0.5 {
+                if let Some(t) = e.touches().get(0) {
+                    let (pu, pv, bu, bv) = an.get();
+                    let du = bu + (t.client_x() as f32 / w - pu);
+                    let dv = bv + (t.client_y() as f32 / h - pv);
+                    dr.set((du, dv, 1.0));
+                }
+            }
+        });
+        window
+            .add_event_listener_with_callback("touchmove", cb.as_ref().unchecked_ref())
+            .unwrap();
+        cb.forget();
+    }
+    {
         let dr = drag.clone();
         let cb = Closure::<dyn FnMut(web_sys::TouchEvent)>::new(move |_e: web_sys::TouchEvent| {
-            let (x, y, _) = m.get(); m.set((x, y, 0.0));
-            let d = dr.get(); dr.set((d.0, d.1, 0.0));
+            let (du, dv, _) = dr.get();
+            dr.set((du, dv, 0.0));
         });
         let r = cb.as_ref().unchecked_ref();
         window.add_event_listener_with_callback("touchend", r).unwrap();
         window.add_event_listener_with_callback("touchcancel", r).unwrap();
+        cb.forget();
+    }
+    // touch-primary device? (coarse pointer). Scroll intent is desktop-only, so on
+    // touch we neither register the wheel listener (no needless preventDefault) nor
+    // enable the module.
+    let is_touch = window
+        .match_media("(pointer: coarse)")
+        .ok()
+        .flatten()
+        .map(|m| m.matches())
+        .unwrap_or(false);
+    // wheel / trackpad: accumulate deltas (the desktop sibling of touch-drag).
+    // Normalize line/page delta modes to pixels, convert to field-UV, and invert
+    // so scrolling toward a panel reveals it (natural scroll). preventDefault so
+    // the gesture never doubles as page scroll.
+    if !is_touch {
+        let sc = scroll.clone();
+        let (w, h) = (css_w as f32, css_h as f32);
+        let cb = Closure::<dyn FnMut(web_sys::WheelEvent)>::new(move |e: web_sys::WheelEvent| {
+            e.prevent_default();
+            let (ux, uy) = match e.delta_mode() {
+                1 => (33.0, 33.0),                 // lines → px (~one notch ≈ 100px)
+                2 => (css_w as f64, css_h as f64), // pages → px
+                _ => (1.0, 1.0),                   // already pixels
+            };
+            let dx = -(e.delta_x() * ux) as f32 / w;
+            let dy = -(e.delta_y() * uy) as f32 / h;
+            let cur = sc.get();
+            sc.set((cur.0 + dx, cur.1 + dy));
+        });
+        let opts = web_sys::AddEventListenerOptions::new();
+        opts.set_passive(false); // required so preventDefault takes effect
+        canvas
+            .add_event_listener_with_callback_and_add_event_listener_options(
+                "wheel",
+                cb.as_ref().unchecked_ref(),
+                &opts,
+            )
+            .unwrap();
         cb.forget();
     }
 
@@ -1932,8 +2023,27 @@ async fn run() {
     let mut frames: u32 = 0;
     let mut acc: f64 = 0.0;
     let mut sim_t: f64 = 0.0; // intro clock on capped sim-time (stays synced to the fill at any fps)
+    let mut tx_off = (0.0f32, 0.0f32); // text drag offset (field-UV)
+    let mut tx_vel = (0.0f32, 0.0f32);
+    let mut last_dir = (0.0f32, 1.0f32); // last 8-snapped drag direction
+    let mut snap_target = (0.0f32, 0.0f32);
+    let mut committed = (0.0f32, 0.0f32); // resting state: name (origin) or a panel
+    let mut was_dragging = false; // a finger/mouse drag was active last frame
     let mut press_z = 1.0f32; // visible-text recede: dips on press, eases back on release
+    let mut drag_intent = DragIntent::new();
+    drag_intent.set_axis_mode(true); // lock to an axis → drag both ways (up & down, etc.)
+    // SCROLL INTENT — the desktop sibling of drag, paginated to absorb inertia.
+    // Drives the same panels; off on touch devices (is_touch, computed above).
+    let mut scroll_intent = ScrollIntent::new();
+    scroll_intent.set_axis_mode(true); // same axis lock as drag (functional parity)
+    scroll_intent.set_enabled(!is_touch);
     let mut phrase_idx: usize = 0;
+    let mut cur_east = init_east; // section title currently baked into the east panel
+    let mut prev_drag_on = false; // was a finger/mouse drag active last frame (edge-detect)
+    let mut drag_anchor = (0.0f32, 0.0f32); // drag offset captured at gesture start (exit test)
+    let mut section_drag = false; // the CURRENT drag began inside a section → it is captured
+    // there (drives exit; must NEVER fall through to panel-nav / a neighbour-panel pan)
+    let mut entry_time = 0.0f32; // section-entry clock: 0 home → ENTRY_TOT fully in
     let mut phase: u8 = 0; // 0 hold, 1 exit (push back + fade), 2 enter (forward + fade in)
     let mut phase_start = t0;
     let mut phrase_cy = phrase_cy0 as f32;
@@ -1943,6 +2053,8 @@ async fn run() {
     let win = window.clone();
     let mouse_r = mouse.clone();
     let drag_r = drag.clone();
+    let offpub_r = offset_pub.clone();
+    let scroll_r = scroll.clone();
     *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
         let now = perf.now();
         let dt_ms = now - last;
@@ -1984,6 +2096,18 @@ async fn run() {
             let pop = ss(1.3, INTRO_DUR, it);
             phrase_op = pop;
             phrase_w = pop;
+            phrase_z = 1.0;
+        } else if committed.0.abs() + committed.1.abs() > 1e-4
+            || tx_off.0.abs() + tx_off.1.abs() > 0.05
+        {
+            // navigating to / resting in a section: freeze the home phrase cycle so
+            // phrase_idx (and the east panel that tracks it) holds on THIS section
+            // instead of advancing — including mid-swipe, before commit. The phrase
+            // stays fully shown; cycling resumes once we settle back at centre.
+            phase = 0;
+            phase_start = now;
+            phrase_op = 1.0;
+            phrase_w = 1.0;
             phrase_z = 1.0;
         } else {
         let exit_dur = 600.0;
@@ -2029,6 +2153,21 @@ async fn run() {
                     sdf_cache.insert(pkey.clone(), bake_sdf(&sctx, sdf_w, sdf_h, css_w, &pkey, SDF_MAXDIST));
                 }
                 upload_field(&queue, &sdf_tex, sdf_w, sdf_h, sdf_cache.get(&pkey).unwrap());
+                // EAST panel tracks the new current section: re-bake the atlas
+                // (coverage + wake SDF) with this section's title in the east cell
+                let new_east = current_section_titles(&baked_titles)
+                    .get(phrase_idx)
+                    .cloned()
+                    .unwrap_or_else(|| pkey.clone());
+                if new_east != cur_east {
+                    cur_east = new_east;
+                    let me = menu_atlas_entries(field_w, field_h, &cur_east);
+                    let (mb, ms) = raster_atlas(&fctx, field_w, field_h, &me);
+                    upload_field(&queue, &menu_tex, field_w, field_h,
+                        &pack_rgba(&mb, &ms, &menu_zero, &menu_zero));
+                    upload_field(&queue, &menu_sdf_tex, sdf_w, sdf_h,
+                        &bake_atlas_sdf(&sctx, sdf_w, sdf_h, SDF_MAXDIST, &cur_east));
+                }
                 phrase_cy = cy as f32;
                 phase = 2;
                 phase_start = now;
@@ -2046,14 +2185,189 @@ async fn run() {
         phrase_z = (1.0 - 0.16 * phrase_tt) as f32;
         }
 
+        // A gesture (drag on touch/mouse, or wheel scroll on desktop) slides along
+        // ONE AXIS (a line) between three states: name centred (origin) and the two
+        // panels at +/- the axis. Axis mode lets it go BOTH ways - lock the y axis,
+        // then pull DOWN to bring in the panel above (north) or UP to bring in the
+        // one below (south). The offset is clamped to [-axis, +axis] so you can't
+        // over-pull past a panel; the panel shown is the one you move toward.
+        let (tdu, tdv, dragging) = drag_r.get();
+        let thr = dial("commit", 0.3); // live FEEL dial (drag commit fraction)
+        drag_intent.set_commit_threshold(thr);
+        // section-entry pacing, live-tunable: slide-in + zoom-in durations (seconds)
+        let entry_slide = dial("entry_slide", ENTRY_T1).max(0.01);
+        let entry_tot = entry_slide + dial("entry_zoom", ENTRY_TOT - ENTRY_T1).max(0.01);
+        // scroll keeps its OWN step threshold (different domain — accumulated scroll
+        // UV, not fraction-of-span), tuned by the `scroll` sensitivity dial below.
+        let at_panel = committed.0.abs() + committed.1.abs() > 1e-4;
 
-        // ── dragging + panel/section nav PARKED (see parked/drag-nav/) ──
-        // The field is now driven only by the mouse/touch perturbation + the press
-        // wake. drag_r's .2 is just "a finger/mouse is down" now (no offset).
-        let (_pdu, _pdv, dragging) = drag_r.get();
-        let pz_target = if dragging > 0.5 { 0.93f32 } else { 1.0f32 };
-        let pz_rate = if dragging > 0.5 { 14.0f32 } else { 3.0f32 };
+        // drain this frame's wheel delta. Scroll is the desktop sibling of the
+        // drag: kept fully inert while a finger/mouse drag is active (so it can
+        // never hijack the drag's release), else advanced as a PAGINATED stepper
+        // that returns a one-detent step direction when accumulated scroll crosses
+        // the threshold (it absorbs the inertia tail itself).
+        let sd = {
+            let d = scroll_r.get();
+            scroll_r.set((0.0, 0.0));
+            d
+        };
+        let ssens = dial("scroll", 1.0);
+        let drag_on = dragging > 0.5;
+        // committed to the section once the left/east swipe passes the threshold
+        // (committed.x < 0). Entry itself is the swipe (the dive, computed below).
+        let in_section = committed.0 < -0.5;
+        // fully landed once the automatic entry animation has finished.
+        let fully_in = in_section && entry_time >= entry_tot - 0.001;
+        // CAPTURE: a drag that BEGINS inside a section belongs to the section — its only
+        // job now is to swipe back out (east-reverse) to home. It must NEVER fall through
+        // to panel-nav, or that same continuous swipe would pan to a neighbour panel.
+        let drag_started = drag_on && !prev_drag_on;
+        if drag_started {
+            drag_anchor = (tdu, tdv); // gesture origin, for the rightward-exit test below
+        }
+        if drag_started && in_section {
+            section_drag = true;
+        }
+        if !drag_on {
+            section_drag = false;
+        }
+        if in_section {
+            // IN A SECTION: the word is expanded (or expanding). No path movement — a
+            // clear rightward swipe (the reverse of the swipe-left entry) returns home;
+            // every other gesture is swallowed so it can't pan to a neighbour panel.
+            scroll_intent.reset();
+            if fully_in && drag_on && (tdu - drag_anchor.0) > thr {
+                committed = (0.0, 0.0); // swiped back out → leave the section (springs home)
+                snap_target = (0.0, 0.0);
+            }
+        } else if section_drag {
+            // this drag began in a section and just swiped back out: swallow the rest of
+            // the gesture so it can't pan. A fresh touch (after release) navigates.
+            scroll_intent.reset();
+        } else {
+        let scroll_step = if drag_on {
+            scroll_intent.reset();
+            (0.0f32, 0.0f32)
+        } else {
+            scroll_intent.update((sd.0 * ssens, sd.1 * ssens), dt).step
+        };
+
+        if drag_on {
+            if !was_dragging {
+                drag_intent.begin((tdu, tdv));
+            }
+            let target = drag_intent.update((tdu, tdv), dt);
+            // the locked axis: pinned to the committed panel's axis when on one,
+            // else the canonical axis the drag locked onto
+            let axis = if at_panel {
+                (last_dir.0.round(), last_dir.1.round())
+            } else if let Some(d) = drag_intent.direction() {
+                (d.0.round(), d.1.round())
+            } else {
+                (0.0, 0.0)
+            };
+            // clamp the offset onto the [-axis, +axis] line (both directions)
+            let plen = (axis.0 * axis.0 + axis.1 * axis.1).sqrt();
+            let constrained = if plen > 1e-5 {
+                let ah = (axis.0 / plen, axis.1 / plen);
+                let along = (target.0 * ah.0 + target.1 * ah.1).clamp(-plen, plen);
+                (ah.0 * along, ah.1 * along)
+            } else {
+                committed // pre-lock: hold at rest until a direction reads
+            };
+            let ivx = (constrained.0 - tx_off.0) / dt.max(0.001);
+            let ivy = (constrained.1 - tx_off.1) / dt.max(0.001);
+            tx_vel = ((tx_vel.0 * 0.55 + ivx * 0.45).clamp(-10.0, 10.0),
+                      (tx_vel.1 * 0.55 + ivy * 0.45).clamp(-10.0, 10.0));
+            tx_off = constrained;
+            if !at_panel {
+                if let Some(d) = drag_intent.direction() { last_dir = d; }
+            }
+            was_dragging = true;
+        } else {
+            if was_dragging {
+                drag_intent.end();
+                // snap to the nearest of three detents along the axis: the panel on
+                // whichever side we pulled toward (once past the threshold), or the
+                // name. Hysteresis: leaving a panel takes the same threshold.
+                let axis = (last_dir.0.round(), last_dir.1.round());
+                let plen2 = axis.0 * axis.0 + axis.1 * axis.1;
+                let f = if plen2 > 1e-5 { (tx_off.0 * axis.0 + tx_off.1 * axis.1) / plen2 } else { 0.0 };
+                let neg = (-axis.0, -axis.1);
+                let cs = committed.0 * axis.0 + committed.1 * axis.1; // side we were resting on
+                snap_target = if cs > 0.5 {
+                    if f > 1.0 - thr { axis } else if f < -thr { neg } else { (0.0, 0.0) }
+                } else if cs < -0.5 {
+                    if f < -(1.0 - thr) { neg } else if f > thr { axis } else { (0.0, 0.0) }
+                } else {
+                    if f > thr { axis } else if f < -thr { neg } else { (0.0, 0.0) }
+                };
+                committed = snap_target;
+                tx_vel = (0.0, 0.0); // clean settle - drop any clamp/flick velocity spike
+                was_dragging = false;
+            } else if scroll_step != (0.0, 0.0) {
+                // PAGINATED scroll: step one detent toward the scrolled direction.
+                // Round to the detent axis the SAME way the drag rounds last_dir
+                // (cardinal → (0,±1)/(±1,0), diagonal → (±1,±1)) so committed /
+                // snap_target / last_dir stay on the drag's convention. While
+                // resting on a panel, only step along that panel's OWN axis (parity
+                // with the axis-locked drag); a different axis is ignored until you
+                // step back to centre. The spring below animates the move.
+                let u = (scroll_step.0.round(), scroll_step.1.round());
+                let lr = (last_dir.0.round(), last_dir.1.round());
+                let same_axis = (u.0 == lr.0 && u.1 == lr.1) || (u.0 == -lr.0 && u.1 == -lr.1);
+                let u2 = u.0 * u.0 + u.1 * u.1; // |u|^2: 1 cardinal, 2 diagonal
+                if u2 > 0.5 && (!at_panel || same_axis) {
+                    let idx = (committed.0 * u.0 + committed.1 * u.1) / u2; // detent -1/0/1
+                    let nxt = (idx + 1.0).clamp(-1.0, 1.0);
+                    snap_target = (u.0 * nxt, u.1 * nxt);
+                    committed = snap_target;
+                    last_dir = u;
+                    tx_vel = (0.0, 0.0);
+                }
+            }
+        }
+        } // end panel nav
+        // SETTLE: spring tx_off toward snap_target whenever we're not actively
+        // panning — while in a section (so the main text slides FULLY over, like a
+        // normal east move) AND during a swiped-out exit (section_drag, so the home
+        // springs back immediately rather than hanging until release). fieldAt follows
+        // tx_off, so the obstacle/particle-displacement moves off with it — no ghost.
+        if in_section || section_drag || !drag_on {
+            let k = 130.0f32;
+            let c = 24.0f32;
+            tx_vel = (tx_vel.0 + (-k * (tx_off.0 - snap_target.0) - c * tx_vel.0) * dt,
+                      tx_vel.1 + (-k * (tx_off.1 - snap_target.1) - c * tx_vel.1) * dt);
+            tx_off = (tx_off.0 + tx_vel.0 * dt, tx_off.1 + tx_vel.1 * dt);
+        }
+        prev_drag_on = drag_on;
+        offpub_r.set(tx_off);
+        // SECTION ENTRY: the swipe-left commit (in_section) just TRIGGERS an
+        // automatic 2-phase animation. Advance the entry clock toward ENTRY_TOT
+        // while committed, back to 0 when not; the title write eases each phase.
+        if in_section {
+            entry_time = (entry_time + dt).min(entry_tot);
+        } else {
+            entry_time = (entry_time - dt).max(0.0);
+        }
+        // the panel atlas pans DIRECTLY with the drag (menu uniforms use tx_off, same
+        // as the name) so it drags and throws with identical feel - no lerp lag.
+        // on press the visible text recedes slightly in z to meet the wake growth,
+        // then eases back to normal more slowly on release
+        let pz_target = if drag_on { 0.93f32 } else { 1.0f32 };
+        let pz_rate = if drag_on { 14.0f32 } else { 3.0f32 };
         press_z += (pz_target - press_z) * (1.0 - (-pz_rate * dt).exp());
+        // active panel cell centre in atlas-uv, for the shader mask (only this cell
+        // shows). The active panel is on whichever SIDE of the axis the offset is,
+        // so dragging the other way reveals the opposite panel. centre = (1.5-cell)/3
+        let axis_n = (last_dir.0.round(), last_dir.1.round());
+        let alen = (axis_n.0 * axis_n.0 + axis_n.1 * axis_n.1).sqrt();
+        let along_now = if alen > 1e-5 { (tx_off.0 * axis_n.0 + tx_off.1 * axis_n.1) / alen } else { 0.0 };
+        let side = if along_now >= 0.0 { axis_n } else { (-axis_n.0, -axis_n.1) };
+        let menu_cell = ((1.5 - side.0) / 3.0, (1.5 - side.1) / 3.0);
+        // the name leads further off-screen than the panel pans in, so the two
+        // don't crowd each other on the way out or back
+        let name_lead = dial("name_lead", 1.5);
 
         let (mx, my, mact) = mouse_r.get();
         let params = Params {
@@ -2064,9 +2378,7 @@ async fn run() {
             count: particle_count,
             stream: dial("stream", bk("stream", 0.28)),
             push: 2.5,
-            // MOUSE/TOUCH PERTURBATION — now the primary interaction, boosted. No longer
-            // gated off while pressed; a press just ADDS the wake on top.
-            mousef: dial("perturb", bk("perturb", 1.1)) * mact,
+            mousef: if dragging > 0.5 { 0.0 } else { dial("perturb", bk("perturb", 0.5)) * mact },
             dpr: dpr as f32,
             rot_speed: dial("rot_speed", bk("rot_speed", 0.27)),
             rot_depth: dial("rot_depth", bk("rot_depth", 3.2)),
@@ -2085,29 +2397,43 @@ async fn run() {
             part_fade,
             name_op,
             intro_glow,
-            // nav offsets NEUTRALIZED (parked): text fixed, menu off-screen, no plow/push
-            text_du: 0.0,
-            text_dv: 0.0,
-            text_vx: 0.0,
-            text_vy: 0.0,
-            menu_du: 5.0,
-            menu_dv: 5.0,
-            pad0: 9.0,
-            pad1: 9.0,
+            text_du: tx_off.0 * name_lead,
+            text_dv: tx_off.1 * name_lead,
+            text_vx: tx_vel.0 * 2.0 * name_lead,
+            text_vy: tx_vel.1 * -2.0 * name_lead,
+            menu_du: tx_off.0,
+            menu_dv: tx_off.1,
+            pad0: menu_cell.0,
+            pad1: menu_cell.1,
             wake: dial("wake", 1.0),
             porosity: dial("porosity", 0.55),
             pressed: if dragging > 0.5 { 1.0 } else { 0.0 },
             wake_width: dial("wake_width", 0.09),
             press_z,
-            menu_vx: 0.0,
-            menu_vy: 0.0,
-            bump: 0.0,
+            menu_vx: tx_vel.0 * 2.0,
+            menu_vy: tx_vel.1 * -2.0,
+            bump: dial("bump", 0.12),
         };
         queue.write_buffer(&param_buf, 0, bytemuck::bytes_of(&params));
-        // SECTION TITLE parked (see parked/drag-nav/). Written with vis=0 so every
-        // shader that reads titlex gates off (titlex.w > 0.02) and skips it.
+        // SECTION TITLE transform: a swipe-left enters a section, playing an automatic
+        // eased 2-phase entry — (1) slide the word in from the right, then (2) scale it
+        // up, centred, to the `expand` dial — and HOLD there. No path movement (that was
+        // parked, see parked/line-tracing/). on=0 → composite skips it (home unchanged).
         {
-            let title_x: [f32; 4] = [1.0, 0.5, 0.5, 0.0];
+            let smooth = |a: f32, b: f32, x: f32| {
+                let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
+                t * t * (3.0 - 2.0 * t)
+            };
+            let expand = dial("expand", 2.0).max(1.0); // landed scale of the word
+            let slide_p = smooth(0.0, entry_slide, entry_time); // phase 1: slide in 0→1
+            let zoom_p = smooth(entry_slide, entry_tot, entry_time); // phase 2: expand 0→1
+            let base_x = -0.5 + 1.0 * slide_p; // off-right → word centre (0.5)
+            let tox = base_x + (0.5 - base_x) * zoom_p; // settle to centre
+            let toy = 0.5; // vertically centred throughout
+            let scale = 1.0 + (expand - 1.0) * zoom_p; // 1 → expand
+            // w = entry presence (0→1 over the slide): composite gates + fades home by it
+            let vis = (entry_time / entry_slide).clamp(0.0, 1.0);
+            let title_x: [f32; 4] = [scale, tox, toy, vis];
             queue.write_buffer(&title_buf, 0, bytemuck::bytes_of(&title_x));
         }
 

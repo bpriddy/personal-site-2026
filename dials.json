@@ -8,7 +8,7 @@
   "bg_freq": 2.6,
   "text_sat": 0.72,
   "bg_speed": 2.5,
-  "perturb": 0.5,
+  "perturb": 1.1,
   "wake": 1.6,
   "porosity": 0.48,
   "name_lead": 1,
