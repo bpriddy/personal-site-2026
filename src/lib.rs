@@ -799,7 +799,7 @@ fn phrase_layout(w: u32, h: u32, css_w: f64, phrase: &str) -> (Vec<(String, f64,
     // GREEDY WORD-WRAP into as many centered lines as the phrase needs (no 2-line cap).
     // Font size + wrap width (chars/line) are per tier; a tall block scales down to fit.
     let (base, target) = if phone {
-        (wf * 0.108, 10usize) // big type on a narrow screen → wraps often
+        (wf * 0.162, 7usize) // mobile: 1.5× bigger type; fewer chars/line to keep the width
     } else if portrait {
         (wf * 0.088, 13usize)
     } else {
