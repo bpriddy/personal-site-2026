@@ -791,31 +791,45 @@ fn name_layout(_w: u32, _h: u32, _css_w: f64) -> Vec<(String, f64, f64)> {
     Vec::new()
 }
 
-// the PHRASE is centered on the screen middle (the name is gone); returns its lines
-// + block center (uv.y = 0.5), which the composite uses as the z-scale pivot
-fn phrase_layout(w: u32, h: u32, css_w: f64, phrase: &str) -> (Vec<(String, f64, f64)>, f64) {
+// the PHRASE is centered on the screen middle (the name is gone). Wraps by MEASURED
+// pixel width (canvas measureText, not a char-count guess) so no line ever overflows
+// the field width, then shrinks the whole block to fit both width AND height. Returns
+// its lines + block center (uv.y = 0.5), the composite's z-scale pivot.
+fn phrase_layout(
+    ctx: &web_sys::CanvasRenderingContext2d,
+    w: u32,
+    h: u32,
+    css_w: f64,
+    phrase: &str,
+) -> (Vec<(String, f64, f64)>, f64) {
     let (wf, hf) = (w as f64, h as f64);
     let (phone, portrait, _f1, f2) = tier_fonts(w, h, css_w);
-    // GREEDY WORD-WRAP into as many centered lines as the phrase needs (no 2-line cap).
-    // Font size + wrap width (chars/line) are per tier; a tall block scales down to fit.
-    let (base, target) = if phone {
-        (wf * 0.138, 8usize) // mobile: enlarged type (~1.28×); fewer chars/line to keep width
+    let base = if phone {
+        wf * 0.138 // mobile: enlarged type
     } else if portrait {
-        (wf * 0.088, 13usize)
+        wf * 0.088
     } else {
-        (f2, 22usize) // wide screen → only long phrases wrap
+        f2
     };
+    let max_w = wf * 0.9; // every line stays inside the field width (small margin)
+    // measure at the unscaled base font — same family/weight raster_layer draws with
+    ctx.set_font(&format!("900 {:.0}px -apple-system, system-ui, sans-serif", base));
+    let measure = |s: &str| ctx.measure_text(s).map(|m| m.width()).unwrap_or(0.0);
+    // greedy wrap by MEASURED WIDTH: keep adding words while the line still fits max_w,
+    // wrapping the instant it wouldn't — so a wide line can't spill off the edges.
     let mut lines: Vec<String> = Vec::new();
     let mut cur = String::new();
     for wd in phrase.split(' ') {
         if cur.is_empty() {
             cur = wd.to_string();
-        } else if cur.chars().count() + 1 + wd.chars().count() <= target {
-            cur.push(' ');
-            cur.push_str(wd);
         } else {
-            lines.push(std::mem::take(&mut cur));
-            cur = wd.to_string();
+            let cand = format!("{} {}", cur, wd);
+            if measure(&cand) <= max_w {
+                cur = cand;
+            } else {
+                lines.push(std::mem::take(&mut cur));
+                cur = wd.to_string();
+            }
         }
     }
     if !cur.is_empty() {
@@ -824,17 +838,18 @@ fn phrase_layout(w: u32, h: u32, css_w: f64, phrase: &str) -> (Vec<(String, f64,
     if lines.is_empty() {
         lines.push(phrase.to_string());
     }
+    // shrink-to-fit backstop: an unbreakable single word wider than max_w scales down to
+    // fit the width; the whole stack scales down if it exceeds ~78% of the height.
+    let widest = lines.iter().map(|l| measure(l)).fold(0.0_f64, f64::max);
     let n = lines.len() as f64;
     let mut fs = base;
     let mut gap = fs * 1.28;
-    // scale the whole block down if it would exceed ~78% of the screen height
+    let w_scale = if widest > max_w { max_w / widest } else { 1.0 };
     let block_h = gap * (n - 1.0) + fs;
-    let max_h = hf * 0.78;
-    if block_h > max_h {
-        let s = max_h / block_h;
-        fs *= s;
-        gap *= s;
-    }
+    let h_scale = if block_h > hf * 0.78 { hf * 0.78 / block_h } else { 1.0 };
+    let s = w_scale.min(h_scale);
+    fs *= s;
+    gap *= s;
     let mut e = Vec::new();
     let top = hf * 0.5 - gap * (n - 1.0) * 0.5; // center the block on the middle
     let mut y = top;
@@ -991,7 +1006,7 @@ fn bake_sdf(
     maxdist: f32,
 ) -> Vec<u8> {
     let mut entries = name_layout(sw, sh, css_w);
-    entries.extend(phrase_layout(sw, sh, css_w, phrase).0);
+    entries.extend(phrase_layout(ctx, sw, sh, css_w, phrase).0);
     let (_, sharp) = raster_layer(ctx, sw, sh, &entries);
     coverage_to_sdf(&sharp, sw, sh, sw as f32, maxdist)
 }
@@ -1446,7 +1461,7 @@ async fn run() {
     // the (parked, inert) menu atlas still bakes at setup — feed it the first phrase
     // so it compiles; menu_du is off-screen so it never shows.
     let init_east = first_phrase.clone();
-    let (p_entries0, phrase_cy0) = phrase_layout(field_w, field_h, css_w, &first_phrase);
+    let (p_entries0, phrase_cy0) = phrase_layout(&fctx, field_w, field_h, css_w, &first_phrase);
     let (pb0, ps0) = raster_layer(&fctx, field_w, field_h, &p_entries0);
     upload_field(
         &queue,
@@ -1969,7 +1984,7 @@ async fn run() {
             if el >= exit_dur {
                 let phrases = current_action_phrases(&baked_phrases);
                 phrase_idx = (phrase_idx + 1) % phrases.len();
-                let (pe, cy) = phrase_layout(field_w, field_h, css_w, &phrases[phrase_idx]);
+                let (pe, cy) = phrase_layout(&fctx, field_w, field_h, css_w, &phrases[phrase_idx]);
                 let (pb, ps) = raster_layer(&fctx, field_w, field_h, &pe);
                 upload_field(
                     &queue,
