@@ -1,7 +1,21 @@
-/target
-/dist
+# Rust/WASM + build artifacts, anywhere in the tree (root or experiments/*)
+**/target/
+**/dist/
 
-# Claude Preview launch config — machine-specific absolute paths, regenerated
-# per-machine by the wasm-renderer skill. Run standalone with `trunk serve`.
+# Go build artifacts (air/hot-reload output + compiled binaries)
+/tmp/
+/server
+/bin/
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+
+# machine-specific / build tooling
+.DS_Store
 /.claude
 /.build-bin

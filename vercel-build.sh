@@ -15,4 +15,9 @@ export PATH="$PWD/.build-bin:$PATH"
 
 rustc --version
 trunk --version
+
+# the particle experiment now lives under experiments/particle-stream/ (monorepo).
+# Vercel keeps serving it at the domain root, so build it with root-absolute asset
+# URLs (no --public-url). outputDirectory in vercel.json points at its dist/.
+cd experiments/particle-stream
 trunk build --release
