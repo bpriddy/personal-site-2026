@@ -11,10 +11,8 @@ and CMS are not built yet. See [`docs/restructure-plan.md`](docs/restructure-pla
 
 ```
 experiments/
-  particle-stream/   Rust → wasm → WebGPU particle field (live site today)
+  particle-stream/   Rust → wasm → WebGPU particle field
 docs/                plans and architecture notes
-vercel.json          current hosting (serves particle-stream at the domain root)
-vercel-build.sh      Vercel build script (installs trunk, builds the experiment)
 ```
 
 Planned, not yet present: a Go CMS / container site at the repo root, and
@@ -31,7 +29,6 @@ its own build and README. Build output (`target/`, `dist/`) is gitignored.
 
 ## Hosting
 
-- **Now:** Vercel builds `experiments/particle-stream` and serves its `dist/`
-  at the domain root.
+- **Now:** none. Vercel was retired on 2026-09-29; nothing in the repo deploys.
 - **Planned:** GCP, with the Go container site at the root and experiments
   embedded under `/experiments/`.

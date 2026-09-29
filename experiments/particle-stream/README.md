@@ -10,8 +10,7 @@ noon.
 Rust  →  wasm32  →  wgpu (compute + render)  →  WebGPU  →  <canvas>
 ```
 
-This is the first experiment in the monorepo (see the root `README.md`). It is
-currently served on its own at the domain root by Vercel.
+This is the first experiment in the monorepo (see the root `README.md`).
 
 ## How it works
 
@@ -63,10 +62,15 @@ Some keys (`name_lead`, `commit`, `menu_lerp`, `scroll`, `entry_slide`,
 
 ## Deploy
 
-Vercel, via `vercel.json` + `vercel-build.sh` at the repo root: installs the
-wasm target and trunk, then `trunk build --release` here, serving `dist/`.
-Asset URLs are root-absolute (no `--public-url`). When the piece moves under
-`/experiments/` on the container site, build with `--public-url`.
+No deploy is wired up (Vercel was retired; GCP is planned). To build:
+
+```sh
+cd experiments/particle-stream
+trunk build --release                                   # served at a domain root
+trunk build --release --public-url /experiments/particle-stream/   # embedded
+```
+
+Output is static files in `dist/` (~240 KB).
 
 WebGPU requires HTTPS and a current browser; unsupported browsers see the
 status chip's adapter message.

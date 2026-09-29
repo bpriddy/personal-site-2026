@@ -19,8 +19,9 @@ where the particle piece becomes one of several embedded experiments.
   (built with `trunk --public-url` for the Rust ones).
 - **Hosting** — GCP, provisioned with Terraform (`.gitignore` already covers
   `.terraform/`, state and `*.tfvars`).
-- **Transition** — Vercel keeps serving particle-stream at the domain root
-  until the GCP site is live.
+- **Transition** — Vercel served particle-stream at the domain root until
+  2026-09-29, when it was retired ahead of GCP. There's no live deploy in the
+  meantime.
 
 ## Steps
 
@@ -36,8 +37,9 @@ where the particle piece becomes one of several embedded experiments.
 - [ ] **Embed particle-stream** under `/experiments/particle-stream/` with
   `--public-url`.
 - [ ] **Terraform + GCP** hosting; CI/CD to build the Go server and experiments.
-- [ ] **Cut over DNS** from Vercel to GCP; retire `vercel.json` /
+- [x] **Retire Vercel** (2026-09-29): removed `vercel.json` /
   `vercel-build.sh`.
+- [ ] **Point DNS** at GCP.
 
 ## Open questions (TODO)
 
