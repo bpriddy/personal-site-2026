@@ -24,6 +24,9 @@ where the particle piece becomes one of several embedded experiments.
   into the image and served at `/experiments/<slug>/` (Rust ones use trunk
   `--public-url`). The CMS stores their listing metadata only.
 - **Vercel** — retired 2026-09-29. Nothing is live until GCP is up.
+- **Vibe-coded front ends** — anyone can build a front end for the site by
+  chatting with an LLM; approved ones join a random rotation. Experiments become
+  built-in front ends on the same host API. See [frontends.md](frontends.md).
 
 ## Steps
 
@@ -35,8 +38,13 @@ where the particle piece becomes one of several embedded experiments.
   forms, `Store` interface with an in-memory placeholder, Dockerfile.
 - [x] **Wasm site scaffold** (2026-09-29): `site/` crate (placeholder wgpu
   scene reading `/api/site.json`), public shell with transcript + fallback.
-- [ ] **Build the canvas site**: text rendering, layout, navigation (History
-  API, so URLs match the transcript pages), experiment transitions.
+- [ ] **Front-end host**: parent page ↔ sandboxed runner on a user-content
+  domain, host API, rotation, crash fallback. Port `site/` and particle-stream
+  onto it as built-in front ends.
+- [ ] **Builder**: chat UI, Go session endpoint → Claude API, file tools,
+  preview/repair loop, session-only "view live", submit → `/admin` review queue.
+- [ ] **Build the canvas site** (`site/`, the default front end): text
+  rendering, layout, navigation.
 - [ ] **Choose and wire the database** behind `internal/store.Store`, with
   migrations.
 - [ ] **Real admin auth** — replace basic auth with session login or IAP.
@@ -48,7 +56,9 @@ where the particle piece becomes one of several embedded experiments.
 
 ## Open questions
 
-- **Database.** Cloud Run instances have no persistent disk, so the options are:
+- **Database.** Front ends need projects, snapshots, chats and a review queue,
+  which favors Postgres or Firestore. Cloud Run instances have no persistent
+  disk, so the options are:
   - Cloud SQL Postgres: familiar SQL, but costs roughly $10/month even when idle.
   - Firestore: free tier, no server to run, but a document model.
   - SQLite replicated to GCS with Litestream: cheap and simple, but limited to one instance.
@@ -61,3 +71,5 @@ where the particle piece becomes one of several embedded experiments.
   font atlases?
 - Should particle-stream share code with the site (a Cargo workspace / shared
   crate)?
+- The user-content domain name.
+- How long to keep unsubmitted drafts.

@@ -14,6 +14,9 @@ admin CMS, and standalone interactive experiments.
 - **Fallback** — without WebGPU, or if the wasm app fails, the transcript is
   shown as a plain HTML site.
 - **Admin** — `/admin/` is a plain `html/template` CMS.
+- **Planned: vibe-coded front ends.** Anyone can build a front end by chatting
+  with an LLM; approved ones rotate for all visitors. See
+  [`docs/frontends.md`](docs/frontends.md).
 
 **Status: scaffolded, not deployed.** The Go server runs locally with an
 in-memory store; the database and GCP hosting are next. See
