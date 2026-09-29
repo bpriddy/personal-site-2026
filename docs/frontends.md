@@ -38,7 +38,11 @@ benpriddy.com (Go, trusted)                         user-content domain (untrust
 ### The runner: how "no links" is enforced
 
 The user-content domain serves one static **runner** page and nothing else. It
-has no per-project URLs.
+has no per-project URLs. The runner bundles the received files into the page
+(`data:` URLs through an import map, plus a `fetch` shim for relative asset
+paths), which avoids cross-origin `blob:` restrictions inside the sandbox. The
+first prototype has to prove this works, including for a trunk-built wasm
+front end.
 
 1. The parent page, on Ben's domain and authenticated by the visitor's session
    cookie, fetches the front end's files from the Go API:
@@ -58,8 +62,8 @@ nothing unapproved lives at a URL on Ben's domains.
   `allow-top-navigation`, `allow-popups` or `allow-modals`. That blocks cookie
   access, fake login forms, redirects and popups.
 - Runner CSP: `default-src 'none'`; scripts, styles, images, workers and wasm
-  only from `blob:` and the runner's own origin; no `connect-src` to the outside
-  world.
+  only from `data:`/`blob:` and the runner's own origin; no `connect-src` to
+  the outside world.
 - The user-content domain is a separate registrable domain, so it shares no
   cookies with Ben's domain.
 - The parent watches for failure: if there's no `ready` message within a
@@ -135,7 +139,7 @@ Stored in the database, with project files and thumbnails in Cloud Storage:
 - **reviews:** status and notes
 - **rotation:** approved snapshots
 
-Unsubmitted drafts are purged after a retention window (to be decided).
+Unsubmitted drafts are purged 30 days after their last activity.
 
 ## Deferred
 
@@ -144,8 +148,26 @@ Unsubmitted drafts are purged after a retention window (to be decided).
 - Optional sign-in so creators can keep projects across devices.
 - Generated Rust front ends.
 
-## Defaults assumed (change if needed)
+## Decisions (2026-09-29)
 
-- Rotation is chosen per visit, not per page view.
-- The default and fallback front end is the Rust `site/` crate.
-- Identity is anonymous-cookie only; clearing cookies loses unsubmitted drafts.
+- **Rotation:** chosen per visit, not per page view.
+- **Default and fallback front end:** the Rust `site/` crate.
+- **Identity:** anonymous. "Only in that browser session" means that browser:
+  a 30-day sliding cookie, so closing a tab doesn't lose work. Clearing cookies
+  loses unsubmitted drafts.
+- **Draft retention:** 30 days after last activity; snapshots and approved
+  front ends are kept.
+- **Database:** Cloud SQL for PostgreSQL (smallest instance), `pgx`, migrations
+  in the repo. Local dev keeps the in-memory store until the Postgres store
+  lands.
+- **Files:** a Cloud Storage bucket for project files, snapshots and thumbnails.
+- **User-content domain:** a separate registrable domain, e.g.
+  `<main-domain>-usercontent.com`. Never a subdomain of the main site.
+- **Region:** `us-east1` for Cloud Run, Cloud SQL and the bucket.
+- **GCP project:** a new, dedicated project for the site.
+- **Admin auth:** Google sign-in inside the app, restricted to an allowlist of
+  email addresses supplied via the `ADMIN_EMAILS` env var (not committed).
+  Replaces basic auth.
+- **LLM:** Claude API, `claude-opus-5-5`, key in Secret Manager. A hard monthly
+  spend limit is set in the Anthropic Console as a safety net until the in-app
+  caps land.

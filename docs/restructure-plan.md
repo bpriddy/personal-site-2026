@@ -54,15 +54,11 @@ where the particle piece becomes one of several embedded experiments.
 - [ ] **Design** the home page and site styling.
 - [ ] **Point DNS** at Cloud Run.
 
+Infrastructure decisions (database, storage, domains, region, admin auth, LLM)
+are recorded in [frontends.md → Decisions](frontends.md#decisions-2026-09-29).
+
 ## Open questions
 
-- **Database.** Front ends need projects, snapshots, chats and a review queue,
-  which favors Postgres or Firestore. Cloud Run instances have no persistent
-  disk, so the options are:
-  - Cloud SQL Postgres: familiar SQL, but costs roughly $10/month even when idle.
-  - Firestore: free tier, no server to run, but a document model.
-  - SQLite replicated to GCS with Litestream: cheap and simple, but limited to one instance.
-- **Admin auth**: username + password sessions, or Google login via IAP?
 - Does the CMS eventually replace particle-stream's build-time
   `phrases.json` / `dials.json`?
 - Page body format: markdown, or a richer block editor? The transcript and the
@@ -71,5 +67,4 @@ where the particle piece becomes one of several embedded experiments.
   font atlases?
 - Should particle-stream share code with the site (a Cargo workspace / shared
   crate)?
-- The user-content domain name.
-- How long to keep unsubmitted drafts.
+- The user-content domain name (depends on the main domain).
