@@ -38,6 +38,7 @@ experiments/
   particle-stream/   Rust → wasm → WebGPU particle field
 infra/               Terraform for GCP (not written yet)
 docs/                plans and architecture notes
+scripts/             dev-setup.sh: user-space toolchain install (no root)
 Dockerfile           Cloud Run image: builds site + experiments + server
 Makefile             run / build / vet / site / experiments / docker
 ```
@@ -45,7 +46,14 @@ Makefile             run / build / vet / site / experiments / docker
 ## Run locally
 
 Needs Go 1.27+. The wasm builds also need Rust, the `wasm32-unknown-unknown`
-target, trunk 0.21, and a C toolchain (`build-essential`) for build scripts.
+target, trunk 0.21, and a C toolchain for build scripts.
+`scripts/dev-setup.sh` installs all of it into `$HOME` without root (using Zig
+as the C compiler), then add it to PATH:
+
+```sh
+scripts/dev-setup.sh
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$HOME/.local/go/bin:$PATH"
+```
 
 ```sh
 make site           # build the wasm site into site/dist
