@@ -1,77 +1,93 @@
-# personal-site
+# particle-stream
 
-**Words as rocks in a stream.** 380,000 WebGPU compute-shader particles flow
-left→right across the screen; the text ("BEN PRIDDY" + a cycling phrase) is not
-a cluster target but an *obstacle field* — the stream parts around the
-letterforms like water around rocks, accumulating and sparkling at the upstream
-faces like sun on water at noon. Runs at 120 FPS.
+**Words as rocks in a stream.** Up to 500,000 WebGPU compute-shader particles
+flow across the screen; a centered, cycling phrase is not a cluster target but
+an *obstacle field* — the stream parts around the letterforms like water around
+rocks, accumulating and sparkling at the upstream faces like sun on water at
+noon.
 
 ```
 Rust  →  wasm32  →  wgpu (compute + render)  →  WebGPU  →  <canvas>
 ```
 
+This is the first experiment in the monorepo (see the root `README.md`). It is
+currently served on its own at the domain root by Vercel.
+
 ## How it works
 
-- **Obstacle field** — both text lines are rasterized to a hidden 2D canvas
-  (wide blur halo + tight core), and the red channel is uploaded as an
-  `r8unorm` texture. The compute shader samples it and deflects particles along
-  its gradient: away-push + tangential slide, so flow hugs the glyph surfaces.
-  Line 2 cycles every 4.5 s through a word-chain of phrases; each swap drops a
-  new "rock" into the stream and the particles physically react.
+- **Obstacle field** — the phrase is rasterized to a hidden 2D canvas (wide blur
+  halo + tight core) and uploaded as a texture. The compute shader deflects
+  particles along its gradient: away-push + tangential slide, so flow hugs the
+  glyph surfaces. The phrase cycles every 4.5 s (`PHRASE_SECONDS`) with a fade +
+  z-push transition; each swap drops a new "rock" into the stream.
+- **Phrases** — `phrases.json`, a plain JSON string array, word-wrapped by
+  measured pixel width. Baked into the wasm at build time via `include_str!`.
 - **Noon sparkle** — sparkle is gated on *stagnation* (speed deficit vs. the
-  stream), so glints concentrate exactly where particles accumulate: bow waves
-  and the trapped pools inside letter counters.
-- **Color** — each particle's flow direction is encoded exactly like a normal
-  map's RG channels with the blue (flat/z) channel suppressed: the warm rim
-  palette. Rightward flow is salmon-gold, upward deflection lime, downward
-  crimson — so the parting flow paints itself.
-- **Motion stretch** — quads are stretched along velocity: fast water becomes
-  silky streamlines, stalled water stays round and glints.
-- **Mouse** — a gentle radial push, a finger dragged through the stream.
-- **Backdrop** — a dim normal-mapped riverbed that the glyph field embosses
-  (darkened fill + warm rim), so the words also read faintly in the bed.
-- **Info** — the ⓘ button (bottom right) opens a modal with a short bio
-  (placeholder copy).
+  stream), so glints concentrate in bow waves and letter counters.
+- **Color** — each particle's flow direction is encoded like a normal map's RG
+  channels: rightward flow salmon-gold, upward lime, downward crimson.
+- **HDR pipeline** — bloom on the particles; the text relief is composited
+  above the bloom so its edges stay crisp.
+- **Mouse / touch** — perturbs the stream by position; pressing adds a radial
+  wake around the words.
+- **Intro** — a one-shot inflow animation on load.
+- **Info** — the ⓘ button (bottom right) opens a bio modal.
 
-Particle state lives entirely on the GPU (storage buffer; compute integrates,
-render reads the same buffer as instanced vertex data). The only per-frame CPU
-work is a 48-byte uniform write.
+Particle state lives entirely on the GPU; the per-frame CPU work is a uniform
+write. Desktop runs 500k particles, viewports under 700px wide run 200k.
 
 ## Run
 
-Needs the Rust toolchain + `wasm32-unknown-unknown` + `trunk`.
+Needs the Rust toolchain + `wasm32-unknown-unknown` + `trunk` (v0.21.14).
 
 ```sh
+cd experiments/particle-stream
 trunk serve
 # open http://127.0.0.1:8099  (foreground tab for full FPS)
 ```
 
+## Dev tooling (localhost only)
+
+Hidden on deployed hosts; visible on `localhost` / `127.0.0.1`:
+
+| Key | Panel |
+|---|---|
+| `d` | FLOW DIALS — stream, turbulence, sparkle, background, perturb |
+| `f` | FEEL DIALS — wake, porosity, plus dials for parked features |
+| `p` | PHRASES — edit and save `phrases.json` in place (File System Access API) |
+
+`dials.json` is the single source of truth for tuned defaults: it is embedded
+at build time, and the dial panels' SAVE button downloads a new copy to commit.
+Some keys (`name_lead`, `commit`, `menu_lerp`, `scroll`, `entry_slide`,
+`entry_zoom`) belong to parked features and are kept for when they return.
+
 ## Deploy
 
-CI/CD via GitHub Actions (`.github/workflows/deploy.yml`): every push to
-`main` runs `trunk build --release` and publishes `dist/` to GitHub Pages.
-The workflow feeds Pages' `base_path` to trunk's `--public-url`, so it works
-at a project URL (`user.github.io/repo/`) or a custom domain unchanged.
-One-time setup after pushing to GitHub: repo Settings → Pages → Source =
-"GitHub Actions". Release size: ~240 KB total (wasm + js + html).
+Vercel, via `vercel.json` + `vercel-build.sh` at the repo root: installs the
+wasm target and trunk, then `trunk build --release` here, serving `dist/`.
+Asset URLs are root-absolute (no `--public-url`). When the piece moves under
+`/experiments/` on the container site, build with `--public-url`.
 
-Note: WebGPU requires HTTPS (Pages provides it) and a current browser;
-unsupported browsers see the status chip's adapter message.
+WebGPU requires HTTPS and a current browser; unsupported browsers see the
+status chip's adapter message.
 
 ## Files
 
 | File | Role |
 |---|---|
-| `src/lib.rs` | field rasterizer, wgpu setup, sim compute + 2 render pipelines, WGSL |
-| `index.html` | canvas, GPU-error debug shim, info modal, styling |
-| `Cargo.toml` | `cdylib`; `wgpu` pinned current |
-| `Trunk.toml` | `[build] target = "index.html"` |
+| `src/lib.rs` | field rasterizer, wgpu setup, sim compute + render + post pipelines, WGSL |
+| `index.html` | canvas, GPU-error debug shim, info modal, dev panels, styling |
+| `ui.js` | modal, dial panels, phrase editor |
+| `dials.json` | tuned dial defaults (build-time baked) |
+| `phrases.json` | the cycling phrases (build-time baked) |
+| `parked/` | shelved features, not compiled — see each folder's README |
+| `Cargo.toml` / `Trunk.toml` | `cdylib` crate; trunk targets `index.html` |
 
-## Tuning
+## Parked features
 
-In `src/lib.rs`: `PARTICLES`, `PHRASE_SECONDS`, the `PHRASES` list, and the
-per-frame `Params` (`stream`, `push`, `mousef`). In the draw shader: sparkle
-gain, motion-stretch length, palette weights.
+- `parked/drag-nav/` — draggable/throwable text, menu panels, section nav,
+  scroll intent.
+- `parked/line-tracing/` — camera flying along title letterforms.
 
 ## Hard-won notes
 
