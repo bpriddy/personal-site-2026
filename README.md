@@ -1,7 +1,19 @@
 # personal-site-2026
 
-Monorepo for Ben Priddy's personal site: a Go container site with an admin CMS
-that hosts standalone interactive experiments.
+Monorepo for Ben Priddy's personal site: a WebGPU/wasm site, a Go server with an
+admin CMS, and standalone interactive experiments.
+
+## How the site renders
+
+- **Canvas** — the public site is a Rust → wasm → wgpu app (`site/`) that draws
+  everything on one full-screen canvas, reading content from `/api/site.json`.
+- **Transcript** — the Go server renders the same CMS content as semantic HTML
+  into every page (`web/templates/public/`). It is visually hidden when WebGPU
+  runs, but it's what search engines and screen readers read (the canvas is
+  `aria-hidden`).
+- **Fallback** — without WebGPU, or if the wasm app fails, the transcript is
+  shown as a plain HTML site.
+- **Admin** — `/admin/` is a plain `html/template` CMS.
 
 **Status: scaffolded, not deployed.** The Go server runs locally with an
 in-memory store; the database and GCP hosting are next. See
@@ -18,28 +30,33 @@ internal/
   auth/              admin guard (basic auth, stopgap)
   server/            routes: public site, /admin, /experiments/<slug>/
 web/
-  templates/         html/template pages (base + one file per page), admin/
+  templates/public/  page shell (canvas + transcript) and transcript pages
+  templates/admin/   admin CMS layout and forms
   static/            CSS, embedded into the binary
+site/                the public site: Rust → wasm → wgpu, built by trunk
 experiments/
   particle-stream/   Rust → wasm → WebGPU particle field
 infra/               Terraform for GCP (not written yet)
 docs/                plans and architecture notes
-Dockerfile           Cloud Run image: builds experiments + server
-Makefile             run / build / vet / experiments / docker
+Dockerfile           Cloud Run image: builds site + experiments + server
+Makefile             run / build / vet / site / experiments / docker
 ```
 
 ## Run locally
 
-Needs Go 1.27+.
+Needs Go 1.27+. The wasm builds also need Rust, the `wasm32-unknown-unknown`
+target, trunk 0.21, and a C toolchain (`build-essential`) for build scripts.
 
 ```sh
-make run            # http://localhost:8080, admin at /admin/ (admin / dev)
+make site           # build the wasm site into site/dist
 make experiments    # build experiments so /experiments/<slug>/ serves them
-                    # (needs Rust + wasm32-unknown-unknown + trunk)
+make run            # http://localhost:8080, admin at /admin/ (admin / dev)
 ```
 
-Environment: `PORT` (8080), `APP_ENV` (`dev`|`prod`), `EXPERIMENTS_DIR`
-(`experiments`), `ADMIN_USER` (`admin`), `ADMIN_PASSWORD` (`dev` in dev,
+Without `make site`, the server serves the transcript only.
+
+Environment: `PORT` (8080), `APP_ENV` (`dev`|`prod`), `SITE_DIR`
+(`site/dist`), `EXPERIMENTS_DIR` (`experiments`), `ADMIN_USER` (`admin`), `ADMIN_PASSWORD` (`dev` in dev,
 required in prod).
 
 ## Routes
@@ -48,6 +65,8 @@ required in prod).
 |---|---|
 | `/` | home page (CMS page with empty slug) + published experiments |
 | `/<slug>` | CMS page |
+| `/api/site.json` | published CMS content for the wasm site |
+| `/site/` | the built wasm site bundle |
 | `/experiments/` | experiment index |
 | `/experiments/<slug>/` | the experiment's built `dist/` |
 | `/admin/` | CMS: edit pages and experiment listings |

@@ -10,6 +10,7 @@ type Config struct {
 	Port           string // PORT — Cloud Run sets this
 	Env            string // APP_ENV — "dev" or "prod"
 	ExperimentsDir string // EXPERIMENTS_DIR — holds <slug>/dist/ for each experiment
+	SiteDir        string // SITE_DIR — the built wasm site bundle (site/dist)
 	AdminUser      string // ADMIN_USER
 	AdminPassword  string // ADMIN_PASSWORD — required in prod
 }
@@ -19,6 +20,7 @@ func Load() (Config, error) {
 		Port:           env("PORT", "8080"),
 		Env:            env("APP_ENV", "dev"),
 		ExperimentsDir: env("EXPERIMENTS_DIR", "experiments"),
+		SiteDir:        env("SITE_DIR", "site/dist"),
 		AdminUser:      env("ADMIN_USER", "admin"),
 		AdminPassword:  os.Getenv("ADMIN_PASSWORD"),
 	}

@@ -1,14 +1,17 @@
-# Cloud Run image: Go server + prebuilt experiments.
+# Cloud Run image: Go server + the wasm site + prebuilt experiments.
 # Build from the repo root: docker build -t personal-site .
 
-# ── experiments (Rust → wasm via trunk) ──────────────────────────────────────
-FROM rust:1-slim AS experiments
+# ── wasm: the site + experiments (Rust → wasm via trunk) ─────────────────────
+FROM rust:1-slim AS wasm
 ARG TRUNK_VERSION=v0.21.14
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
  && rustup target add wasm32-unknown-unknown \
  && curl -fsSL "https://github.com/trunk-rs/trunk/releases/download/${TRUNK_VERSION}/trunk-x86_64-unknown-linux-musl.tar.gz" \
     | tar -xz -C /usr/local/bin
+WORKDIR /src/site
+COPY site/ .
+RUN trunk build --release
 WORKDIR /src/experiments/particle-stream
 COPY experiments/particle-stream/ .
 RUN trunk build --release --public-url /experiments/particle-stream/
@@ -27,7 +30,8 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/serve
 FROM gcr.io/distroless/static-debian12:nonroot
 WORKDIR /app
 COPY --from=server /out/server /app/server
-COPY --from=experiments /src/experiments/particle-stream/dist /app/experiments/particle-stream/dist
-ENV APP_ENV=prod EXPERIMENTS_DIR=/app/experiments
+COPY --from=wasm /src/site/dist /app/site/dist
+COPY --from=wasm /src/experiments/particle-stream/dist /app/experiments/particle-stream/dist
+ENV APP_ENV=prod SITE_DIR=/app/site/dist EXPERIMENTS_DIR=/app/experiments
 EXPOSE 8080
 ENTRYPOINT ["/app/server"]

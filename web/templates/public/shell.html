@@ -1,0 +1,31 @@
+{{define "base"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>{{block "title" .}}Ben Priddy{{end}}</title>
+  <meta name="description" content="{{block "description" .}}Ben Priddy{{end}}">
+  <link rel="stylesheet" href="/static/site.css">
+  {{- if .Site.Built}}
+  <script>if (navigator.gpu) document.documentElement.className = "gpu";</script>
+  <script type="module">
+    import init from "/site/site.js?v={{.Site.Version}}";
+    init({ module_or_path: "/site/site_bg.wasm?v={{.Site.Version}}" });
+  </script>
+  {{- end}}
+</head>
+<body class="public">
+  {{/* the wasm app draws here; hidden from assistive tech, which reads the transcript */}}
+  <canvas id="stage" aria-hidden="true"></canvas>
+  {{/* transcript: the CMS content as semantic HTML. Visually hidden under .gpu,
+       always present for search engines and screen readers, and the whole site
+       for browsers without WebGPU. */}}
+  <div id="transcript">
+    <header class="site-header">
+      <a class="brand" href="/">Ben Priddy</a>
+      <nav><a href="/experiments/">Experiments</a></nav>
+    </header>
+    <main>{{block "main" .}}{{end}}</main>
+  </div>
+</body>
+</html>{{end}}

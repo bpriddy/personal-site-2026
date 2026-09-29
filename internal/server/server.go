@@ -6,6 +6,9 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/bpriddy/personal-site-2026/internal/auth"
@@ -20,6 +23,13 @@ type Server struct {
 	log   *slog.Logger
 	tmpl  map[string]*template.Template
 	mux   *http.ServeMux
+	site  siteAssets
+}
+
+// siteAssets describes the built wasm site bundle (site/dist) the shell loads.
+type siteAssets struct {
+	Built   bool
+	Version string // cache-buster for the unhashed site.js / site_bg.wasm
 }
 
 func New(cfg config.Config, st store.Store, log *slog.Logger) (*Server, error) {
@@ -28,6 +38,10 @@ func New(cfg config.Config, st store.Store, log *slog.Logger) (*Server, error) {
 		return nil, err
 	}
 	s := &Server{cfg: cfg, store: st, log: log, tmpl: tmpl, mux: http.NewServeMux()}
+	s.site = loadSiteAssets(cfg.SiteDir)
+	if !s.site.Built {
+		log.Warn("wasm site not built; serving the HTML transcript only", "dir", cfg.SiteDir)
+	}
 	s.routes()
 	return s, nil
 }
@@ -37,6 +51,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.Serve
 func (s *Server) routes() {
 	static, _ := fs.Sub(web.FS, "static")
 	s.mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(static)))
+	s.mux.Handle("GET /site/", http.StripPrefix("/site/", http.FileServer(http.Dir(s.cfg.SiteDir))))
+	s.mux.HandleFunc("GET /api/site.json", s.siteJSON)
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 
 	s.mux.HandleFunc("GET /{$}", s.home)
@@ -55,28 +71,42 @@ func (s *Server) routes() {
 	s.mux.Handle("/admin/", auth.Basic(s.cfg.AdminUser, s.cfg.AdminPassword, guarded))
 }
 
-// parseTemplates builds one template set per page: base.html + that page.
+// layouts maps each template directory to the layout its pages extend: the
+// public shell (canvas + transcript) or the admin layout.
+var layouts = map[string]string{
+	"public": "templates/public/shell.html",
+	"admin":  "templates/admin/base.html",
+}
+
+// parseTemplates builds one template set per page: its layout + that page.
+// Pages are keyed by path under templates/, e.g. "public/home.html".
 func parseTemplates() (map[string]*template.Template, error) {
 	out := map[string]*template.Template{}
-	pages, err := fs.Glob(web.FS, "templates/*.html")
-	if err != nil {
-		return nil, err
-	}
-	admin, err := fs.Glob(web.FS, "templates/admin/*.html")
-	if err != nil {
-		return nil, err
-	}
-	for _, p := range append(pages, admin...) {
-		if strings.HasSuffix(p, "/base.html") {
-			continue
-		}
-		t, err := template.ParseFS(web.FS, "templates/base.html", p)
+	for dir, layout := range layouts {
+		pages, err := fs.Glob(web.FS, "templates/"+dir+"/*.html")
 		if err != nil {
 			return nil, err
 		}
-		out[strings.TrimPrefix(p, "templates/")] = t
+		for _, p := range pages {
+			if p == layout {
+				continue
+			}
+			t, err := template.ParseFS(web.FS, layout, p)
+			if err != nil {
+				return nil, err
+			}
+			out[strings.TrimPrefix(p, "templates/")] = t
+		}
 	}
 	return out, nil
+}
+
+func loadSiteAssets(dir string) siteAssets {
+	fi, err := os.Stat(filepath.Join(dir, "site_bg.wasm"))
+	if err != nil {
+		return siteAssets{}
+	}
+	return siteAssets{Built: true, Version: strconv.FormatInt(fi.ModTime().Unix(), 36)}
 }
 
 func (s *Server) render(w http.ResponseWriter, name string, status int, data any) {
@@ -90,6 +120,12 @@ func (s *Server) render(w http.ResponseWriter, name string, status int, data any
 	if err := t.ExecuteTemplate(w, "base", data); err != nil {
 		s.log.Error("render", "template", name, "err", err)
 	}
+}
+
+// renderPublic renders a page in the public shell, which also needs the site bundle.
+func (s *Server) renderPublic(w http.ResponseWriter, name string, data map[string]any) {
+	data["Site"] = s.site
+	s.render(w, "public/"+name, http.StatusOK, data)
 }
 
 func (s *Server) fail(w http.ResponseWriter, msg string, err error) {

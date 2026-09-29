@@ -12,8 +12,12 @@ where the particle piece becomes one of several embedded experiments.
 
 ## Decisions (2026-09-29)
 
-- **Server** — Go at the repo root, `html/template`, standard library only.
-- **CMS** — an admin UI in the live site (`/admin/`) backed by a database.
+- **Server** — Go at the repo root, standard library only.
+- **Public site** — a full-canvas Rust → wasm → wgpu app (`site/`). The server
+  transpiles CMS content into a semantic HTML *transcript* in every page for
+  search engines and screen readers; without WebGPU the transcript is shown
+  as a plain HTML site.
+- **CMS** — an `html/template` admin UI (`/admin/`) backed by a database.
 - **Home page** — a designed index page (bio, work) linking to experiments.
 - **Hosting** — Cloud Run, one container image built by the root `Dockerfile`.
 - **Experiments** — sandboxed workspaces under `experiments/<slug>/`, built
@@ -29,6 +33,10 @@ where the particle piece becomes one of several embedded experiments.
 - [x] **Retire Vercel** (2026-09-29).
 - [x] **Scaffold the Go site + CMS** (2026-09-29): routes, templates, admin
   forms, `Store` interface with an in-memory placeholder, Dockerfile.
+- [x] **Wasm site scaffold** (2026-09-29): `site/` crate (placeholder wgpu
+  scene reading `/api/site.json`), public shell with transcript + fallback.
+- [ ] **Build the canvas site**: text rendering, layout, navigation (History
+  API, so URLs match the transcript pages), experiment transitions.
 - [ ] **Choose and wire the database** behind `internal/store.Store`, with
   migrations.
 - [ ] **Real admin auth** — replace basic auth with session login or IAP.
@@ -47,4 +55,9 @@ where the particle piece becomes one of several embedded experiments.
 - **Admin auth**: username + password sessions, or Google login via IAP?
 - Does the CMS eventually replace particle-stream's build-time
   `phrases.json` / `dials.json`?
-- Page body format: markdown, or a richer block editor?
+- Page body format: markdown, or a richer block editor? The transcript and the
+  canvas both need to render it.
+- Canvas text: rasterize with 2D canvas (as particle-stream does) or SDF/MSDF
+  font atlases?
+- Should particle-stream share code with the site (a Cargo workspace / shared
+  crate)?

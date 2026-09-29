@@ -18,3 +18,12 @@ th, td { text-align: left; padding: .4rem; border-bottom: 1px solid var(--rule);
 .stack .check { display: flex; gap: .5rem; align-items: center; }
 input, textarea, button { font: inherit; padding: .4rem; }
 .inline { display: flex; gap: .5rem; }
+
+/* public shell: the canvas is the site when WebGPU runs (html.gpu); otherwise
+   the transcript is shown as a plain HTML site */
+#stage { display: none; }
+.gpu #stage { display: block; position: fixed; inset: 0; width: 100vw; height: 100vh; }
+.gpu #transcript {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap;
+}
