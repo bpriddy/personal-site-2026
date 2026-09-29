@@ -1,0 +1,22 @@
+// Package store persists CMS content. Store is the seam where the real
+// database plugs in; Memory is a placeholder implementation.
+package store
+
+import (
+	"context"
+	"errors"
+
+	"github.com/bpriddy/personal-site-2026/internal/content"
+)
+
+var ErrNotFound = errors.New("not found")
+
+type Store interface {
+	Page(ctx context.Context, slug string) (content.Page, error)
+	Pages(ctx context.Context) ([]content.Page, error)
+	SavePage(ctx context.Context, p content.Page) error
+
+	Experiment(ctx context.Context, slug string) (content.Experiment, error)
+	Experiments(ctx context.Context) ([]content.Experiment, error)
+	SaveExperiment(ctx context.Context, e content.Experiment) error
+}

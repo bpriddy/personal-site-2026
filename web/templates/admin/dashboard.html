@@ -1,0 +1,29 @@
+{{define "title"}}Admin · Ben Priddy{{end}}
+{{define "main"}}
+<h1>Admin</h1>
+<section>
+  <h2>Pages</h2>
+  <table>
+    <tr><th>Slug</th><th>Title</th><th>Published</th><th>Updated</th></tr>
+    {{range .Pages}}<tr>
+      <td><a href="/admin/pages/edit?slug={{.Slug}}">/{{.Slug}}</a></td>
+      <td>{{.Title}}</td><td>{{if .Published}}yes{{else}}no{{end}}</td>
+      <td>{{.UpdatedAt.Format "2006-01-02 15:04"}}</td>
+    </tr>{{end}}
+  </table>
+  <form method="get" action="/admin/pages/edit" class="inline">
+    <input name="slug" placeholder="new-page-slug" required pattern="[a-z0-9-]+">
+    <button>New page</button>
+  </form>
+</section>
+<section>
+  <h2>Experiments</h2>
+  <table>
+    <tr><th>Slug</th><th>Title</th><th>Published</th><th>Order</th></tr>
+    {{range .Experiments}}<tr>
+      <td><a href="/admin/experiments/{{.Slug}}">{{.Slug}}</a></td>
+      <td>{{.Title}}</td><td>{{if .Published}}yes{{else}}no{{end}}</td><td>{{.Order}}</td>
+    </tr>{{end}}
+  </table>
+</section>
+{{end}}

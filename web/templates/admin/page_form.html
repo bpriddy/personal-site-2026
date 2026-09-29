@@ -1,0 +1,12 @@
+{{define "title"}}Edit page · Admin{{end}}
+{{define "main"}}
+<p><a href="/admin/">← Admin</a></p>
+<h1>Page /{{.Page.Slug}}</h1>
+<form method="post" action="/admin/pages/edit" class="stack">
+  <input type="hidden" name="slug" value="{{.Page.Slug}}">
+  <label>Title <input name="title" value="{{.Page.Title}}" required></label>
+  <label>Body <textarea name="body" rows="12">{{.Page.Body}}</textarea></label>
+  <label class="check"><input type="checkbox" name="published" {{if .Page.Published}}checked{{end}}> Published</label>
+  <button>Save</button>
+</form>
+{{end}}

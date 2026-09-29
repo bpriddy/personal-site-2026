@@ -1,0 +1,20 @@
+/* placeholder styling — the real design comes later */
+:root { --fg: #111; --muted: #666; --bg: #fff; --rule: #ddd; }
+@media (prefers-color-scheme: dark) { :root { --fg: #eee; --muted: #999; --bg: #111; --rule: #333; } }
+* { box-sizing: border-box; }
+body { margin: 0; font: 16px/1.5 system-ui, sans-serif; color: var(--fg); background: var(--bg); }
+.site-header { display: flex; justify-content: space-between; padding: 1rem; border-bottom: 1px solid var(--rule); }
+.site-header a { color: inherit; text-decoration: none; }
+.brand { font-weight: 700; }
+main { max-width: 48rem; margin: 0 auto; padding: 1rem; }
+.lede { font-size: 1.2rem; color: var(--muted); }
+.experiments { list-style: none; padding: 0; }
+.experiments li { padding: .75rem 0; border-bottom: 1px solid var(--rule); }
+.experiments p { margin: .25rem 0 0; color: var(--muted); }
+table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; }
+th, td { text-align: left; padding: .4rem; border-bottom: 1px solid var(--rule); }
+.stack { display: grid; gap: 1rem; }
+.stack label { display: grid; gap: .25rem; }
+.stack .check { display: flex; gap: .5rem; align-items: center; }
+input, textarea, button { font: inherit; padding: .4rem; }
+.inline { display: flex; gap: .5rem; }

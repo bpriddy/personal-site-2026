@@ -1,27 +1,65 @@
 # personal-site-2026
 
-Monorepo for Ben Priddy's personal site: a container site with a CMS that hosts
-standalone interactive experiments.
+Monorepo for Ben Priddy's personal site: a Go container site with an admin CMS
+that hosts standalone interactive experiments.
 
-**Status: mid-restructure.** Only step 1 is done: the original site (a WebGPU
-particle piece) moved into `experiments/particle-stream/`. The container site
-and CMS are not built yet. See [`docs/restructure-plan.md`](docs/restructure-plan.md).
+**Status: scaffolded, not deployed.** The Go server runs locally with an
+in-memory store; the database and GCP hosting are next. See
+[`docs/restructure-plan.md`](docs/restructure-plan.md).
 
 ## Layout
 
 ```
+cmd/server/          entrypoint (config, graceful shutdown for Cloud Run)
+internal/
+  config/            env-based settings
+  content/           CMS content types (Page, Experiment)
+  store/             Store interface + in-memory placeholder
+  auth/              admin guard (basic auth, stopgap)
+  server/            routes: public site, /admin, /experiments/<slug>/
+web/
+  templates/         html/template pages (base + one file per page), admin/
+  static/            CSS, embedded into the binary
 experiments/
   particle-stream/   Rust → wasm → WebGPU particle field
+infra/               Terraform for GCP (not written yet)
 docs/                plans and architecture notes
+Dockerfile           Cloud Run image: builds experiments + server
+Makefile             run / build / vet / experiments / docker
 ```
 
-Planned, not yet present: a Go CMS / container site at the repo root, and
-Terraform for GCP hosting (both already have `.gitignore` entries).
+## Run locally
+
+Needs Go 1.27+.
+
+```sh
+make run            # http://localhost:8080, admin at /admin/ (admin / dev)
+make experiments    # build experiments so /experiments/<slug>/ serves them
+                    # (needs Rust + wasm32-unknown-unknown + trunk)
+```
+
+Environment: `PORT` (8080), `APP_ENV` (`dev`|`prod`), `EXPERIMENTS_DIR`
+(`experiments`), `ADMIN_USER` (`admin`), `ADMIN_PASSWORD` (`dev` in dev,
+required in prod).
+
+## Routes
+
+| Route | What |
+|---|---|
+| `/` | home page (CMS page with empty slug) + published experiments |
+| `/<slug>` | CMS page |
+| `/experiments/` | experiment index |
+| `/experiments/<slug>/` | the experiment's built `dist/` |
+| `/admin/` | CMS: edit pages and experiment listings |
+| `/healthz` | health check |
 
 ## Experiments
 
-Each experiment is a self-contained workspace under `experiments/<name>/` with
-its own build and README. Build output (`target/`, `dist/`) is gitignored.
+Each experiment is a self-contained workspace under `experiments/<slug>/` with
+its own build and README, built with `--public-url /experiments/<slug>/`. The
+CMS stores only its listing (title, summary, published, order); the server
+serves files only for slugs the CMS knows about. Build output (`target/`,
+`dist/`) is gitignored.
 
 | Experiment | Stack | README |
 |---|---|---|
@@ -29,6 +67,5 @@ its own build and README. Build output (`target/`, `dist/`) is gitignored.
 
 ## Hosting
 
-- **Now:** none. Vercel was retired on 2026-09-29; nothing in the repo deploys.
-- **Planned:** GCP, with the Go container site at the root and experiments
-  embedded under `/experiments/`.
+- **Now:** none. Vercel was retired on 2026-09-29; nothing deploys.
+- **Planned:** Cloud Run, running the root `Dockerfile` image. See `infra/`.

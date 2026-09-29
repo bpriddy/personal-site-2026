@@ -1,0 +1,12 @@
+{{define "title"}}Edit experiment · Admin{{end}}
+{{define "main"}}
+<p><a href="/admin/">← Admin</a></p>
+<h1>Experiment {{.Experiment.Slug}}</h1>
+<form method="post" action="/admin/experiments/{{.Experiment.Slug}}" class="stack">
+  <label>Title <input name="title" value="{{.Experiment.Title}}" required></label>
+  <label>Summary <textarea name="summary" rows="3">{{.Experiment.Summary}}</textarea></label>
+  <label>Order <input name="order" type="number" value="{{.Experiment.Order}}"></label>
+  <label class="check"><input type="checkbox" name="published" {{if .Experiment.Published}}checked{{end}}> Published</label>
+  <button>Save</button>
+</form>
+{{end}}

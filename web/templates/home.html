@@ -1,0 +1,16 @@
+{{define "title"}}{{.Page.Title}}{{end}}
+{{define "main"}}
+<h1>{{.Page.Title}}</h1>
+<p class="lede">{{.Page.Body}}</p>
+{{if .Experiments}}
+<section>
+  <h2>Experiments</h2>
+  {{template "experiment-list" .Experiments}}
+</section>
+{{end}}
+{{end}}
+{{define "experiment-list"}}
+<ul class="experiments">
+  {{range .}}<li><a href="/experiments/{{.Slug}}/">{{.Title}}</a><p>{{.Summary}}</p></li>{{end}}
+</ul>
+{{end}}

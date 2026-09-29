@@ -62,7 +62,9 @@ Some keys (`name_lead`, `commit`, `menu_lerp`, `scroll`, `entry_slide`,
 
 ## Deploy
 
-No deploy is wired up (Vercel was retired; GCP is planned). To build:
+The Go container site serves this at `/experiments/particle-stream/`; the root
+`Dockerfile` builds it into the Cloud Run image, and `make experiments` builds
+it for local serving. To build by hand:
 
 ```sh
 cd experiments/particle-stream
