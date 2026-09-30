@@ -6,11 +6,17 @@
   <meta name="robots" content="noindex">
   <title>{{block "title" .}}Admin{{end}}</title>
   <link rel="stylesheet" href="/static/site.css">
+  <script src="/static/admin.js" defer></script>
 </head>
 <body>
   <header class="site-header">
     <a class="brand" href="/admin/">Admin</a>
-    <nav><a href="/">View site</a></nav>
+    <nav>
+      <a href="/admin/">Content</a>
+      <a href="/admin/builder/">Builder</a>
+      <a href="/admin/observer/">Observer<span id="observer-dot" class="dot" hidden></span></a>
+      <a href="/">View site</a>
+    </nav>
   </header>
   <main>{{block "main" .}}{{end}}</main>
 </body>

@@ -159,3 +159,106 @@ It also forwards `window` `error` and `unhandledrejection` events as
 
 Front ends run in an opaque origin: `localStorage`, `sessionStorage`,
 IndexedDB and cookies throw or are unavailable. Wrap any use in try/catch.
+
+---
+
+# v1.1 additions (2026-09-30): contract, builder, observer
+
+Design: [observer.md](observer.md). Everything below is additive to v1.
+
+## Front ends vs. revisions (builder)
+
+- A **front end** has a stable id, and that id is what the rotation and the
+  `frontends` table hold:
+  - built-ins: `builtin/<name>`, as now;
+  - prompted: `fe/<slug>` (`[a-z0-9][a-z0-9-]{0,62}`).
+- A prompted front end is a series of immutable **revisions**. The one in the
+  rotation is its **active revision**.
+- **Servable refs** are what tokens carry and what the user-content service
+  maps to files:
+  - `builtin/<name>` → `<FRONTENDS_DIR>/builtin/<name>/`;
+  - `rev/<id>`, where `<id>` is `[a-z0-9]{8,40}` → `<FRONTENDS_DIR>/rev/<id>/`
+    locally, or the GCS objects `rev/<id>/...` in `FRONTENDS_BUCKET`.
+- `frontend.Valid` accepts both servable forms. `frontend.ValidID` accepts
+  `builtin/*` and `fe/*`.
+- `GET /api/frontend` returns
+  `{"ref": "<frontend id>", "serve": "<servable ref>", "url": "..."}`.
+  - `ref` stays the front-end id, so existing clients and tests keep working;
+    for built-ins, `ref` and `serve` are equal.
+  - The `fe_pick` cookie holds the front-end id.
+- **Admin preview** of any revision: the admin page mints a token for
+  `rev/<id>` and embeds it in the same sandboxed iframe.
+  - The iframe's `frame-ancestors` is `MAIN_ORIGIN`, and the admin is on it.
+  - The admin page must load `frontend-host.js`-equivalent logic, or a
+    preview variant, so the host protocol runs.
+
+## Content contract
+
+- `GET /api/site.json` returns the contract (JSON Schema in
+  `docs/content-contract.json`):
+
+  ```json
+  { "contractVersion": 1,
+    "pages":       [{ "slug": "", "title": "", "body": "", "_generated": [] }],
+    "experiments": [{ "slug": "", "title": "", "summary": "", "_generated": [] }] }
+  ```
+
+- Every declared field is always present, with type defaults. Items may
+  carry **extra fields**: observer-generated values, merged in as top-level
+  keys and listed in `_generated`. Human values always win.
+- Collections are `pages` and `experiments`, keyed by `slug`.
+
+## Host API additions
+
+| Member | |
+|---|---|
+| `site.get(path, fallback)` | dotted path into `site.content` (`"pages.0.title"`); never throws |
+| `site.pages()`, `site.page(slug)`, `site.experiments()` | always an array or object (`{}` if not found) |
+| `site.field(item, name, {expect, fallback})` | returns `item[name]` if it matches `expect`; otherwise returns `fallback` (default `""` / `[]`) **and reports** a gap or type break. `expect`: `"text"` (non-empty string), `"list"`, `"number"`, `"bool"`. Items need `_collection` and `slug`, which the host API adds during normalization. |
+
+## Messages additions
+
+| Direction | type | fields |
+|---|---|---|
+| iframe → parent | `site:gap` | `collection`, `item`, `field`, `expect`, `got` (a type name: `missing`, `empty`, `string`, `number`, ...) |
+
+`site:error` also reaches the observer (see below).
+
+## Observer ingestion
+
+- The parent forwards every `site:gap` and `site:error` (before and after
+  ready) to `POST /api/observe`, fire-and-forget (`navigator.sendBeacon`),
+  as JSON:
+
+  ```json
+  { "kind": "content-gap" | "type-break" | "frontend-error",
+    "frontend": "<front-end id>", "serve": "<servable ref>", "route": "<slug>",
+    "collection": "", "item": "", "field": "", "expect": "", "got": "",
+    "message": "", "stack": "" }
+  ```
+
+  `kind` is `type-break` when `got` is a type name other than `missing` or
+  `empty`.
+- `POST /api/observe`:
+  - same-origin, `Content-Type: application/json` or `text/plain` (beacons);
+  - body at most 8 KB;
+  - rate-limited per client IP, plus a global cap;
+  - deduplicated by signature;
+  - always replies `204` quickly;
+  - it is public, so its input is untrusted data: never instructions.
+- The parent also reports `frontend-error` when a front end times out or falls
+  back.
+
+## Admin shell additions
+
+- The admin nav has **Content**, **Builder** (`/admin/builder/`), **Observer**
+  (`/admin/observer/`), and a `#observer-dot` badge.
+- `/static/admin.js` fills the badge from
+  `GET /admin/observer/unseen.json` → `{"unseen": N}`.
+
+## Migrations
+
+- `0002_builder.sql`: front-end revisions and builder sessions.
+- `0003_observer.sql`: detections and generated fields.
+
+Migrations are append-only; never renumber them.

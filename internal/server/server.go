@@ -30,12 +30,20 @@ type Server struct {
 	intn             func(int) int     // randomness for picking from the rotation
 	now              func() time.Time  // token issue time
 	publicCSP        string
+
+	// Extension points, each owned by its own file (see docs/frontend-protocol.md,
+	// "Builder" and "Observer"). Configured by Options passed to New.
+	builder  builderState  // builder.go
+	observer observerState // observer.go
 }
+
+// An Option configures optional subsystems (builder, observer) at New.
+type Option func(*Server) error
 
 // New builds the server. Besides cfg it reads FRONTEND_ROTATION (see
 // frontend.RotationEnv): comma-separated refs overriding the default rotation;
 // an invalid ref is a startup error.
-func New(cfg config.Config, st store.Store, log *slog.Logger) (*Server, error) {
+func New(cfg config.Config, st store.Store, log *slog.Logger, opts ...Option) (*Server, error) {
 	tmpl, err := parseTemplates()
 	if err != nil {
 		return nil, err
@@ -48,6 +56,11 @@ func New(cfg config.Config, st store.Store, log *slog.Logger) (*Server, error) {
 		cfg: cfg, store: st, log: log, tmpl: tmpl, mux: http.NewServeMux(),
 		rotationOverride: rot, intn: rand.IntN, now: time.Now,
 		publicCSP: publicCSP(cfg.UsercontentOrigin),
+	}
+	for _, o := range opts {
+		if err := o(s); err != nil {
+			return nil, err
+		}
 	}
 	s.routes()
 	return s, nil
@@ -93,6 +106,8 @@ func (s *Server) routes() {
 	admin.HandleFunc("POST /admin/frontends", s.adminFrontendRotation)
 	// basic auth credentials ride along on cross-site requests, so reject those
 	guarded := http.NewCrossOriginProtection().Handler(admin)
+	s.builderRoutes(admin)
+	s.observerRoutes(s.mux, admin)
 	s.mux.Handle("/admin/", auth.Basic(s.cfg.AdminUser, s.cfg.AdminPassword, guarded))
 }
 

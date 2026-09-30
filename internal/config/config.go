@@ -13,11 +13,15 @@ type Config struct {
 	AdminPassword string // ADMIN_PASSWORD — required in prod
 	DatabaseURL   string // DATABASE_URL — Postgres; empty in dev means the in-memory store
 
+	// AI (builder + observer). Empty disables both features, with a warning.
+	AnthropicAPIKey string // ANTHROPIC_API_KEY — from secret anthropic-api-key-never in prod
+
 	// front ends (shared by the main site and the user-content service)
 	SigningKey        []byte // FRONTEND_SIGNING_KEY — HMAC key for fetoken; required in prod
 	MainOrigin        string // MAIN_ORIGIN — the main site, e.g. https://benpriddy.com
 	UsercontentOrigin string // USERCONTENT_ORIGIN — e.g. https://benpriddy-usercontent.com
 	FrontendsDir      string // FRONTENDS_DIR — local front-end files: <dir>/<ref>/index.html
+	FrontendsBucket   string // FRONTENDS_BUCKET — GCS bucket for revision files; empty = FRONTENDS_DIR
 }
 
 // Role says which binary is loading config; each requires only its own secrets
@@ -37,10 +41,13 @@ func Load(role Role) (Config, error) {
 		AdminPassword: os.Getenv("ADMIN_PASSWORD"),
 		DatabaseURL:   os.Getenv("DATABASE_URL"),
 
+		AnthropicAPIKey: os.Getenv("ANTHROPIC_API_KEY"),
+
 		SigningKey:        []byte(os.Getenv("FRONTEND_SIGNING_KEY")),
 		MainOrigin:        env("MAIN_ORIGIN", "http://localhost:8090"),
 		UsercontentOrigin: env("USERCONTENT_ORIGIN", "http://127.0.0.1:8091"),
 		FrontendsDir:      env("FRONTENDS_DIR", "build/frontends"),
+		FrontendsBucket:   os.Getenv("FRONTENDS_BUCKET"),
 	}
 	if len(c.SigningKey) == 0 {
 		if c.Env == "prod" {
