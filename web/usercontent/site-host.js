@@ -43,6 +43,153 @@
     try { return String(v); } catch (e) { return "(unprintable)"; }
   }
 
+  // ── content contract (docs/content-contract.json) ──────────────────────────
+  // The second net under the server's normalization: whatever arrives (an old
+  // or newer server, a hand-edited payload), front ends see every declared
+  // field as a string, every collection as an array of objects, and items
+  // tagged with _collection so site.field can report gaps against them.
+
+  // declared fields per collection; the first is the item key (slug)
+  var DECLARED = {
+    pages: ["slug", "title", "body"],
+    experiments: ["slug", "title", "summary"]
+  };
+  var EXPECT_ALIASES = { text: "text", string: "text", list: "list", array: "list", number: "number", bool: "bool", "boolean": "bool" };
+  var MAX_GAP_REPORTS = 50; // per page load, after deduplication
+  var gapsSent = {};
+  var gapCount = 0;
+  var hasOwn = Object.prototype.hasOwnProperty;
+  // field → original type name, for declared fields that normalization had to
+  // default (so site.field reports the type break, not just "empty")
+  var coercedTypes = typeof WeakMap === "function" ? new WeakMap() : null;
+
+  function isObject(v) { return v !== null && typeof v === "object" && !Array.isArray(v); }
+
+  function own(obj, key) {
+    try {
+      return obj != null && hasOwn.call(obj, key) ? obj[key] : undefined;
+    } catch (e) {
+      return undefined; // a throwing getter
+    }
+  }
+
+  // typeName: the `got` of a site:gap. "missing" and "empty" are gaps; any
+  // other name is a type break.
+  function typeName(v) {
+    if (v === undefined || v === null) return "missing";
+    if (Array.isArray(v)) return "array";
+    if (typeof v === "boolean") return "boolean";
+    return typeof v; // string, number, object, function, bigint, symbol
+  }
+
+  // copyObject: a shallow copy of an object's own enumerable fields.
+  function copyObject(src) {
+    var out = {};
+    var keys = [];
+    try { keys = Object.keys(src); } catch (e) { /* exotic object */ }
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i];
+      if (k === "__proto__") continue;
+      var v = own(src, k);
+      if (v !== undefined) out[k] = v;
+    }
+    return out;
+  }
+
+  function normalizeItem(collection, raw) {
+    var item = copyObject(raw);
+    var fields = DECLARED[collection];
+    var coerced = null;
+    for (var i = 0; i < fields.length; i++) {
+      var f = fields[i];
+      var v = item[f];
+      if (typeof v === "string") continue;
+      if ((typeof v === "number" && isFinite(v)) || typeof v === "boolean") {
+        item[f] = String(v); // lossless
+        continue;
+      }
+      if (v !== undefined && v !== null) {
+        coerced = coerced || {};
+        coerced[f] = typeName(v);
+      }
+      item[f] = "";
+    }
+    var gen = item._generated;
+    var list = [];
+    if (Array.isArray(gen)) {
+      for (var j = 0; j < gen.length; j++) if (typeof gen[j] === "string") list.push(gen[j]);
+    }
+    item._generated = list;
+    item._collection = collection;
+    if (coerced && coercedTypes) coercedTypes.set(item, coerced);
+    return item;
+  }
+
+  // normalize: the contract shape from any value. Unknown top-level keys and
+  // unknown item fields pass through untouched.
+  function normalize(raw) {
+    var c = isObject(raw) ? copyObject(raw) : {};
+    if (typeof c.contractVersion !== "number") c.contractVersion = 1;
+    for (var coll in DECLARED) {
+      if (!hasOwn.call(DECLARED, coll)) continue;
+      var src = Array.isArray(c[coll]) ? c[coll] : [];
+      var out = [];
+      for (var i = 0; i < src.length; i++) {
+        var it = own(src, i);
+        if (isObject(it)) out.push(normalizeItem(coll, it));
+      }
+      c[coll] = out;
+    }
+    return c;
+  }
+
+  function reportGap(item, name, expect, got) {
+    var collection = own(item, "_collection");
+    if (typeof collection !== "string" || collection === "") return; // not a content item: nothing to heal
+    var slug = own(item, "slug");
+    slug = typeof slug === "string" ? slug : slug == null ? "" : safeString(slug);
+    var key = collection + "\u0000" + slug + "\u0000" + name;
+    if (gapsSent[key] || gapCount >= MAX_GAP_REPORTS) return;
+    gapsSent[key] = true;
+    gapCount++;
+    post({ type: "site:gap", collection: collection, item: slug, field: name, expect: expect, got: got });
+  }
+
+  function defaultFallback(expect) {
+    switch (expect) {
+      case "list": return [];
+      case "number": return 0;
+      case "bool": return false;
+      default: return "";
+    }
+  }
+
+  // check: [value to return, got] where got is null when v matches expect.
+  // Lossless coercions return the coerced value but still report the break.
+  function check(v, expect) {
+    var t = typeName(v);
+    switch (expect) {
+      case "list":
+        return Array.isArray(v) ? [v, null] : [undefined, t];
+      case "number":
+        if (typeof v === "number" && isFinite(v)) return [v, null];
+        if (typeof v === "string") {
+          if (v.trim() === "") return [undefined, "empty"];
+          var n = Number(v);
+          if (isFinite(n)) return [n, "string"];
+        }
+        return [undefined, t];
+      case "bool":
+        if (typeof v === "boolean") return [v, null];
+        if (v === "true" || v === "false") return [v === "true", "string"];
+        return [undefined, t];
+      default: // text
+        if (typeof v === "string") return v.trim() !== "" ? [v, null] : [undefined, "empty"];
+        if ((typeof v === "number" && isFinite(v)) || typeof v === "boolean") return [String(v), t];
+        return [undefined, t];
+    }
+  }
+
   function setRoute(route) {
     site.route = route;
     for (var i = 0; i < routeListeners.length; i++) {
@@ -77,6 +224,76 @@
       if (readySent) return;
       readySent = true;
       post({ type: "site:ready" });
+    },
+
+    // get: a dotted path ("pages.0.title") or an array of keys into
+    // site.content; fallback when any step is missing, null or not an object.
+    get: function (path, fallback) {
+      try {
+        var parts = Array.isArray(path) ? path : path == null || path === "" ? [] : String(path).split(".");
+        var cur = site.content;
+        for (var i = 0; i < parts.length; i++) {
+          if (cur === null || typeof cur !== "object") return fallback;
+          cur = own(cur, String(parts[i]));
+        }
+        return cur === undefined || cur === null ? fallback : cur;
+      } catch (e) {
+        return fallback;
+      }
+    },
+
+    pages: function () { return collection("pages"); },
+    experiments: function () { return collection("experiments"); },
+
+    // page: the page with this slug ("" or no argument: home), or {}.
+    page: function (slug) {
+      try {
+        var want = slug == null ? "" : String(slug);
+        var list = collection("pages");
+        for (var i = 0; i < list.length; i++) {
+          if (list[i] && list[i].slug === want) return list[i];
+        }
+      } catch (e) { /* fall through */ }
+      return {};
+    },
+
+    // field: item[name] if it matches opts.expect ("text": a string with
+    // non-whitespace content, "list": an array, "number": a finite number,
+    // "bool": a boolean; default "text"). Otherwise opts.fallback (default ""
+    // / [] / 0 / false), and a site:gap report (once per item and field per
+    // page load) so the observer can fill or fix the value. Lossless
+    // coercions (text from a number or boolean, a number from a numeric
+    // string, a bool from "true"/"false") return the coerced value but still
+    // report the type break. Never throws.
+    field: function (item, name, opts) {
+      var expect = "text";
+      var fallback;
+      var hasFallback = false;
+      try {
+        if (opts && typeof opts === "object") {
+          expect = EXPECT_ALIASES[opts.expect] || "text";
+          if (own(opts, "fallback") !== undefined) {
+            fallback = opts.fallback;
+            hasFallback = true;
+          }
+        }
+      } catch (e) { /* defaults */ }
+      if (!hasFallback) fallback = defaultFallback(expect);
+      try {
+        name = typeof name === "string" ? name : safeString(name);
+        var v = item !== null && (typeof item === "object" || typeof item === "function") ? own(item, name) : undefined;
+        var r = check(v, expect);
+        if (r[1] === null) return r[0];
+        var got = r[1];
+        if ((got === "empty" || got === "missing") && coercedTypes && isObject(item)) {
+          var orig = coercedTypes.get(item);
+          if (orig && orig[name]) got = orig[name]; // normalization defaulted a wrong type
+        }
+        reportGap(item, name, expect, got);
+        return r[0] !== undefined ? r[0] : fallback;
+      } catch (e) {
+        return fallback;
+      }
     },
 
     reportError: function (err, kind) {
@@ -138,6 +355,12 @@
     }
   };
 
+  // collection: site.content[name] if it's an array, else a fresh [].
+  function collection(name) {
+    var list = site.content && typeof site.content === "object" ? own(site.content, name) : undefined;
+    return Array.isArray(list) ? list : [];
+  }
+
   function makeCanvas(w, h) {
     if (typeof OffscreenCanvas === "function") {
       try { return new OffscreenCanvas(w, h); } catch (e) { /* fall through */ }
@@ -155,7 +378,14 @@
     var m = ev.data;
     if (!m || typeof m !== "object" || m.v !== 1) return;
     if (m.type === "site:init") {
-      site.content = m.content;
+      try {
+        site.content = normalize(m.content);
+      } catch (e) {
+        // never leave front ends without the shape; not a site:error, which
+        // before ready would make the parent fall back over bad content
+        site.content = { contractVersion: 1, pages: [], experiments: [] };
+        try { console.warn("site-host: content normalization failed:", e); } catch (e2) { /* no console */ }
+      }
       site.route = typeof m.route === "string" ? m.route : "";
       if (!initialized) {
         initialized = true;

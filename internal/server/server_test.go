@@ -230,11 +230,14 @@ func TestOtherRoutes(t *testing.T) {
 	}
 	rec := get(s, "/api/site.json")
 	var site struct {
-		Pages       []map[string]string
-		Experiments []map[string]string
+		ContractVersion int
+		Pages           []map[string]any
+		Experiments     []map[string]any
 	}
-	if err := json.NewDecoder(rec.Body).Decode(&site); err != nil || len(site.Pages) != 1 || len(site.Experiments) != 1 {
+	if err := json.NewDecoder(rec.Body).Decode(&site); err != nil || site.ContractVersion != 1 || len(site.Pages) != 1 || len(site.Experiments) != 1 {
 		t.Errorf("site.json: %v %+v", err, site)
+	} else if p := site.Pages[0]; p["slug"] != "" || p["title"] != "Ben Priddy" || p["body"] == nil || p["_generated"] == nil {
+		t.Errorf("site.json home page: %+v", p)
 	}
 	if rec := get(s, "/static/frontend-host.js"); rec.Code != 200 || !strings.Contains(rec.Body.String(), "/api/frontend") {
 		t.Errorf("frontend-host.js: %d", rec.Code)

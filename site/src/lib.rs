@@ -9,6 +9,11 @@
 //! the current page's title and body (plus a clickable list of pages) over a
 //! placeholder shader scene.
 //!
+//! Content is read only through the host API's contract accessors
+//! (`site.pages()`, `site.experiments()`, `site.field`), never by decoding the
+//! payload's shape, so missing, extra or mistyped fields render as empty and
+//! are reported to the observer instead of breaking the page.
+//!
 //! Without `window.site` (standalone, e.g. `trunk serve`) it uses placeholder
 //! content and navigates locally.
 
@@ -138,6 +143,14 @@ async fn load_content() -> Loaded {
     let loaded = async {
         let p = js_sys::Reflect::get(&site, &"loaded".into())?.dyn_into::<js_sys::Promise>()?;
         let v = JsFuture::from(p).await?;
+        let route = js_sys::Reflect::get(&v, &"route".into())
+            .ok()
+            .and_then(|r| r.as_string())
+            .unwrap_or_default();
+        if host_fn("field").is_some() && host_fn("pages").is_some() {
+            return Ok(Loaded { content: read_content(), route });
+        }
+        // an older host without the contract accessors: whole-payload decode
         let json: String = js_sys::JSON::stringify(&v)?.into();
         serde_json::from_str::<Loaded>(&json).map_err(|e| JsValue::from_str(&e.to_string()))
     };
@@ -148,6 +161,56 @@ async fn load_content() -> Loaded {
             placeholder()
         }
     }
+}
+
+/// The content, read only through the host API's contract accessors
+/// (`site.pages()`, `site.experiments()`, `site.field`), so missing, extra
+/// or mistyped fields degrade to "" and get reported instead of failing.
+fn read_content() -> SiteData {
+    let items = |name: &str| -> Vec<JsValue> {
+        host_call(name, &[])
+            .filter(js_sys::Array::is_array)
+            .map(|a| js_sys::Array::from(&a).iter().filter(JsValue::is_object).collect())
+            .unwrap_or_default()
+    };
+    SiteData {
+        pages: items("pages")
+            .iter()
+            .map(|p| Page {
+                slug: slug_of(p),
+                title: text_field(p, "title"),
+                body: text_field(p, "body"),
+            })
+            .collect(),
+        experiments: items("experiments")
+            .iter()
+            .map(|e| Experiment {
+                slug: slug_of(e),
+                title: text_field(e, "title"),
+                summary: text_field(e, "summary"),
+            })
+            .collect(),
+    }
+}
+
+/// An item's slug. Not read through `site.field`: "" is the home page's
+/// slug, not a gap.
+fn slug_of(item: &JsValue) -> String {
+    js_sys::Reflect::get(item, &"slug".into())
+        .ok()
+        .and_then(|s| s.as_string())
+        .unwrap_or_default()
+}
+
+/// `site.field(item, name, {expect: "text", fallback: ""})`: the field's text,
+/// or "" (which the host reports as a content gap).
+fn text_field(item: &JsValue, name: &str) -> String {
+    let opts = js_sys::Object::new();
+    let _ = js_sys::Reflect::set(&opts, &"expect".into(), &"text".into());
+    let _ = js_sys::Reflect::set(&opts, &"fallback".into(), &"".into());
+    host_call("field", &[item.clone(), name.into(), opts.into()])
+        .and_then(|v| v.as_string())
+        .unwrap_or_default()
 }
 
 fn placeholder() -> Loaded {

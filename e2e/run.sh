@@ -12,7 +12,7 @@
 # phases, restarting the servers with a different rotation each time:
 #   site             FRONTEND_ROTATION=builtin/site             all specs
 #   particle-stream  FRONTEND_ROTATION=builtin/particle-stream  ready + navigation
-#   broken           FRONTEND_ROTATION=builtin/e2e-broken       fallback
+#   broken           FRONTEND_ROTATION=builtin/e2e-broken       fallback + its observer report
 # If FRONTEND_ROTATION is already set in the environment, it runs a single
 # "custom" phase with that rotation and all specs.
 #
@@ -148,7 +148,7 @@ declare -A ROTATION_OF=(
 declare -A SPECS_OF=(
   [site]=""
   [particle-stream]="tests/builtins-ready.spec.ts tests/navigation.spec.ts"
-  [broken]="tests/fallback.spec.ts"
+  [broken]="tests/fallback.spec.ts tests/contract.spec.ts"
   [custom]=""
 )
 if [[ -n "${FRONTEND_ROTATION:-}" ]]; then
