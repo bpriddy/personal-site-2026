@@ -95,7 +95,10 @@ CORS/CORP/nosniff headers and `Cache-Control: public, max-age=300`.
 3. Accept messages **only** where `event.source === iframe.contentWindow`.
 4. On `site:hello`, reply `site:init` with the content and the route.
 5. On `site:ready`, switch to `html.fe-live`.
-6. Failure means any of these:
+6. If no front end is ready within **1.5s**, drop `fe-loading` so the transcript
+   shows while the front end keeps loading; `site:ready` still switches to
+   `fe-live`. Any failure also shows the transcript immediately.
+7. Failure means any of these:
    - no `site:ready` within **10s**;
    - a `site:error` before ready;
    - a `site:error` with kind `gpu-lost` at any time.
@@ -103,7 +106,7 @@ CORS/CORP/nosniff headers and `Cache-Control: public, max-age=300`.
    On failure: if the current ref isn't the default, replace the iframe with
    `/api/frontend?fallback=1`. If the default fails too, remove the iframe and
    drop both classes, so the transcript shows as a plain HTML site.
-7. **Navigation:**
+8. **Navigation:**
    - On `site:navigate {slug}`: `history.pushState` to `/<slug>` (or `/`),
      fetch that URL, swap in the transcript's `<main>` and `<title>` from the
      response, and post `site:route`.

@@ -15,6 +15,12 @@
 
   var DEFAULT_REF = "builtin/site";
   var READY_TIMEOUT_MS = 10000;
+  // Longest the page stays blank waiting for a front end. After this the
+  // transcript shows while the front end keeps loading behind it, and the front
+  // end takes over when it reports ready. Short enough that a slow or broken
+  // front end never costs more than a moment; long enough that a healthy one
+  // appears without a flash of the HTML page first.
+  var REVEAL_AFTER_MS = 1500;
   var SLUG_RE = /^[a-z0-9][a-z0-9-]*(\/[a-z0-9][a-z0-9-]*)*$/;
   var RESERVED = { admin: true, api: true, "static": true, health: true };
 
@@ -26,6 +32,7 @@
   var readyTimer = 0;
   var contentPromise = null;
   var navSeq = 0;
+  var revealed = false; // the transcript is showing while a front end loads
 
   function routeFromPath(pathname) {
     var p = pathname;
@@ -77,7 +84,7 @@
     removeIframe();
     ready = false;
     currentRef = fallback ? DEFAULT_REF : null;
-    setMode("fe-loading");
+    if (!revealed) setMode("fe-loading");
     readyTimer = setTimeout(function () { fail(my, "no site:ready within " + READY_TIMEOUT_MS + "ms"); }, READY_TIMEOUT_MS);
 
     fetch("/api/frontend" + (fallback ? "?fallback=1" : ""), { credentials: "same-origin", cache: "no-store" })
@@ -106,6 +113,8 @@
   function fail(my, reason) {
     if (my !== attempt) return;
     if (window.console) console.warn("front end " + (currentRef || "?") + " failed: " + reason);
+    ready = false;
+    reveal(); // don't leave the page blank (or on a dead front end) while retrying
     if (currentRef !== DEFAULT_REF) {
       load(true);
       return;
@@ -113,6 +122,12 @@
     // the default failed too: the transcript is the site
     attempt++;
     removeIframe();
+    setMode(null);
+  }
+
+  function reveal() {
+    if (ready || revealed) return;
+    revealed = true;
     setMode(null);
   }
 
@@ -131,6 +146,7 @@
       case "site:ready":
         if (ready) break;
         ready = true;
+        revealed = false;
         clearTimeout(readyTimer);
         setMode("fe-live");
         break;
@@ -183,5 +199,6 @@
     if (!navigate(currentRoute(), false)) location.reload();
   });
 
+  setTimeout(reveal, REVEAL_AFTER_MS);
   load(false);
 })();
