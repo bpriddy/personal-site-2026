@@ -76,7 +76,9 @@ CORS/CORP/nosniff headers and `Cache-Control: public, max-age=300`.
     chooses at random from the approved rotation and sets the cookie.
   - `?fallback=1` always returns `frontend.DefaultRef` and doesn't change the
     cookie.
-- Approved rotation, static for now: `builtin/site`, `builtin/particle-stream`.
+- Approved rotation: rows in the `frontends` table with `in_rotation = true`
+  (toggled in `/admin/`); `builtin/site` sorts first. If none are in rotation,
+  or the database errors, visitors get `builtin/site`.
   The `FRONTEND_ROTATION` env var (comma-separated refs, each validated) overrides
   it; the end-to-end tests use it to force a specific front end.
 - The public shell no longer loads the wasm site directly (`/site/` and

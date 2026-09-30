@@ -26,10 +26,10 @@ type Server struct {
 	tmpl  map[string]*template.Template
 	mux   *http.ServeMux
 
-	rotation  frontend.Rotation // approved front ends; FRONTEND_ROTATION overrides
-	intn      func(int) int     // randomness for picking from the rotation
-	now       func() time.Time  // token issue time
-	publicCSP string
+	rotationOverride frontend.Rotation // FRONTEND_ROTATION, if set; else the store decides
+	intn             func(int) int     // randomness for picking from the rotation
+	now              func() time.Time  // token issue time
+	publicCSP        string
 }
 
 // New builds the server. Besides cfg it reads FRONTEND_ROTATION (see
@@ -40,13 +40,13 @@ func New(cfg config.Config, st store.Store, log *slog.Logger) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	rot, err := frontend.RotationFromEnv()
+	rot, _, err := frontend.RotationOverride()
 	if err != nil {
 		return nil, err
 	}
 	s := &Server{
 		cfg: cfg, store: st, log: log, tmpl: tmpl, mux: http.NewServeMux(),
-		rotation: rot, intn: rand.IntN, now: time.Now,
+		rotationOverride: rot, intn: rand.IntN, now: time.Now,
 		publicCSP: publicCSP(cfg.UsercontentOrigin),
 	}
 	s.routes()
@@ -84,6 +84,7 @@ func (s *Server) routes() {
 	admin.HandleFunc("POST /admin/pages/edit", s.adminPageSave)
 	admin.HandleFunc("GET /admin/experiments/{slug}", s.adminExperimentForm)
 	admin.HandleFunc("POST /admin/experiments/{slug}", s.adminExperimentSave)
+	admin.HandleFunc("POST /admin/frontends", s.adminFrontendRotation)
 	// basic auth credentials ride along on cross-site requests, so reject those
 	guarded := http.NewCrossOriginProtection().Handler(admin)
 	s.mux.Handle("/admin/", auth.Basic(s.cfg.AdminUser, s.cfg.AdminPassword, guarded))

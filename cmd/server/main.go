@@ -21,14 +21,28 @@ import (
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	cfg, err := config.Load()
+	cfg, err := config.Load(config.Main)
 	if err != nil {
 		log.Error("config", "err", err)
 		os.Exit(1)
 	}
 
-	// in-memory until the database is chosen (see docs/restructure-plan.md)
-	st := store.NewMemory()
+	var st store.Store
+	if cfg.DatabaseURL != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		pg, err := store.OpenPostgres(ctx, cfg.DatabaseURL) // also applies migrations
+		cancel()
+		if err != nil {
+			log.Error("database", "err", err)
+			os.Exit(1)
+		}
+		defer pg.Close()
+		st = pg
+		log.Info("store: postgres")
+	} else {
+		st = store.NewMemory() // dev only; config requires DATABASE_URL in prod
+		log.Warn("store: in-memory (DATABASE_URL unset); edits are lost on restart")
+	}
 
 	srv, err := server.New(cfg, st, log)
 	if err != nil {

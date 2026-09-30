@@ -53,6 +53,16 @@ func RotationFromEnv() (Rotation, error) {
 	return r, nil
 }
 
+// RotationOverride returns the FRONTEND_ROTATION rotation and true when the env
+// var is set, so callers can skip the database-backed rotation.
+func RotationOverride() (Rotation, bool, error) {
+	if strings.TrimSpace(os.Getenv(RotationEnv)) == "" {
+		return nil, false, nil
+	}
+	r, err := RotationFromEnv()
+	return r, err == nil, err
+}
+
 // Contains reports whether ref is in the rotation.
 func (r Rotation) Contains(ref Ref) bool { return slices.Contains(r, ref) }
 

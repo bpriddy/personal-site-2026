@@ -45,8 +45,9 @@ where the particle piece becomes one of several embedded experiments.
   preview/repair loop, session-only "view live", submit → `/admin` review queue.
 - [ ] **Build the canvas site** (`site/`, the default front end): text
   rendering, layout, navigation.
-- [ ] **Choose and wire the database** behind `internal/store.Store`, with
-  migrations.
+- [x] **Database** (2026-09-30): Postgres store (pgx) with embedded, append-only
+  migrations under an advisory lock; front-end rotation lives in the
+  `frontends` table with an admin toggle; `cmd/devdb` for local dev.
 - [ ] **Real admin auth** — replace basic auth with session login or IAP.
 - [ ] **Terraform** (`infra/`): Artifact Registry, Cloud Run, Secret Manager,
   database, domain.

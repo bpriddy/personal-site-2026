@@ -10,12 +10,13 @@ import (
 	"github.com/bpriddy/personal-site-2026/internal/content"
 )
 
-// Memory is an in-process Store seeded with starter content. Everything is
-// lost on restart — it exists so the site runs before the database is chosen.
+// Memory is an in-process Store seeded with the same starter content as the
+// initial migration. Everything is lost on restart.
 type Memory struct {
 	mu          sync.RWMutex
 	pages       map[string]content.Page
 	experiments map[string]content.Experiment
+	frontends   map[string]content.Frontend
 }
 
 func NewMemory() *Memory {
@@ -32,6 +33,10 @@ func NewMemory() *Memory {
 				Published: true,
 				UpdatedAt: now,
 			},
+		},
+		frontends: map[string]content.Frontend{
+			"builtin/site":            {Ref: "builtin/site", Title: "Site", InRotation: true, UpdatedAt: now},
+			"builtin/particle-stream": {Ref: "builtin/particle-stream", Title: "Particle Stream", InRotation: true, UpdatedAt: now},
 		},
 	}
 }
@@ -96,5 +101,29 @@ func (m *Memory) SaveExperiment(_ context.Context, e content.Experiment) error {
 	defer m.mu.Unlock()
 	e.UpdatedAt = time.Now()
 	m.experiments[e.Slug] = e
+	return nil
+}
+
+func (m *Memory) Frontends(_ context.Context) ([]content.Frontend, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]content.Frontend, 0, len(m.frontends))
+	for _, f := range m.frontends {
+		out = append(out, f)
+	}
+	slices.SortFunc(out, func(a, b content.Frontend) int { return strings.Compare(a.Ref, b.Ref) })
+	return out, nil
+}
+
+func (m *Memory) SetFrontendInRotation(_ context.Context, ref string, in bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	f, ok := m.frontends[ref]
+	if !ok {
+		return ErrNotFound
+	}
+	f.InRotation = in
+	f.UpdatedAt = time.Now()
+	m.frontends[ref] = f
 	return nil
 }

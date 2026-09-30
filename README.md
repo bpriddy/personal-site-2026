@@ -24,18 +24,19 @@ Design: [`docs/frontends.md`](docs/frontends.md). Contract:
 [`docs/frontend-protocol.md`](docs/frontend-protocol.md). Plan:
 [`docs/restructure-plan.md`](docs/restructure-plan.md).
 
-**Status: runs locally, not deployed.** In-memory store; the database and GCP
-hosting come next.
+**Status: runs locally, not deployed.** PostgreSQL store with migrations (or
+in-memory when `DATABASE_URL` is unset in dev); GCP hosting comes next.
 
 ## Layout
 
 ```
 cmd/server/            main site (config, graceful shutdown for Cloud Run)
 cmd/usercontent/       user-content service (serves front ends)
+cmd/devdb/             local PostgreSQL 17 for dev, no root (embedded-postgres)
 internal/
   config/              env-based settings (shared)
   content/             CMS content types (Page, Experiment)
-  store/               Store interface + in-memory placeholder
+  store/               Store interface; Postgres (pgx) + migrations/, in-memory stand-in
   auth/                admin guard (basic auth, stopgap)
   server/              public pages, /api/frontend, /api/site.json, /admin
   usercontent/         signed-URL file serving, sandbox headers
@@ -69,10 +70,15 @@ export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$HOME/.local/go/bin:$PATH"
 ```
 
 ```sh
+go run ./cmd/devdb                  # Postgres 17 on :5433, data in build/pgdata (Ctrl-C to stop)
+export DATABASE_URL='postgres://site:site@localhost:5433/site?sslmode=disable'
 scripts/build-frontends.sh          # → build/frontends/builtin/{site,particle-stream}/
 PORT=8091 go run ./cmd/usercontent  # user-content service, http://127.0.0.1:8091
 PORT=8090 go run ./cmd/server       # main site, http://localhost:8090 (admin: admin / dev)
 ```
+
+The main site applies migrations on startup. Without `DATABASE_URL` it uses
+the in-memory store (dev only; edits vanish on restart).
 
 (`make frontends` and `make dev` do the same if `make` is installed.) Dev uses
 8090/8091 because 8080/8081 are taken by other local services. `localhost`
@@ -80,7 +86,7 @@ and `127.0.0.1` are different sites to the browser, which is what makes the
 local sandbox realistic.
 
 ```sh
-go test ./...                       # unit tests
+go test ./...                       # unit tests + store tests on a real Postgres (-short skips it)
 (cd e2e && npm ci) && e2e/run.sh    # end-to-end: builds everything, runs 3 phases
 e2e/run.sh --slow                   # + the 61s token-expiry test
 ```
@@ -88,7 +94,7 @@ e2e/run.sh --slow                   # + the 61s token-expiry test
 Environment (both binaries): `PORT`, `APP_ENV` (`dev`|`prod`),
 `FRONTEND_SIGNING_KEY` (required in prod), `MAIN_ORIGIN`
 (`http://localhost:8090`), `USERCONTENT_ORIGIN` (`http://127.0.0.1:8091`),
-`FRONTENDS_DIR` (`build/frontends`). Main site only: `ADMIN_USER` (`admin`),
+`FRONTENDS_DIR` (`build/frontends`). Main site only: `DATABASE_URL` (required in prod), `ADMIN_USER` (`admin`),
 `ADMIN_PASSWORD` (`dev` in dev, required in prod), `FRONTEND_ROTATION` (comma-
 separated refs; overrides the rotation, used by tests).
 
@@ -103,7 +109,7 @@ Main site:
 | `/experiments/` | experiment listing |
 | `/api/frontend` | this visit's front end: `{ref, url}` with a fresh signed URL |
 | `/api/site.json` | published CMS content (sent to front ends) |
-| `/admin/` | CMS: edit pages and experiment listings |
+| `/admin/` | CMS: pages, experiment listings, front-end rotation |
 | `/healthz` | health check |
 
 User-content service: `/t/<token>/...` (front-end files), `/site-host.js`,

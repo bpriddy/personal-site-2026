@@ -20,7 +20,15 @@ func (s *Server) adminDashboard(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, "experiments", err)
 		return
 	}
-	s.render(w, "admin/dashboard.html", http.StatusOK, map[string]any{"Pages": pages, "Experiments": exps})
+	fes, err := s.store.Frontends(r.Context())
+	if err != nil {
+		s.fail(w, "frontends", err)
+		return
+	}
+	s.render(w, "admin/dashboard.html", http.StatusOK, map[string]any{
+		"Pages": pages, "Experiments": exps, "Frontends": fes,
+		"RotationOverridden": s.rotationOverride != nil,
+	})
 }
 
 // pages are addressed by ?slug= because the home page's slug is empty
@@ -79,6 +87,22 @@ func (s *Server) adminExperimentSave(w http.ResponseWriter, r *http.Request) {
 	exp.Order, _ = strconv.Atoi(r.FormValue("order"))
 	if err := s.store.SaveExperiment(r.Context(), exp); err != nil {
 		s.fail(w, "save experiment", err)
+		return
+	}
+	http.Redirect(w, r, "/admin/", http.StatusSeeOther)
+}
+
+// adminFrontendRotation adds a registered front end to the rotation or removes
+// it. The ref is a form field because refs contain "/".
+func (s *Server) adminFrontendRotation(w http.ResponseWriter, r *http.Request) {
+	ref := r.FormValue("ref")
+	in := r.FormValue("in_rotation") == "1"
+	err := s.store.SetFrontendInRotation(r.Context(), ref, in)
+	if errors.Is(err, store.ErrNotFound) {
+		http.NotFound(w, r)
+		return
+	} else if err != nil {
+		s.fail(w, "set rotation", err)
 		return
 	}
 	http.Redirect(w, r, "/admin/", http.StatusSeeOther)

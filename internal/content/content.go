@@ -23,3 +23,12 @@ type Experiment struct {
 	Order     int
 	UpdatedAt time.Time
 }
+
+// Frontend is a servable front end (see docs/frontends.md). Visitors are shown
+// one at random from those InRotation.
+type Frontend struct {
+	Ref        string // e.g. "builtin/site"; see internal/frontend
+	Title      string
+	InRotation bool
+	UpdatedAt  time.Time
+}

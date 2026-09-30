@@ -21,7 +21,7 @@ import (
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	cfg, err := config.Load()
+	cfg, err := config.Load(config.Usercontent)
 	if err != nil {
 		log.Error("config", "err", err)
 		os.Exit(1)

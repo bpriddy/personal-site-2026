@@ -251,3 +251,58 @@ func TestOtherRoutes(t *testing.T) {
 		t.Errorf("/site/ still served: %d", rec.Code)
 	}
 }
+
+func TestRotationFromStoreAndAdminToggle(t *testing.T) {
+	s := newTestServer(t)
+	pick := func(i int) string {
+		s.intn = func(int) int { return i }
+		var resp frontendResponse
+		json.NewDecoder(get(s, "/api/frontend").Body).Decode(&resp)
+		return resp.Ref
+	}
+	// store rotation: default first, then by ref
+	if got := pick(0); got != "builtin/site" {
+		t.Fatalf("pick(0) = %q", got)
+	}
+	if got := pick(1); got != "builtin/particle-stream" {
+		t.Fatalf("pick(1) = %q", got)
+	}
+
+	toggle := func(ref, in string) int {
+		req := httptest.NewRequest("POST", "/admin/frontends", strings.NewReader("ref="+ref+"&in_rotation="+in))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.SetBasicAuth("admin", "pw")
+		rec := httptest.NewRecorder()
+		s.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if code := toggle("builtin/particle-stream", "0"); code != http.StatusSeeOther {
+		t.Fatalf("toggle off = %d", code)
+	}
+	if got := pick(0); got != "builtin/site" {
+		t.Fatalf("after removal pick = %q", got)
+	}
+	// a visitor whose cookie names a removed front end is re-picked
+	rec := get(s, "/api/frontend", &http.Cookie{Name: pickCookie, Value: "builtin/particle-stream"})
+	var resp frontendResponse
+	json.NewDecoder(rec.Body).Decode(&resp)
+	if resp.Ref != "builtin/site" {
+		t.Fatalf("stale cookie pick = %q", resp.Ref)
+	}
+	// with nothing in rotation, visitors still get the default
+	toggle("builtin/site", "0")
+	if got := pick(0); got != "builtin/site" {
+		t.Fatalf("empty rotation pick = %q", got)
+	}
+	if code := toggle("builtin/nope", "1"); code != http.StatusNotFound {
+		t.Fatalf("unknown ref toggle = %d", code)
+	}
+	// the dashboard lists front ends
+	req := httptest.NewRequest("GET", "/admin/", nil)
+	req.SetBasicAuth("admin", "pw")
+	rec = httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	if !strings.Contains(rec.Body.String(), "builtin/particle-stream") || !strings.Contains(rec.Body.String(), "Add to rotation") {
+		t.Fatal("dashboard missing front-end rotation controls")
+	}
+}

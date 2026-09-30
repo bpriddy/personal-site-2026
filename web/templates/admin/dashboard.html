@@ -26,4 +26,20 @@
     </tr>{{end}}
   </table>
 </section>
+<section>
+  <h2>Front ends</h2>
+  {{if .RotationOverridden}}<p><strong>FRONTEND_ROTATION is set:</strong> it overrides the rotation below.</p>{{end}}
+  <p>Visitors see one front end from the rotation at random per visit. <code>builtin/site</code> is always the fallback.</p>
+  <table>
+    <tr><th>Ref</th><th>Title</th><th>In rotation</th><th></th></tr>
+    {{range .Frontends}}<tr>
+      <td><code>{{.Ref}}</code></td><td>{{.Title}}</td><td>{{if .InRotation}}yes{{else}}no{{end}}</td>
+      <td><form method="post" action="/admin/frontends">
+        <input type="hidden" name="ref" value="{{.Ref}}">
+        {{if .InRotation}}<input type="hidden" name="in_rotation" value="0"><button>Remove from rotation</button>
+        {{else}}<input type="hidden" name="in_rotation" value="1"><button>Add to rotation</button>{{end}}
+      </form></td>
+    </tr>{{end}}
+  </table>
+</section>
 {{end}}
