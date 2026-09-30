@@ -2,6 +2,6 @@
 {{define "main"}}
 <h1>Experiments</h1>
 <ul class="experiments">
-  {{range .Experiments}}<li><a href="/experiments/{{.Slug}}/">{{.Title}}</a><p>{{.Summary}}</p></li>{{else}}<li>Nothing published yet.</li>{{end}}
+  {{range .Experiments}}<li><strong>{{.Title}}</strong><p>{{.Summary}}</p></li>{{else}}<li>Nothing published yet.</li>{{end}}
 </ul>
 {{end}}

@@ -6,7 +6,7 @@
 <section>
   <h2>Experiments</h2>
   <ul class="experiments">
-    {{range .Experiments}}<li><a href="/experiments/{{.Slug}}/">{{.Title}}</a><p>{{.Summary}}</p></li>{{end}}
+    {{range .Experiments}}<li><strong>{{.Title}}</strong><p>{{.Summary}}</p></li>{{end}}
   </ul>
 </section>
 {{end}}
