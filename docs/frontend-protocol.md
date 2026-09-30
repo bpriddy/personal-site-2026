@@ -5,8 +5,8 @@ The contract between the **main site** (trusted, `MAIN_ORIGIN`), the
 **front end** (code running in the sandboxed iframe). Design rationale:
 [frontends.md](frontends.md).
 
-Local dev: main site `http://localhost:8080`, user-content
-`http://127.0.0.1:8081`. Different hostnames, so they are different sites.
+Local dev: main site `http://localhost:8090`, user-content
+`http://127.0.0.1:8091`. Different hostnames, so they are different sites.
 
 ## Refs and files
 

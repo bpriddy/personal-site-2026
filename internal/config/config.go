@@ -31,8 +31,8 @@ func Load() (Config, error) {
 		AdminPassword:  os.Getenv("ADMIN_PASSWORD"),
 
 		SigningKey:        []byte(os.Getenv("FRONTEND_SIGNING_KEY")),
-		MainOrigin:        env("MAIN_ORIGIN", "http://localhost:8080"),
-		UsercontentOrigin: env("USERCONTENT_ORIGIN", "http://127.0.0.1:8081"),
+		MainOrigin:        env("MAIN_ORIGIN", "http://localhost:8090"),
+		UsercontentOrigin: env("USERCONTENT_ORIGIN", "http://127.0.0.1:8091"),
 		FrontendsDir:      env("FRONTENDS_DIR", "build/frontends"),
 	}
 	if len(c.SigningKey) == 0 {

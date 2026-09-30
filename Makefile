@@ -4,17 +4,17 @@
 
 export PATH := $(HOME)/.local/bin:$(HOME)/.cargo/bin:$(HOME)/.local/go/bin:$(PATH)
 
-dev: ## main site on :8080 + user-content service on :8081 (admin login admin/dev)
+dev: ## main site on :8090 + user-content service on :8091 (admin login admin/dev)
 	@trap 'kill 0' INT TERM EXIT; \
-	PORT=8081 go run ./cmd/usercontent & \
-	PORT=8080 go run ./cmd/server & \
+	PORT=8091 go run ./cmd/usercontent & \
+	PORT=8090 go run ./cmd/server & \
 	wait
 
-run: ## main site only, :8080
-	PORT=8080 go run ./cmd/server
+run: ## main site only, :8090
+	PORT=8090 go run ./cmd/server
 
-run-usercontent: ## user-content service only, :8081
-	PORT=8081 go run ./cmd/usercontent
+run-usercontent: ## user-content service only, :8091
+	PORT=8091 go run ./cmd/usercontent
 
 build:
 	go build -o bin/server ./cmd/server
