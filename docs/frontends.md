@@ -207,7 +207,8 @@ Unsubmitted drafts are purged 30 days after their last activity.
 - **Running front ends:** real files on the user-content domain, sandboxed
   iframe, strict CSP, HMAC-signed expiring URLs (see Architecture).
 - **Region:** `us-east1` for Cloud Run, Cloud SQL and the bucket.
-- **GCP project:** a new, dedicated project for the site.
+- **GCP project:** `benpriddycom` (dedicated to the site, billing linked).
+- **Main domain:** `benpriddy.com` (DNS currently at GoDaddy).
 - **Admin auth:** Google sign-in inside the app, restricted to an allowlist of
   email addresses supplied via the `ADMIN_EMAILS` env var (not committed).
   Replaces basic auth.
