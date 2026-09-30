@@ -45,9 +45,35 @@ trunk serve
 # open http://127.0.0.1:8099  (foreground tab for full FPS)
 ```
 
-## Dev tooling (localhost only)
+## As a site front end (`builtin/particle-stream`)
 
-Hidden on deployed hosts; visible on `localhost` / `127.0.0.1`:
+The site can show this piece as its front end, in a sandboxed iframe on the
+user-content origin (see `docs/frontend-protocol.md`). Build the bundle from
+the repo root:
+
+```sh
+scripts/build-frontends.sh   # → build/frontends/builtin/particle-stream/ (and builtin/site/)
+```
+
+That runs `trunk build --release --public-url ./` (relative asset paths).
+`index.html` loads the host API `/site-host.js` before the app; the app uses
+it only if `window.site` exists, so `trunk serve` still runs standalone:
+
+- `site.ready()` after the first frame is presented;
+- `site.reportError(…, "error")` if there is no WebGPU adapter,
+  `"gpu-lost"` if `requestDevice` fails or the device is lost;
+- the site content (`site.loaded`, `site.onRoute`) is ignored for now: the
+  piece still shows its own `phrases.json`.
+
+Embedded, the page runs in an opaque origin: all `localStorage` /
+`indexedDB` / clipboard use is guarded, the phrase SAVE can't write a file,
+and the page doesn't reload on resize (the signed index URL expires after
+60s); the canvas stretches instead.
+
+## Dev tooling
+
+Visible when run standalone on `localhost` / `127.0.0.1`; hidden when
+deployed or embedded in the site (the keys still toggle the panels):
 
 | Key | Panel |
 |---|---|
@@ -69,7 +95,8 @@ it for local serving. To build by hand:
 ```sh
 cd experiments/particle-stream
 trunk build --release                                   # served at a domain root
-trunk build --release --public-url /experiments/particle-stream/   # embedded
+trunk build --release --public-url /experiments/particle-stream/   # under that path
+trunk build --release --public-url ./                   # relative (site front end)
 ```
 
 Output is static files in `dist/` (~240 KB).
