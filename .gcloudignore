@@ -1,0 +1,12 @@
+# sent to Cloud Build: only what the Dockerfile needs
+.git/
+.claude/
+**/target/
+**/dist/
+build/
+bin/
+e2e/
+docs/
+infra/
+**/node_modules/
+**/.DS_Store
