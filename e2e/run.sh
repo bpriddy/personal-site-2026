@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# End-to-end browser tests: builds and starts the main site (:8080) and the
-# user-content service (:8081), runs Playwright, and always stops both.
+# End-to-end browser tests: builds and starts the main site (:8090) and the
+# user-content service (:8091), runs Playwright, and always stops both.
 #
 # Usage: e2e/run.sh [options] [-- playwright args...]
 #   --skip-build-frontends  don't run scripts/build-frontends.sh (reuse build/frontends)
@@ -17,7 +17,7 @@
 # "custom" phase with that rotation and all specs.
 #
 # Other env: E2E_WEBGPU_ADAPTER=gpu|swiftshader (default gpu), E2E_WORKERS,
-# E2E_MAIN_PORT / E2E_UC_PORT (default 8080 / 8081; origins follow).
+# E2E_MAIN_PORT / E2E_UC_PORT (default 8090 / 8091; origins follow).
 set -euo pipefail
 export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$HOME/.local/go/bin:$PATH"
 
@@ -27,8 +27,8 @@ RUN_DIR="$E2E_DIR/.run"
 BIN="$RUN_DIR/bin"
 LOGS="$RUN_DIR/logs"
 
-MAIN_PORT="${E2E_MAIN_PORT:-8080}"
-UC_PORT="${E2E_UC_PORT:-8081}"
+MAIN_PORT="${E2E_MAIN_PORT:-8090}"
+UC_PORT="${E2E_UC_PORT:-8091}"
 export APP_ENV=dev
 export FRONTENDS_DIR="${FRONTENDS_DIR:-$ROOT/build/frontends}"
 export MAIN_ORIGIN="http://localhost:$MAIN_PORT"
@@ -64,6 +64,18 @@ npx playwright install chromium >/dev/null || die "npx playwright install chromi
 if [[ $feasibility == 1 ]]; then
   exec npx playwright test tests/webgpu-feasibility.spec.ts "${pw_args[@]}"
 fi
+
+# any listener at all (not just HTTP) counts: never test against a foreign server
+port_busy() {
+  (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null && return 0
+  (exec 3<>"/dev/tcp/localhost/$1") 2>/dev/null
+}
+check_ports() {
+  port_busy "$MAIN_PORT" && die "port $MAIN_PORT is already in use by another process; free it or set E2E_MAIN_PORT"
+  port_busy "$UC_PORT" && die "port $UC_PORT is already in use by another process; free it or set E2E_UC_PORT"
+  return 0
+}
+check_ports # fail fast, before building
 
 # --- build the system under test
 cd "$ROOT"
@@ -102,7 +114,6 @@ stop_servers() {
 trap stop_servers EXIT
 trap 'exit 130' INT TERM
 
-port_busy() { curl -s -o /dev/null --max-time 1 "http://127.0.0.1:$1/" ; }
 
 wait_healthy() { # name url pid log
   for _ in $(seq 1 100); do
@@ -120,11 +131,10 @@ wait_healthy() { # name url pid log
 start_servers() { # phase rotation
   local phase=$1
   export FRONTEND_ROTATION=$2
-  port_busy $MAIN_PORT && die "port $MAIN_PORT is already in use; stop whatever is running there"
-  port_busy $UC_PORT && die "port $UC_PORT is already in use; stop whatever is running there"
-  PORT=$MAIN_PORT "$BIN/server" >"$LOGS/main-$phase.log" 2>&1 &
+  check_ports
+  PORT=$MAIN_PORT MAIN_ORIGIN="$MAIN_ORIGIN" USERCONTENT_ORIGIN="$USERCONTENT_ORIGIN" "$BIN/server" >"$LOGS/main-$phase.log" 2>&1 &
   pids+=($!)
-  PORT=$UC_PORT "$BIN/usercontent" >"$LOGS/usercontent-$phase.log" 2>&1 &
+  PORT=$UC_PORT MAIN_ORIGIN="$MAIN_ORIGIN" USERCONTENT_ORIGIN="$USERCONTENT_ORIGIN" "$BIN/usercontent" >"$LOGS/usercontent-$phase.log" 2>&1 &
   pids+=($!)
   wait_healthy "main site" "$MAIN_ORIGIN/healthz" "${pids[0]}" "$LOGS/main-$phase.log"
   wait_healthy "user-content" "$USERCONTENT_ORIGIN/healthz" "${pids[1]}" "$LOGS/usercontent-$phase.log"

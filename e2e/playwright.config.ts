@@ -27,7 +27,7 @@ const NO_WEBGPU_FLAGS = ["--disable-webgpu"];
 const adapter = (process.env.E2E_WEBGPU_ADAPTER ?? "gpu") as keyof typeof WEBGPU_FLAGS;
 if (!(adapter in WEBGPU_FLAGS)) throw new Error(`E2E_WEBGPU_ADAPTER must be one of ${Object.keys(WEBGPU_FLAGS)}`);
 
-const MAIN_ORIGIN = process.env.E2E_MAIN_ORIGIN ?? "http://localhost:8080";
+const MAIN_ORIGIN = process.env.E2E_MAIN_ORIGIN ?? "http://localhost:8090";
 
 export default defineConfig({
   testDir: "./tests",

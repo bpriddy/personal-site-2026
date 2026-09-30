@@ -2,8 +2,8 @@
 // (main site + user-content service, started by e2e/run.sh).
 import { test as base, expect, request as pwRequest, type Frame, type Page, type APIRequestContext } from "@playwright/test";
 
-export const MAIN = process.env.E2E_MAIN_ORIGIN ?? "http://localhost:8080";
-export const UC = process.env.E2E_USERCONTENT_ORIGIN ?? "http://127.0.0.1:8081";
+export const MAIN = process.env.E2E_MAIN_ORIGIN ?? "http://localhost:8090";
+export const UC = process.env.E2E_USERCONTENT_ORIGIN ?? "http://127.0.0.1:8091";
 export const DEFAULT_REF = "builtin/site";
 export const BUILTINS = ["builtin/site", "builtin/particle-stream"] as const;
 
