@@ -1,5 +1,6 @@
 {{define "title"}}{{.Page.Title}} · Ben Priddy{{end}}
 {{define "main"}}
 <h1>{{.Page.Title}}</h1>
-<div class="body">{{.Page.Body}}</div>
+<div class="body">{{range paragraphs .Page.Body}}<p>{{.}}</p>
+{{end}}</div>
 {{end}}

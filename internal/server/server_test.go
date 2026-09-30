@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/bpriddy/personal-site-2026/internal/config"
+	"github.com/bpriddy/personal-site-2026/internal/content"
 	"github.com/bpriddy/personal-site-2026/internal/fetoken"
 	"github.com/bpriddy/personal-site-2026/internal/frontend"
 	"github.com/bpriddy/personal-site-2026/internal/store"
@@ -323,5 +325,16 @@ func TestWWWRedirectsToMainOrigin(t *testing.T) {
 	s.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("apex got %d", rec.Code)
+	}
+}
+
+func TestBodyParagraphs(t *testing.T) {
+	s := newTestServer(t)
+	s.store.SavePage(context.Background(), content.Page{Slug: "", Title: "Ben Priddy", Body: "Coming soon.\n\nFirst <b>para</b>.\r\n\r\n\n\nSecond.", Published: true})
+	body := get(s, "/").Body.String()
+	for _, want := range []string{`<p class="lede">Coming soon.</p>`, `<p class="lede">First &lt;b&gt;para&lt;/b&gt;.</p>`, `<p class="lede">Second.</p>`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("home missing %s", want)
+		}
 	}
 }

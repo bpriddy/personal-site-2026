@@ -116,7 +116,7 @@ func parseTemplates() (map[string]*template.Template, error) {
 			if p == layout {
 				continue
 			}
-			t, err := template.ParseFS(web.FS, layout, p)
+			t, err := template.New("").Funcs(templateFuncs).ParseFS(web.FS, layout, p)
 			if err != nil {
 				return nil, err
 			}
@@ -165,4 +165,18 @@ func publicCSP(usercontentOrigin string) string {
 func (s *Server) fail(w http.ResponseWriter, msg string, err error) {
 	s.log.Error(msg, "err", err)
 	http.Error(w, "internal error", http.StatusInternalServerError)
+}
+
+var templateFuncs = template.FuncMap{
+	// paragraphs splits plain-text CMS bodies on blank lines, so the transcript
+	// keeps the same paragraphs the canvas front ends draw.
+	"paragraphs": func(body string) []string {
+		var out []string
+		for _, p := range strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n\n") {
+			if p = strings.TrimSpace(p); p != "" {
+				out = append(out, p)
+			}
+		}
+		return out
+	},
 }
