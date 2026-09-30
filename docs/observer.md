@@ -1,8 +1,15 @@
 # Content contract and the site observer
 
-Status: layers 1–3 built 2026-09-30 (the contract, containment, and the
-observer with content generation and the admin section). Front-end patching
-and revisions are still to come.
+Status (2026-09-30):
+
+- **Built:**
+  - layers 1–3: the contract, containment, and the observer with content
+    generation and the admin section;
+  - front-end revisions and the admin builder (`/admin/builder/`).
+- **Still to come:**
+  - observer patches to prompted front ends (as revisions with author
+    `observer`);
+  - the public builder.
 
 Two requirements from Ben:
 

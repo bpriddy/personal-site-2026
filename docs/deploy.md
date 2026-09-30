@@ -14,6 +14,7 @@ Google's sample image, so everything lives in `us-central1`.)
 | Artifact Registry | `us-central1-docker.pkg.dev/benpriddycom/site` | `server:<sha>`, `usercontent:<sha>` |
 | Cloud Build | SA `site-build` | may only push to the repo and write logs |
 | Secret Manager | `frontend-signing-key`, `admin-password`, `database-url`, `anthropic-api-key-never` | generated in place; never printed |
+| Cloud Storage | `benpriddycom-frontends` | prompted front-end revisions (`rev/<id>/...`), immutable; private; `site-main` has create and read only (no delete or overwrite), `site-usercontent` has read |
 | Budget | "benpriddycom monthly" | $30/month; emails at 50/90/100% |
 | Domain mappings | `benpriddy.com`, `www.benpriddy.com` → `site`; `benpriddy-usercontent.com` → `usercontent` | `www` redirects to the apex in the app |
 
@@ -23,6 +24,8 @@ Least privilege:
   `database-url`, and connect to Cloud SQL.
 - `site-usercontent` can read only `frontend-signing-key`. It has no database
   or admin access.
+- `site-main` can also read `anthropic-api-key-never` (for the builder and the
+  observer). `site-usercontent` can't.
 
 ## Ship a change
 
@@ -50,13 +53,16 @@ $G run deploy usercontent --project benpriddycom --region us-central1 --image us
 --service-account site-usercontent@benpriddycom.iam.gserviceaccount.com --allow-unauthenticated
 --set-env-vars APP_ENV=prod,MAIN_ORIGIN=https://benpriddy.com,USERCONTENT_ORIGIN=https://benpriddy-usercontent.com
 --set-secrets FRONTEND_SIGNING_KEY=frontend-signing-key:latest
+--update-env-vars FRONTENDS_BUCKET=benpriddycom-frontends
 --cpu 1 --memory 256Mi --min-instances 0 --max-instances 4
 
 # main site
 --service-account site-main@benpriddycom.iam.gserviceaccount.com --allow-unauthenticated
 --add-cloudsql-instances benpriddycom:us-central1:site-pg
 --set-env-vars APP_ENV=prod,MAIN_ORIGIN=https://benpriddy.com,USERCONTENT_ORIGIN=https://benpriddy-usercontent.com
---set-secrets FRONTEND_SIGNING_KEY=frontend-signing-key:latest,ADMIN_PASSWORD=admin-password:latest,DATABASE_URL=database-url:latest
+--set-secrets FRONTEND_SIGNING_KEY=frontend-signing-key:latest,ADMIN_PASSWORD=admin-password:latest,DATABASE_URL=database-url:latest,ANTHROPIC_API_KEY=anthropic-api-key-never:latest
+--update-env-vars FRONTENDS_BUCKET=benpriddycom-frontends
+--timeout 1800   # builder runs stream for minutes
 --cpu 1 --memory 512Mi --min-instances 0 --max-instances 4
 ```
 
