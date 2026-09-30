@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>e2e-broken</title>
+<!-- Test fixture: a front end that loads the host API, then throws on load and
+     never calls site.ready(). run.sh copies it to
+     $FRONTENDS_DIR/builtin/e2e-broken/; tests/fallback.spec.ts expects the
+     parent to fall back to builtin/site. -->
+<script src="/site-host.js"></script>
+</head>
+<body>
+<script>
+throw new Error("e2e-broken: deliberate failure on load");
+</script>
+</body>
+</html>

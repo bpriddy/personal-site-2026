@@ -1,0 +1,15 @@
+{
+  "name": "personal-site-e2e",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "feasibility": "playwright test tests/webgpu-feasibility.spec.ts",
+    "typecheck": "tsc -p ."
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "24.19.0",
+    "typescript": "5.9.3"
+  }
+}
