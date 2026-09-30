@@ -26,51 +26,90 @@ and approved front ends join a random rotation shown to all visitors.
 ## Architecture
 
 ```
-benpriddy.com (Go, trusted)                         user-content domain (untrusted)
-┌─────────────────────────────────────────┐        ┌────────────────────────────────┐
-│ transcript (CMS → HTML)                 │        │ runner page (static, generic)  │
-│ picks front end: approved rotation, or  │ iframe │  receives files via postMessage│
-│   the session's own draft               │◀─────▶│  boots them from blob: URLs    │
-│ owns URL/history, /admin, Claude API key│postMsg │  exposes the host API (site.*) │
-└─────────────────────────────────────────┘        └────────────────────────────────┘
+benpriddy.com (Go, trusted)                      user-content domain (untrusted)
+┌──────────────────────────────────────────┐    ┌─────────────────────────────────┐
+│ transcript (CMS → HTML)                  │    │ separate Cloud Run service       │
+│ picks front end: approved rotation, or   │    │ serves front-end files from GCS  │
+│   the session's own draft                │    │ at /t/<signed token>/<file>      │
+│ mints a signed URL, embeds it in a       │───▶│ verifies token on every request  │
+│   sandboxed <iframe>                     │    │ strict CSP, frame-ancestors =    │
+│ owns URL/history, /admin, Claude API key │◀──▶│   Ben's domain only              │
+└──────────────────────────────────────────┘ postMessage (host API)─────────────────┘
 ```
 
-### The runner: how "no links" is enforced
+This is the established pattern for running untrusted web code: a separate
+user-content domain plus sandboxed iframes (CodePen `cdpn.io`, JSFiddle,
+`githubusercontent.com`, `googleusercontent.com`, `claudeusercontent.com`),
+with access gated by expiring signed URLs, the same mechanism as Cloud Storage
+and S3 signed URLs. Every piece is standard browser and HTTP behavior; nothing
+depends on a custom loader.
 
-The user-content domain serves one static **runner** page and nothing else. It
-has no per-project URLs. The runner bundles the received files into the page
-(`data:` URLs through an import map, plus a `fetch` shim for relative asset
-paths), which avoids cross-origin `blob:` restrictions inside the sandbox. The
-first prototype has to prove this works, including for a trunk-built wasm
-front end.
+### Serving: separate domain, separate service
 
-1. The parent page, on Ben's domain and authenticated by the visitor's session
-   cookie, fetches the front end's files from the Go API:
-   - an approved front end from the rotation, or
-   - the session's own draft, which only that session is allowed to fetch.
-2. The parent posts the files into the runner iframe.
-3. The runner boots them from `blob:` URLs.
+- Front ends are served from a **separate registrable domain** (not a subdomain
+  of Ben's), so browsers treat it as a different site: no shared cookies or
+  storage, and no same-site privileges.
+- The user-content server is a **separate Cloud Run service**. It has read-only
+  access to the front-end bucket and one secret (the URL-signing key). It has
+  no database credentials, no admin, and no Claude API key, so even a bug in it
+  exposes nothing else.
+- Files are served as ordinary static files, so relative paths, ES modules,
+  wasm and workers behave exactly as in development. Responses carry
+  `Access-Control-Allow-Origin: *` (the sandboxed document has an opaque
+  origin, and module scripts and wasm are fetched with CORS; no credentials are
+  ever involved).
 
-A draft therefore has no address anyone could copy. It exists only as bytes
-handed from an authenticated parent page to a sandbox. Approved front ends load
-the same way, so there is one code path. Screenshots can't be prevented, but
-nothing unapproved lives at a URL on Ben's domains.
+### Access: signed, expiring URLs (how "no links" is enforced)
+
+1. The parent page, on Ben's domain, authenticates the visitor by their session
+   cookie and decides what they may see: an approved front end, or their own
+   draft. It never mints a URL for someone else's draft.
+2. It mints a URL for that front end,
+   `https://<usercontent>/t/<token>/index.html`. The token is an HMAC-signed
+   `{front end or draft revision id, issued-at}`. It lives in the path so every
+   relative subresource URL carries it automatically.
+3. The user-content server verifies the signature on every request and serves
+   only files of that front end:
+   - `index.html` only within **60 seconds** of issue;
+   - other files within 30 minutes (for lazy-loaded assets).
+4. The page can only load inside Ben's iframe:
+   - `Content-Security-Policy: frame-ancestors <Ben's domain>` blocks
+     embedding on any other site;
+   - `index.html` is refused unless the browser's Fetch Metadata header says
+     `Sec-Fetch-Dest: iframe`, so opening the URL in a tab gets nothing.
+5. `Referrer-Policy: no-referrer` keeps tokens out of referrers.
+
+A copied URL is dead within a minute, can't be opened directly or embedded
+elsewhere, and is only ever minted for the owning session. Screenshots can't be prevented, but no
+unapproved creation is reachable by link.
 
 ### Sandbox
 
 - `<iframe sandbox="allow-scripts">`: no `allow-same-origin`, `allow-forms`,
-  `allow-top-navigation`, `allow-popups` or `allow-modals`. That blocks cookie
-  access, fake login forms, redirects and popups.
-- Runner CSP: `default-src 'none'`; scripts, styles, images, workers and wasm
-  only from `data:`/`blob:` and the runner's own origin; no `connect-src` to
-  the outside world.
-- The user-content domain is a separate registrable domain, so it shares no
-  cookies with Ben's domain.
+  `allow-top-navigation`, `allow-popups` or `allow-modals`. Each front end runs
+  in a unique opaque origin: no cookies or storage, and it can't read any other
+  front end. It also can't submit forms (no fake logins), redirect the page, or
+  open popups.
+- Response CSP from the user-content server:
+  - `sandbox allow-scripts`, the same restrictions as the iframe attribute but
+    enforced by the server, so they apply however the page is reached;
+  - `default-src 'self'`, and `script-src 'self' 'wasm-unsafe-eval'`, so code
+    runs only from the front end's own files;
+  - `connect-src 'self'`, so no calls to outside servers and no data
+    exfiltration;
+  - `frame-ancestors` restricted to Ben's domain.
 - The parent watches for failure: if there's no `ready` message within a
   timeout, or an uncaught error or lost GPU device is reported, it swaps in the
   default front end.
+- Built-in front ends (Rust `site/`, particle-stream) are served the same way,
+  so they must use relative asset paths (trunk `--public-url ./`).
 
 ### Host API (inside the iframe, over postMessage)
+
+Front ends load the host API with `<script src="/site-host.js">`, a fixed
+script served by the user-content service itself (not part of the project), so
+every front end speaks the same protocol. The parent only accepts messages whose
+`event.source` is the iframe it created.
 
 | API | Purpose |
 |---|---|
@@ -91,7 +130,8 @@ same host API as **built-in front ends**. `site/` is the default and the fallbac
    (`claude-opus-5-5`, adaptive thinking, streamed to the browser over SSE). The
    API key never reaches the browser. The model edits a multi-file project
    through file tools (write file, replace text in a file).
-3. **Preview:** after each edit the builder reloads the draft in the runner.
+3. **Preview:** after each edit the builder reloads the draft in the sandboxed
+   iframe with a freshly signed URL.
    Console errors, exceptions and WebGPU validation errors are sent back to the
    model automatically so it can repair them.
 4. **View live:** the session sees the whole site with its draft as the front
@@ -162,7 +202,10 @@ Unsubmitted drafts are purged 30 days after their last activity.
   lands.
 - **Files:** a Cloud Storage bucket for project files, snapshots and thumbnails.
 - **User-content domain:** a separate registrable domain, e.g.
-  `<main-domain>-usercontent.com`. Never a subdomain of the main site.
+  `<main-domain>-usercontent.com`, served by its own Cloud Run service. Never a
+  subdomain of the main site.
+- **Running front ends:** real files on the user-content domain, sandboxed
+  iframe, strict CSP, HMAC-signed expiring URLs (see Architecture).
 - **Region:** `us-east1` for Cloud Run, Cloud SQL and the bucket.
 - **GCP project:** a new, dedicated project for the site.
 - **Admin auth:** Google sign-in inside the app, restricted to an allowlist of
