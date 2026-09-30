@@ -1,5 +1,6 @@
-// Command server runs the personal site: public pages, the /admin CMS, and the
-// static experiments under /experiments/<slug>/.
+// Command server runs the personal site: public pages (the HTML transcript plus
+// the front-end host, which embeds a front end from the user-content service),
+// the /api endpoints, and the /admin CMS.
 package main
 
 import (

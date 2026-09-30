@@ -6,20 +6,14 @@
   <title>{{block "title" .}}Ben Priddy{{end}}</title>
   <meta name="description" content="{{block "description" .}}Ben Priddy{{end}}">
   <link rel="stylesheet" href="/static/site.css">
-  {{- if .Site.Built}}
-  <script>if (navigator.gpu) document.documentElement.className = "gpu";</script>
-  <script type="module">
-    import init from "/site/site.js?v={{.Site.Version}}";
-    init({ module_or_path: "/site/site_bg.wasm?v={{.Site.Version}}" });
-  </script>
-  {{- end}}
+  {{/* loads the visitor's front end in a sandboxed iframe (docs/frontend-protocol.md) */}}
+  <script src="/static/frontend-host.js" defer></script>
 </head>
 <body class="public">
-  {{/* the wasm app draws here; hidden from assistive tech, which reads the transcript */}}
-  <canvas id="stage" aria-hidden="true"></canvas>
-  {{/* transcript: the CMS content as semantic HTML. Visually hidden under .gpu,
-       always present for search engines and screen readers, and the whole site
-       for browsers without WebGPU. */}}
+  {{/* transcript: the CMS content as semantic HTML. Visually hidden while a
+       front end loads or runs (html.fe-loading / html.fe-live), always present
+       for search engines and screen readers, and the whole site when no front
+       end can run. */}}
   <div id="transcript">
     <header class="site-header">
       <a class="brand" href="/">Ben Priddy</a>
