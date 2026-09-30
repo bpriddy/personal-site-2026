@@ -16,7 +16,7 @@ type Rotation []Ref
 var DefaultRotation = Rotation{DefaultRef, "builtin/particle-stream"}
 
 // RotationEnv names the env var that overrides DefaultRotation: comma-separated
-// refs, each of which must pass Valid. Unset or empty means DefaultRotation.
+// front-end IDs, each of which must pass ValidID. Unset or empty means DefaultRotation.
 // It exists so tests (e.g. e2e) can pin the rotation to a known front end.
 const RotationEnv = "FRONTEND_ROTATION"
 
@@ -29,7 +29,7 @@ func ParseRotation(s string) (Rotation, error) {
 		if ref == "" {
 			return nil, errors.New("frontend: empty ref in rotation")
 		}
-		if !Valid(ref) {
+		if !ValidID(ref) {
 			return nil, fmt.Errorf("frontend: invalid ref %q in rotation", ref)
 		}
 		if !slices.Contains(out, ref) {

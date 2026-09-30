@@ -10,6 +10,7 @@ func TestParseRotation(t *testing.T) {
 		"builtin/site": {"builtin/site"},
 		" builtin/site , builtin/particle-stream ": {"builtin/site", "builtin/particle-stream"},
 		"builtin/a,builtin/a":                      {"builtin/a"},
+		"builtin/site,fe/mine":                     {"builtin/site", "fe/mine"},
 	}
 	for in, want := range good {
 		got, err := ParseRotation(in)
@@ -17,7 +18,7 @@ func TestParseRotation(t *testing.T) {
 			t.Errorf("ParseRotation(%q) = %v, %v; want %v", in, got, err, want)
 		}
 	}
-	for _, bad := range []string{"", ",", "builtin/site,", "builtin/site,,builtin/x", "builtin/Site", "draft/1/2", "builtin/../x"} {
+	for _, bad := range []string{"", ",", "builtin/site,", "builtin/site,,builtin/x", "builtin/Site", "draft/1/2", "builtin/../x", "rev/abcd1234"} {
 		if r, err := ParseRotation(bad); err == nil {
 			t.Errorf("ParseRotation(%q) = %v, want error", bad, r)
 		}

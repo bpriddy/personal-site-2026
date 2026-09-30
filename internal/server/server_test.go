@@ -94,7 +94,8 @@ func TestAPIFrontendURLAndToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Ref != fe.Ref || !c.Issued.Equal(issued) {
+	// built-ins serve themselves: ref (front-end ID) == serve (token ref)
+	if c.Ref != fe.Serve || fe.Serve != fe.Ref || !c.Issued.Equal(issued) {
 		t.Errorf("claims = %+v", c)
 	}
 	if _, err := fetoken.Verify([]byte("other"), tok); err == nil {

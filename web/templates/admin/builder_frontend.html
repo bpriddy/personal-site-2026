@@ -1,0 +1,96 @@
+{{define "title"}}{{.FE.Title}} · Builder{{end}}
+{{define "main"}}
+<link rel="stylesheet" href="/static/builder.css">
+<script src="/static/builder-preview.js" defer></script>
+{{if not .Builtin}}<script src="/static/builder.js" defer></script>{{end}}
+<div class="builder builder-wide">
+<p><a href="/admin/builder/">← Builder</a></p>
+<header class="b-head">
+  <h1>{{.FE.Title}} <code>{{.FE.ID}}</code></h1>
+  <div class="b-status">
+    {{if .FE.InRotation}}<span class="b-badge b-on">In rotation</span>{{else}}<span class="b-badge">Not in rotation</span>{{end}}
+    {{if not .Builtin}}{{if .FE.ActiveRevision}}<span class="b-badge">Active: {{range .Revisions}}{{if .Active}}r{{.Number}}{{end}}{{end}}</span>{{else}}<span class="b-badge">No active revision</span>{{end}}{{end}}
+    <form method="post" action="/admin/builder/rotation" class="b-inline">
+      <input type="hidden" name="id" value="{{.FE.ID}}">
+      <input type="hidden" name="back" value="{{.Self}}">
+      {{if .FE.InRotation}}<input type="hidden" name="in_rotation" value="0"><button>Remove from rotation</button>
+      {{else}}<input type="hidden" name="in_rotation" value="1"><button {{if and (not .Builtin) (not .FE.ActiveRevision)}}disabled title="Make a revision active first"{{end}}>Add to rotation</button>{{end}}
+    </form>
+  </div>
+</header>
+{{if .RotationOverridden}}<p class="b-notice"><strong>FRONTEND_ROTATION is set:</strong> it overrides the rotation.</p>{{end}}
+
+<div class="b-grid">
+  <section class="b-preview-col">
+    <div class="b-preview-bar">
+      <strong>Preview</strong>
+      {{if .Selected}}<span>r{{.Selected.Number}}{{if .Selected.Active}} (active){{end}}</span>{{end}}
+      <span class="b-route">route: <code id="preview-route">/</code></span>
+      <button type="button" id="preview-home">Home</button>
+      <button type="button" id="preview-reload">Reload</button>
+      <span id="preview-state" class="b-muted">idle</span>
+    </div>
+    {{if .PreviewRef}}
+    <div id="preview" class="b-preview" data-ref="{{.PreviewRef}}" data-frontend="{{.FE.ID}}" data-state="idle"></div>
+    <ol id="preview-log" class="b-log" aria-live="polite"></ol>
+    {{else}}
+    <div class="b-preview b-empty"><p>No revisions yet. Describe the front end you want in the chat, and the first revision will appear here.</p></div>
+    {{end}}
+  </section>
+
+  {{if not .Builtin}}
+  <section class="b-chat-col">
+    <h2>Chat</h2>
+    {{if .Disabled}}<p class="b-notice">{{.Disabled}}</p>{{end}}
+    {{if .Running}}<p class="b-notice">A chat run is in progress for this front end. Reload when it finishes.</p>{{end}}
+    <ol id="chat" class="b-chat">
+      {{range .Conversation}}<li class="b-turn b-{{.Role}}">
+        <div class="b-who">{{if eq .Role "user"}}Ben{{else}}Claude{{end}}</div>
+        {{range paragraphs .Text}}<p>{{.}}</p>{{end}}
+        {{if .Actions}}<div class="b-actions">{{range .Actions}}<code>{{.}}</code> {{end}}</div>{{end}}
+      </li>{{end}}
+    </ol>
+    {{range .Runs}}<p class="b-error">Run {{.StartedAt.Format "Jan 2 15:04"}} {{.Status}}: “{{.Prompt}}”{{if .Error}} — {{.Error}}{{end}}</p>{{end}}
+    <form id="chat-form" class="stack" data-action="/admin/builder/fe/{{.Slug}}/chat" data-parent="{{with .Selected}}{{.ID}}{{end}}" data-slug="{{.Slug}}">
+      <label>{{if .Selected}}Reprompt from r{{.Selected.Number}}{{else}}Describe your front end{{end}}
+        <textarea name="prompt" rows="5" required placeholder="{{if .Selected}}What should change?{{else}}e.g. A minimal, elegant dark page with my name large and my pages listed; a subtle animated WebGPU background if available{{end}}" {{if .Disabled}}disabled{{end}}></textarea>
+      </label>
+      <button {{if .Disabled}}disabled{{end}}>{{if .Selected}}Send (new revision from r{{.Selected.Number}}){{else}}Create first revision{{end}}</button>
+    </form>
+    <div id="chat-stream" class="b-stream" hidden>
+      <div id="chat-status" class="b-muted"></div>
+      <div id="chat-thinking" class="b-thinking"></div>
+      <div id="chat-text" class="b-text"></div>
+      <ol id="chat-tools" class="b-tools"></ol>
+    </div>
+  </section>
+  {{end}}
+</div>
+
+{{if not .Builtin}}
+<section>
+  <h2>Revisions</h2>
+  {{if .Revisions}}
+  <table class="b-table b-revs">
+    <tr><th>Rev</th><th>Created</th><th>Author</th><th>Summary</th><th>Files</th><th></th></tr>
+    {{range .Revisions}}<tr class="{{if .Selected}}b-selected{{end}}">
+      <td>r{{.Number}}{{if .Active}} <span class="b-badge b-on">active</span>{{end}}{{if .ParentNumber}}<br><span class="b-muted">from r{{.ParentNumber}}</span>{{end}}</td>
+      <td>{{.CreatedAt.Format "Jan 2 15:04"}}</td>
+      <td>{{.Author}}</td>
+      <td>{{.Summary}}</td>
+      <td>{{$id := .ID}}{{range .Files}}<a href="/admin/builder/rev/{{$id}}/{{.Path}}" target="_blank" rel="noopener">{{.Path}}</a> <span class="b-muted">{{.Size}}B</span><br>{{end}}</td>
+      <td class="b-rev-actions">
+        <a href="?rev={{.ID}}">{{if .Selected}}Previewing{{else}}Preview / reprompt{{end}}</a>
+        {{if not .Active}}<form method="post" action="/admin/builder/fe/{{$.Slug}}/activate">
+          <input type="hidden" name="rev" value="{{.ID}}">
+          <button>{{if $.FE.ActiveRevision}}Make active{{else}}Make active (publish){{end}}</button>
+        </form>{{end}}
+      </td>
+    </tr>{{end}}
+  </table>
+  <p class="b-muted">Make active publishes a revision (visitors get it once the front end is in the rotation). Making an older revision active is a rollback; nothing is ever deleted.</p>
+  {{else}}<p class="b-muted">None yet.</p>{{end}}
+</section>
+{{end}}
+</div>
+{{end}}

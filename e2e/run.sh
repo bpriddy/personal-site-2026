@@ -5,7 +5,7 @@
 # Usage: e2e/run.sh [options] [-- playwright args...]
 #   --skip-build-frontends  don't run scripts/build-frontends.sh (reuse build/frontends)
 #   --slow                  also run @slow tests (token expiry, ~61s)
-#   --phase NAME            run only this phase (repeatable): site, particle-stream, broken
+#   --phase NAME            run only this phase (repeatable): site, particle-stream, broken, prompted
 #   --feasibility           only the standalone WebGPU feasibility test (no servers)
 #
 # The main site's FRONTEND_ROTATION picks the front end, so the suite runs in
@@ -13,6 +13,7 @@
 #   site             FRONTEND_ROTATION=builtin/site             all specs
 #   particle-stream  FRONTEND_ROTATION=builtin/particle-stream  ready + navigation
 #   broken           FRONTEND_ROTATION=builtin/e2e-broken       fallback + its observer report
+#   prompted         (unset: rotation from the store)            builder-published front end
 # If FRONTEND_ROTATION is already set in the environment, it runs a single
 # "custom" phase with that rotation and all specs.
 #
@@ -130,7 +131,7 @@ wait_healthy() { # name url pid log
 
 start_servers() { # phase rotation
   local phase=$1
-  export FRONTEND_ROTATION=$2
+  if [[ $2 == store ]]; then unset FRONTEND_ROTATION; else export FRONTEND_ROTATION=$2; fi
   check_ports
   PORT=$MAIN_PORT MAIN_ORIGIN="$MAIN_ORIGIN" USERCONTENT_ORIGIN="$USERCONTENT_ORIGIN" "$BIN/server" >"$LOGS/main-$phase.log" 2>&1 &
   pids+=($!)
@@ -144,23 +145,25 @@ declare -A ROTATION_OF=(
   [site]=builtin/site
   [particle-stream]=builtin/particle-stream
   [broken]=builtin/e2e-broken
+  [prompted]=store
 )
 declare -A SPECS_OF=(
   [site]=""
   [particle-stream]="tests/builtins-ready.spec.ts tests/navigation.spec.ts"
   [broken]="tests/fallback.spec.ts tests/contract.spec.ts"
+  [prompted]="tests/prompted.spec.ts"
   [custom]=""
 )
 if [[ -n "${FRONTEND_ROTATION:-}" ]]; then
   ROTATION_OF[custom]=$FRONTEND_ROTATION
   phases=(custom)
 elif [[ ${#phases[@]} -eq 0 ]]; then
-  phases=(site particle-stream broken)
+  phases=(site particle-stream broken prompted)
 fi
 
 failed=()
 for phase in "${phases[@]}"; do
-  [[ -n "${ROTATION_OF[$phase]:-}" ]] || die "unknown phase $phase (site, particle-stream, broken)"
+  [[ -n "${ROTATION_OF[$phase]:-}" ]] || die "unknown phase $phase (site, particle-stream, broken, prompted)"
   step "phase $phase: FRONTEND_ROTATION=${ROTATION_OF[$phase]}"
   start_servers "$phase" "${ROTATION_OF[$phase]}"
   cd "$E2E_DIR"

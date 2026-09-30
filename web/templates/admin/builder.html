@@ -1,0 +1,51 @@
+{{define "title"}}Builder · Admin{{end}}
+{{define "main"}}
+<link rel="stylesheet" href="/static/builder.css">
+<div class="builder">
+<h1>Front-end builder</h1>
+{{if .Error}}<p class="b-error" role="alert">{{.Error}}</p>{{end}}
+{{if .Disabled}}<p class="b-notice">{{.Disabled}}</p>{{end}}
+{{if .RotationOverridden}}<p class="b-notice"><strong>FRONTEND_ROTATION is set:</strong> it overrides the rotation toggles below.</p>{{end}}
+<p>Visitors see one front end from the rotation at random per visit. A prompted front end serves its <em>active</em> revision; <code>builtin/site</code> is always the fallback.</p>
+
+<section>
+  <h2>Prompted front ends</h2>
+  {{if .Prompted}}
+  <table class="b-table">
+    <tr><th>Front end</th><th>Revisions</th><th>Active</th><th>In rotation</th><th></th></tr>
+    {{range .Prompted}}<tr>
+      <td><a href="{{.Href}}">{{.Title}}</a><br><code>{{.ID}}</code></td>
+      <td>{{.Revisions}}</td>
+      <td>{{with .Active}}r{{.Number}} <span class="b-muted">{{.CreatedAt.Format "Jan 2 15:04"}}</span>{{else}}<span class="b-muted">none yet</span>{{end}}</td>
+      <td>{{if .InRotation}}yes{{if not .Servable}} <span class="b-muted">(not served: no active revision)</span>{{end}}{{else}}no{{end}}</td>
+      <td>{{template "rotation-toggle" .}}</td>
+    </tr>{{end}}
+  </table>
+  {{else}}<p class="b-muted">None yet.</p>{{end}}
+  <form method="post" action="/admin/builder/new" class="inline b-new">
+    <input name="title" placeholder="Name, e.g. Night sky" required maxlength="200" aria-label="Name">
+    <input name="slug" placeholder="slug, e.g. night-sky" required pattern="[a-z0-9][a-z0-9\-]*" maxlength="63" aria-label="Slug">
+    <button>New front end</button>
+  </form>
+</section>
+
+<section>
+  <h2>Built-in front ends</h2>
+  <table class="b-table">
+    <tr><th>Front end</th><th>In rotation</th><th></th></tr>
+    {{range .Builtins}}<tr>
+      <td><a href="{{.Href}}">{{.Title}}</a><br><code>{{.ID}}</code></td>
+      <td>{{if .InRotation}}yes{{else}}no{{end}}</td>
+      <td>{{template "rotation-toggle" .}}</td>
+    </tr>{{end}}
+  </table>
+</section>
+</div>
+{{end}}
+
+{{define "rotation-toggle"}}<form method="post" action="/admin/builder/rotation">
+  <input type="hidden" name="id" value="{{.ID}}">
+  <input type="hidden" name="back" value="/admin/builder/">
+  {{if .InRotation}}<input type="hidden" name="in_rotation" value="0"><button>Remove from rotation</button>
+  {{else}}<input type="hidden" name="in_rotation" value="1"><button {{if not .Servable}}disabled title="Make a revision active first"{{end}}>Add to rotation</button>{{end}}
+</form>{{end}}

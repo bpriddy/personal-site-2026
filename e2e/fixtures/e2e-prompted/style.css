@@ -1,0 +1,3 @@
+body { margin: 0; padding: 2rem; font: 18px/1.5 system-ui, sans-serif; background: #10131a; color: #e8ecf4; }
+nav { display: flex; gap: 1rem; margin-bottom: 2rem; }
+a { color: #8fb4ff; }

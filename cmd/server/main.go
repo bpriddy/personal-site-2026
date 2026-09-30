@@ -14,9 +14,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/bpriddy/personal-site-2026/internal/builder"
 	"github.com/bpriddy/personal-site-2026/internal/config"
 	"github.com/bpriddy/personal-site-2026/internal/llm"
 	"github.com/bpriddy/personal-site-2026/internal/observer"
+	"github.com/bpriddy/personal-site-2026/internal/revfiles"
 	"github.com/bpriddy/personal-site-2026/internal/server"
 	"github.com/bpriddy/personal-site-2026/internal/store"
 )
@@ -50,6 +52,25 @@ func main() {
 		log.Warn("store: in-memory (DATABASE_URL unset); edits are lost on restart")
 	}
 
+	// builder: revision files in FRONTENDS_BUCKET (prod) or FRONTENDS_DIR/rev
+	// (dev); chat needs ANTHROPIC_API_KEY
+	var files revfiles.Store = revfiles.NewDir(cfg.FrontendsDir)
+	if cfg.FrontendsBucket != "" {
+		gcs, err := revfiles.NewGCS(context.Background(), cfg.FrontendsBucket)
+		if err != nil {
+			log.Error("frontends bucket", "err", err)
+			os.Exit(1)
+		}
+		files = gcs
+		log.Info("revisions: cloud storage", "bucket", cfg.FrontendsBucket)
+	}
+	var agent *builder.Builder
+	if client := llm.NewClient(cfg.AnthropicAPIKey); client != nil {
+		agent = builder.New(builder.ClaudeModel{Client: client}, builder.Config{Model: llm.Model, Fallbacks: true})
+	} else {
+		log.Warn("builder: ANTHROPIC_API_KEY unset; builder chat disabled")
+	}
+
 	// Cloud Run sends SIGTERM before stopping an instance
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -57,7 +78,7 @@ func main() {
 	obs := newObserver(cfg, st, obsStore, log)
 	obs.Start(ctx)
 
-	srv, err := server.New(cfg, st, log, server.WithObserver(obs))
+	srv, err := server.New(cfg, st, log, server.WithObserver(obs), server.WithBuilder(agent, files))
 	if err != nil {
 		log.Error("server", "err", err)
 		os.Exit(1)

@@ -27,10 +27,23 @@ func main() {
 		os.Exit(1)
 	}
 
+	// built-ins ship in the image (FRONTENDS_DIR); revisions of prompted front
+	// ends come from FRONTENDS_BUCKET when set, else from FRONTENDS_DIR/rev/
+	var src usercontent.FileSource = usercontent.NewDirSource(cfg.FrontendsDir)
+	if cfg.FrontendsBucket != "" {
+		gs, err := usercontent.NewGCSSource(context.Background(), cfg.FrontendsBucket, src)
+		if err != nil {
+			log.Error("frontends bucket", "err", err)
+			os.Exit(1)
+		}
+		src = gs
+		log.Info("revisions: cloud storage", "bucket", cfg.FrontendsBucket)
+	}
+
 	h, err := usercontent.New(usercontent.Options{
 		SigningKey: cfg.SigningKey,
 		MainOrigin: cfg.MainOrigin,
-		Source:     usercontent.NewDirSource(cfg.FrontendsDir),
+		Source:     src,
 		Log:        log,
 	})
 	if err != nil {

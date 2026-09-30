@@ -17,6 +17,7 @@ type Memory struct {
 	pages       map[string]content.Page
 	experiments map[string]content.Experiment
 	frontends   map[string]content.Frontend
+	builder     memBuilder // builder_memory.go
 }
 
 func NewMemory() *Memory {
