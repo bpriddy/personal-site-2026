@@ -136,8 +136,8 @@ start_servers() { # phase rotation
   pids+=($!)
   PORT=$UC_PORT MAIN_ORIGIN="$MAIN_ORIGIN" USERCONTENT_ORIGIN="$USERCONTENT_ORIGIN" "$BIN/usercontent" >"$LOGS/usercontent-$phase.log" 2>&1 &
   pids+=($!)
-  wait_healthy "main site" "$MAIN_ORIGIN/healthz" "${pids[0]}" "$LOGS/main-$phase.log"
-  wait_healthy "user-content" "$USERCONTENT_ORIGIN/healthz" "${pids[1]}" "$LOGS/usercontent-$phase.log"
+  wait_healthy "main site" "$MAIN_ORIGIN/health" "${pids[0]}" "$LOGS/main-$phase.log"
+  wait_healthy "user-content" "$USERCONTENT_ORIGIN/health" "${pids[1]}" "$LOGS/usercontent-$phase.log"
 }
 
 declare -A ROTATION_OF=(

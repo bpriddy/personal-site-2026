@@ -70,7 +70,7 @@ func (s *Server) routes() {
 	s.mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(static)))
 	s.mux.HandleFunc("GET /api/site.json", s.siteJSON)
 	s.mux.HandleFunc("GET /api/frontend", s.apiFrontend)
-	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
+	s.mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 
 	s.mux.HandleFunc("GET /{$}", s.home)
 	// both spellings: front ends navigate by slug ("experiments" → /experiments)

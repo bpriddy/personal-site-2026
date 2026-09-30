@@ -34,7 +34,7 @@ Local dev: main site `http://localhost:8090`, user-content
 |---|---|
 | `GET /t/{token}/{path...}` | verify the token → valid ref → serve `<ref>/<path>` |
 | `GET /site-host.js` | the host API script (`web/usercontent`), with `__MAIN_ORIGIN__` replaced |
-| `GET /healthz` | `ok` |
+| `GET /health` | `ok` (not `/healthz`: Cloud Run reserves paths ending in `z`) |
 | anything else | 404 |
 
 Rules for `/t/`:

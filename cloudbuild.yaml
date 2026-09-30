@@ -1,11 +1,11 @@
 # Builds and pushes both images. Run from the repo root:
 #   gcloud builds submit --config cloudbuild.yaml --project benpriddycom \
-#     --region us-east1 --service-account projects/benpriddycom/serviceAccounts/site-build@benpriddycom.iam.gserviceaccount.com \
+#     --region us-central1 --service-account projects/benpriddycom/serviceAccounts/site-build@benpriddycom.iam.gserviceaccount.com \
 #     --substitutions _TAG=$(git rev-parse --short HEAD) --async
 # (--async: with a custom service account gcloud cannot stream the logs; watch
-#  them with `gcloud builds log --stream <id> --region us-east1` or in the console)
+#  them with `gcloud builds log --stream <id> --region us-central1` or in the console)
 substitutions:
-  _REPO: us-east1-docker.pkg.dev/benpriddycom/site
+  _REPO: us-central1-docker.pkg.dev/benpriddycom/site
   _TAG: latest
 steps:
   - id: server

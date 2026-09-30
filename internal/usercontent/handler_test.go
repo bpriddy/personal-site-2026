@@ -349,16 +349,16 @@ func TestMissingFile(t *testing.T) {
 func TestOtherRoutes(t *testing.T) {
 	h, _ := newHandler(t)
 	for _, p := range []string{"/", "/index.html", "/t", "/t/", "/t/" + tok("builtin/demo", t0),
-		"/builtin/demo/index.html", "/secret.txt", "/healthz/", "/site-host.js/x", "/favicon.ico"} {
+		"/builtin/demo/index.html", "/secret.txt", "/health/", "/site-host.js/x", "/favicon.ico"} {
 		if w := do(h, p, iframe); w.Code != 404 {
 			t.Errorf("%s: code %d, want 404", p, w.Code)
 		} else {
 			noLeak(t, w)
 		}
 	}
-	w := do(h, "/healthz", nil)
+	w := do(h, "/health", nil)
 	if w.Code != 200 || w.Body.String() != "ok" {
-		t.Errorf("healthz: %d %q", w.Code, w.Body.String())
+		t.Errorf("health: %d %q", w.Code, w.Body.String())
 	}
 	r := httptest.NewRequest(http.MethodPost, "/t/"+tok("builtin/demo", t0)+"/app.js", nil)
 	rec := httptest.NewRecorder()

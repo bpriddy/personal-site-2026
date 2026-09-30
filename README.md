@@ -110,10 +110,10 @@ Main site:
 | `/api/frontend` | this visit's front end: `{ref, url}` with a fresh signed URL |
 | `/api/site.json` | published CMS content (sent to front ends) |
 | `/admin/` | CMS: pages, experiment listings, front-end rotation |
-| `/healthz` | health check |
+| `/health` | health check |
 
 User-content service: `/t/<token>/...` (front-end files), `/site-host.js`,
-`/healthz`.
+`/health`.
 
 ## Hosting
 

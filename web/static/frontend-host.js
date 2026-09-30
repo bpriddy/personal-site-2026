@@ -9,14 +9,14 @@
 // trimmed, so "/" → "", "/about" → "about", "/experiments/" → "experiments",
 // "/experiments/foo" → "experiments/foo". A navigate slug maps back to
 // "/" + slug. Slugs must be lowercase [a-z0-9-] segments joined by "/", and
-// may not start with a server-reserved segment (admin, api, static, healthz).
+// may not start with a server-reserved segment (admin, api, static, health).
 (function () {
   "use strict";
 
   var DEFAULT_REF = "builtin/site";
   var READY_TIMEOUT_MS = 10000;
   var SLUG_RE = /^[a-z0-9][a-z0-9-]*(\/[a-z0-9][a-z0-9-]*)*$/;
-  var RESERVED = { admin: true, api: true, "static": true, healthz: true };
+  var RESERVED = { admin: true, api: true, "static": true, health: true };
 
   var root = document.documentElement;
   var iframe = null; // the current front end's iframe

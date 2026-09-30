@@ -223,8 +223,8 @@ func TestPublicPages(t *testing.T) {
 
 func TestOtherRoutes(t *testing.T) {
 	s := newTestServer(t)
-	if rec := get(s, "/healthz"); rec.Code != 200 || rec.Body.String() != "ok" {
-		t.Errorf("healthz: %d %q", rec.Code, rec.Body)
+	if rec := get(s, "/health"); rec.Code != 200 || rec.Body.String() != "ok" {
+		t.Errorf("health: %d %q", rec.Code, rec.Body)
 	}
 	rec := get(s, "/api/site.json")
 	var site struct {

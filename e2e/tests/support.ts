@@ -78,10 +78,10 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
       const ctx = await pwRequest.newContext();
       for (const origin of [MAIN, UC]) {
         const ok = await ctx
-          .get(`${origin}/healthz`, { timeout: 3_000 })
+          .get(`${origin}/health`, { timeout: 3_000 })
           .then((r) => r.ok())
           .catch(() => false);
-        if (!ok) throw new Error(`system under test not reachable at ${origin}/healthz; start it with e2e/run.sh`);
+        if (!ok) throw new Error(`system under test not reachable at ${origin}/health; start it with e2e/run.sh`);
       }
       await ctx.dispose();
       await use();

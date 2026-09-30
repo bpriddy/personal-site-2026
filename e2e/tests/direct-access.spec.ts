@@ -57,14 +57,14 @@ test("forged or tampered tokens get 403", async ({ request }) => {
   }
 });
 
-test("user-content service: /site-host.js, /healthz, 404s", async ({ request }) => {
+test("user-content service: /site-host.js, /health, 404s", async ({ request }) => {
   const js = await request.get(`${UC}/site-host.js`);
   expect(js.status()).toBe(200);
   const text = await js.text();
   expect(text).not.toContain("__MAIN_ORIGIN__");
   expect(text).toContain(MAIN);
   expect(js.headers()["access-control-allow-origin"]).toBe("*");
-  expect((await request.get(`${UC}/healthz`)).status()).toBe(200);
+  expect((await request.get(`${UC}/health`)).status()).toBe(200);
   expect((await request.get(`${UC}/`)).status()).toBe(404);
   expect((await request.get(`${UC}/nope`)).status()).toBe(404);
 

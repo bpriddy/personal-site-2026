@@ -127,7 +127,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		hd.Set("Cache-Control", cacheSiteHost)
 		hd.Set("Content-Length", strconv.Itoa(len(h.siteHost)))
 		w.Write(h.siteHost)
-	case p == "/healthz":
+	case p == "/health":
 		if !allowMethod(w, r) {
 			return
 		}
