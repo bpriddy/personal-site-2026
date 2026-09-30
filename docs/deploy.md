@@ -80,3 +80,35 @@ version, then View secret value. Or from a terminal:
   falls back to the HTML transcript. That's expected; use the real domain.
 - Domain-mapping TLS certificates are only issued once DNS points at Google;
   expect 15–60 minutes after the DNS change.
+
+## Load balancer (built 2026-09-30, DNS not yet switched)
+
+A global external Application Load Balancer, the long-term replacement for
+the Cloud Run domain mappings (a preview feature, and slow to issue
+certificates):
+
+| Piece | Name |
+|---|---|
+| IPs | `site-lb-ip` 136.81.164.119, `site-lb-ipv6` 2600:1901:0:8020:: |
+| Certificates (Certificate Manager, DNS-authorized) | `site-cert` (benpriddy.com, *.benpriddy.com), `uc-cert` (benpriddy-usercontent.com), map `site-cert-map` |
+| Backends | `site-backend` → NEG `site-neg` → Cloud Run `site`; `usercontent-backend` → `usercontent-neg` → `usercontent` |
+| Routing | URL map `site-urlmap`, by host; `site-http-redirect` sends port 80 to HTTPS |
+| Frontends | forwarding rules `site-https-v4/v6` (443) and `site-http-v4/v6` (80) |
+
+DNS authorization records (CNAMEs at GoDaddy, needed for certificate issuance
+and harmless to live traffic):
+
+- `_acme-challenge.benpriddy.com` →
+  `61053e2e-b37c-4bb9-8220-dfd7ea89f569.8.authorize.certificatemanager.goog.`
+- `_acme-challenge.benpriddy-usercontent.com` →
+  `c4ef7035-e1fc-45f3-8122-3c405ca6779e.3.authorize.certificatemanager.goog.`
+
+Cutover, once both certificates are ACTIVE and the LB is tested by IP:
+
+1. Replace the Google A/AAAA records on both apexes with `136.81.164.119` /
+   `2600:1901:0:8020::`.
+2. Change `www` to an A record `136.81.164.119` plus AAAA
+   `2600:1901:0:8020::` (the certificate covers `*.benpriddy.com`).
+3. After DNS settles, delete the three Cloud Run domain mappings.
+4. Set both services to `--ingress internal-and-cloud-load-balancing`, so they
+   can only be reached through the LB.
