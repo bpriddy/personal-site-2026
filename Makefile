@@ -1,24 +1,37 @@
-# Local dev. Requires Go; `site` and `experiments` also need Rust + the wasm32
-# target + trunk (and a C toolchain for build scripts).
-.PHONY: run build vet site site-watch experiments docker
+# Local dev. Requires Go; `frontends` also needs Rust + the wasm32 target + trunk
+# and a C toolchain (scripts/dev-setup.sh installs all of it without root).
+.PHONY: dev run run-usercontent build vet test frontends e2e docker
 
-run: ## run the server on :8080 (admin login admin/dev)
-	go run ./cmd/server
+export PATH := $(HOME)/.local/bin:$(HOME)/.cargo/bin:$(HOME)/.local/go/bin:$(PATH)
+
+dev: ## main site on :8080 + user-content service on :8081 (admin login admin/dev)
+	@trap 'kill 0' INT TERM EXIT; \
+	PORT=8081 go run ./cmd/usercontent & \
+	PORT=8080 go run ./cmd/server & \
+	wait
+
+run: ## main site only, :8080
+	PORT=8080 go run ./cmd/server
+
+run-usercontent: ## user-content service only, :8081
+	PORT=8081 go run ./cmd/usercontent
 
 build:
 	go build -o bin/server ./cmd/server
+	go build -o bin/usercontent ./cmd/usercontent
 
 vet:
-	gofmt -l . && go vet ./...
+	test -z "$$(gofmt -l .)" && go vet ./...
 
-site: ## build the wasm site into site/dist (restart `make run` to pick up a new version)
-	cd site && trunk build --release
+test: vet
+	go test ./...
 
-site-watch: ## rebuild the wasm site on change
-	cd site && trunk watch
+frontends: ## build the built-in front ends into build/frontends/builtin/<name>/
+	scripts/build-frontends.sh
 
-experiments: ## build each experiment for serving under /experiments/<slug>/
-	cd experiments/particle-stream && trunk build --release --public-url /experiments/particle-stream/
+e2e: ## headless-browser end-to-end tests (builds everything first)
+	e2e/run.sh
 
-docker:
-	docker build -t personal-site .
+docker: ## both images: personal-site (main) and personal-site-usercontent
+	docker build --target server -t personal-site .
+	docker build --target usercontent -t personal-site-usercontent .
