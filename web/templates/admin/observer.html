@@ -1,0 +1,67 @@
+{{define "title"}}Observer · Admin{{end}}
+{{define "main"}}
+<h1>Observer</h1>
+{{if not .Configured}}
+<p class="notice">The observer is not configured on this server.</p>
+{{else}}
+{{if not .Healing}}<p class="notice"><strong>Healing is off:</strong> <code>ANTHROPIC_API_KEY</code> is unset. Detections are still recorded, but nothing is generated; front ends show their fallbacks.</p>{{end}}
+{{with .Problem}}<p class="notice problem" role="alert">{{.}}</p>{{end}}
+{{with .Done}}<p class="notice" role="status">{{if eq . "accept"}}Accepted.{{else if eq . "edit"}}Saved.{{else if eq . "regenerate"}}Regenerated.{{else if eq . "revert"}}Reverted.{{else if eq . "dismiss"}}Dismissed.{{end}}</p>{{end}}
+<p>Problems front ends reported, and what the observer did about them. Generated values never overwrite your content; review is only needed when a fix would.</p>
+<nav class="tabs">
+  {{range .Tabs}}<a href="/admin/observer/?tab={{.Key}}"{{if .Active}} aria-current="page"{{end}}>{{.Label}} <span class="count">{{.Count}}</span></a>{{end}}
+</nav>
+{{$tab := .Tab}}
+{{if not .Rows}}<p>Nothing here.</p>{{end}}
+<ul class="detections">
+{{range .Rows}}
+  <li class="detection" id="d{{.ID}}">
+    <div class="detection-head">
+      {{if .New}}<span class="dot dot-new" title="new"></span>{{end}}
+      <strong class="kind kind-{{.Kind}}">{{.Kind}}</strong>
+      {{if .Field}}<code>{{.Collection}}/{{if .Item}}{{.Item}}{{else}}(home){{end}}.{{.Field}}</code>{{else if .Collection}}<code>{{.Collection}}/{{if .Item}}{{.Item}}{{else}}(home){{end}}</code>{{end}}
+      {{if .Expect}}<span class="muted">expected {{.Expect}}, got {{.Got}}</span>{{end}}
+      <span class="muted">· {{.Count}}× · last {{.LastSeen.Format "2006-01-02 15:04"}} · first {{.FirstSeen.Format "2006-01-02 15:04"}}</span>
+    </div>
+    {{if .Frontend}}<div class="muted">front end <code>{{.Frontend}}</code>{{if and .Serve (ne .Serve .Frontend)}} (<code>{{.Serve}}</code>){{end}}{{if .Route}} · route <code>/{{.Route}}</code>{{end}}</div>{{end}}
+    {{with .Message}}<div>Error: <code>{{.}}</code></div>{{end}}
+    {{with .Stack}}<details><summary>Stack</summary><pre>{{.}}</pre></details>{{end}}
+    {{if .Action.Summary}}<p class="action">{{if .Action.Auto}}<span class="badge">auto</span> {{end}}{{.Action.Summary}}</p>{{end}}
+    {{with .Generated}}<p class="muted">Generated value ({{.Status}}, {{.Model}}): <q>{{.Value}}</q></p>{{end}}
+    <div class="actions">
+      {{if or (eq .Kind "content-gap") (eq .Kind "type-break")}}
+        {{if and .Generated (or (eq .Generated.Status "active") (eq .Generated.Status "stale"))}}
+        <form method="post" action="/admin/observer/{{.ID}}/accept"><input type="hidden" name="tab" value="{{$tab}}"><button>Accept</button></form>
+        {{end}}
+        {{if $.Healing}}<form method="post" action="/admin/observer/{{.ID}}/regenerate"><input type="hidden" name="tab" value="{{$tab}}"><button>Regenerate</button></form>{{end}}
+        {{if and .Generated (ne .Generated.Status "cleared")}}
+        <form method="post" action="/admin/observer/{{.ID}}/revert"><input type="hidden" name="tab" value="{{$tab}}"><button>Revert</button></form>
+        {{end}}
+        <form method="post" action="/admin/observer/{{.ID}}/edit" class="inline">
+          <input type="hidden" name="tab" value="{{$tab}}">
+          <input name="value" aria-label="New value for {{.Field}}" placeholder="{{if eq .Expect "list"}}one, per, comma{{else}}Set {{.Field}} yourself{{end}}" required>
+          <button>Edit</button>
+        </form>
+      {{else if eq .Kind "frontend-error"}}
+        {{if .Action.Pulled}}<form method="post" action="/admin/observer/{{.ID}}/revert"><input type="hidden" name="tab" value="{{$tab}}"><button>Revert (put {{.Action.Pulled}} back in the rotation)</button></form>{{end}}
+      {{else if eq .Kind "content-invalid"}}
+        {{with .EditLink}}<a href="{{.}}">Edit the content</a>{{end}}
+      {{end}}
+      {{if ne .Status "dismissed"}}<form method="post" action="/admin/observer/{{.ID}}/dismiss"><input type="hidden" name="tab" value="{{$tab}}"><button>Dismiss</button></form>{{end}}
+    </div>
+  </li>
+{{end}}
+</ul>
+
+<h2>Generated values</h2>
+{{if not .Generated}}<p>None yet.</p>{{else}}
+<table>
+  <tr><th>Item</th><th>Field</th><th>Value</th><th>Status</th><th>Model</th><th>Updated</th></tr>
+  {{range .Generated}}<tr>
+    <td><code>{{.Collection}}/{{if .Item}}{{.Item}}{{else}}(home){{end}}</code></td><td><code>{{.Field}}</code></td>
+    <td>{{.Value}}</td><td>{{.Status}}</td><td>{{.Model}}</td><td>{{.UpdatedAt.Format "2006-01-02 15:04"}}</td>
+  </tr>{{end}}
+</table>
+{{end}}
+{{end}}
+{{end}}

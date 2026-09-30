@@ -55,7 +55,7 @@ func loadMigrations() ([]migration, error) {
 	return out, nil
 }
 
-// Migrate applies every migration newer than the database's version, each in
+// Migrate applies every migration the database hasn't recorded, each in
 // its own transaction. Migrations are append-only: never edit one that has run.
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	migs, err := loadMigrations()
@@ -79,12 +79,19 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}
-	var current int
-	if err := conn.QueryRow(ctx, `SELECT coalesce(max(version), 0) FROM schema_migrations`).Scan(&current); err != nil {
+	// Apply every migration not yet recorded, not just those above the max:
+	// migrations are developed on parallel branches (e.g. 0002 and 0003), and
+	// one may reach a database after a higher-numbered one did.
+	rows, err := conn.Query(ctx, `SELECT version FROM schema_migrations`)
+	if err != nil {
+		return fmt.Errorf("migrate: %w", err)
+	}
+	applied, err := pgx.CollectRows(rows, pgx.RowTo[int])
+	if err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}
 	for _, m := range migs {
-		if m.version <= current {
+		if slices.Contains(applied, m.version) {
 			continue
 		}
 		err := pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
