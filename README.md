@@ -24,8 +24,9 @@ Design: [`docs/frontends.md`](docs/frontends.md). Contract:
 [`docs/frontend-protocol.md`](docs/frontend-protocol.md). Plan:
 [`docs/restructure-plan.md`](docs/restructure-plan.md).
 
-**Status: runs locally, not deployed.** PostgreSQL store with migrations (or
-in-memory when `DATABASE_URL` is unset in dev); GCP hosting comes next.
+**Status: deployed** to Cloud Run + Cloud SQL (`us-central1`), pending DNS.
+PostgreSQL store with migrations (in-memory when `DATABASE_URL` is unset in
+dev). Runbook: [`docs/deploy.md`](docs/deploy.md).
 
 ## Layout
 
@@ -117,7 +118,7 @@ User-content service: `/t/<token>/...` (front-end files), `/site-host.js`,
 
 ## Hosting
 
-- **Now:** none. Vercel was retired on 2026-09-29.
-- **Planned:** Cloud Run in GCP project `benpriddycom`: the main site at
-  `benpriddy.com` and the user-content service at `benpriddy-usercontent.com`
-  (both domains verified).
+Cloud Run in GCP project `benpriddycom` (`us-central1`): service `site` at
+`benpriddy.com` (with `www` redirecting to it), service `usercontent` at
+`benpriddy-usercontent.com`, and Cloud SQL `site-pg`. See
+[`docs/deploy.md`](docs/deploy.md).

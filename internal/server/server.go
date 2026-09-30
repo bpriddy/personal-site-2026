@@ -56,6 +56,12 @@ func New(cfg config.Config, st store.Store, log *slog.Logger) (*Server, error) {
 // ServeHTTP routes the request. Unmatched GET/HEAD requests get the 404
 // transcript page, so client-side navigation to an unknown slug shows it.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// www.<domain> → the canonical origin: front ends trust exactly one parent
+	// origin (frame-ancestors, postMessage), so the site must live at one host.
+	if strings.HasPrefix(r.Host, "www.") && r.URL.Path != "/health" {
+		http.Redirect(w, r, strings.TrimRight(s.cfg.MainOrigin, "/")+r.URL.RequestURI(), http.StatusMovedPermanently)
+		return
+	}
 	if r.Method == http.MethodGet || r.Method == http.MethodHead {
 		if _, pattern := s.mux.Handler(r); pattern == "" {
 			s.notFound(w, r)

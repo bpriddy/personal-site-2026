@@ -306,3 +306,22 @@ func TestRotationFromStoreAndAdminToggle(t *testing.T) {
 		t.Fatal("dashboard missing front-end rotation controls")
 	}
 }
+
+func TestWWWRedirectsToMainOrigin(t *testing.T) {
+	s := newTestServer(t)
+	req := httptest.NewRequest("GET", "/about?x=1", nil)
+	req.Host = "www.benpriddy.com"
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	if rec.Code != http.StatusMovedPermanently || rec.Header().Get("Location") != "http://localhost:8080/about?x=1" {
+		t.Fatalf("got %d %q", rec.Code, rec.Header().Get("Location"))
+	}
+	// the canonical host is served normally
+	req = httptest.NewRequest("GET", "/", nil)
+	req.Host = "benpriddy.com"
+	rec = httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("apex got %d", rec.Code)
+	}
+}

@@ -49,8 +49,11 @@ where the particle piece becomes one of several embedded experiments.
   migrations under an advisory lock; front-end rotation lives in the
   `frontends` table with an admin toggle; `cmd/devdb` for local dev.
 - [ ] **Real admin auth** — replace basic auth with session login or IAP.
-- [ ] **Terraform** (`infra/`): Artifact Registry, Cloud Run, Secret Manager,
-  database, domain.
+- [x] **Deploy** (2026-09-30): Cloud Run `site` + `usercontent`, Cloud SQL
+  `site-pg`, Artifact Registry, Cloud Build, secrets, least-privilege service
+  accounts, a $30/month budget alert, and domain mappings, all created with
+  gcloud (see [deploy.md](deploy.md)).
+- [ ] **Terraform** (`infra/`): codify what deploy.md created by hand.
 - [ ] **CI/CD** to build and deploy the image on push to `main`.
 - [ ] **Design** the home page and site styling.
 - [ ] **Point DNS** at Cloud Run.
