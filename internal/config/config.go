@@ -7,12 +7,10 @@ import (
 )
 
 type Config struct {
-	Port           string // PORT — Cloud Run sets this
-	Env            string // APP_ENV — "dev" or "prod"
-	ExperimentsDir string // EXPERIMENTS_DIR — holds <slug>/dist/ for each experiment
-	SiteDir        string // SITE_DIR — the built wasm site bundle (site/dist)
-	AdminUser      string // ADMIN_USER
-	AdminPassword  string // ADMIN_PASSWORD — required in prod
+	Port          string // PORT — Cloud Run sets this
+	Env           string // APP_ENV — "dev" or "prod"
+	AdminUser     string // ADMIN_USER
+	AdminPassword string // ADMIN_PASSWORD — required in prod
 
 	// front ends (shared by the main site and the user-content service)
 	SigningKey        []byte // FRONTEND_SIGNING_KEY — HMAC key for fetoken; required in prod
@@ -23,12 +21,10 @@ type Config struct {
 
 func Load() (Config, error) {
 	c := Config{
-		Port:           env("PORT", "8080"),
-		Env:            env("APP_ENV", "dev"),
-		ExperimentsDir: env("EXPERIMENTS_DIR", "experiments"),
-		SiteDir:        env("SITE_DIR", "site/dist"),
-		AdminUser:      env("ADMIN_USER", "admin"),
-		AdminPassword:  os.Getenv("ADMIN_PASSWORD"),
+		Port:          env("PORT", "8080"),
+		Env:           env("APP_ENV", "dev"),
+		AdminUser:     env("ADMIN_USER", "admin"),
+		AdminPassword: os.Getenv("ADMIN_PASSWORD"),
 
 		SigningKey:        []byte(os.Getenv("FRONTEND_SIGNING_KEY")),
 		MainOrigin:        env("MAIN_ORIGIN", "http://localhost:8090"),

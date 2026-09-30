@@ -3,55 +3,65 @@
 Monorepo for Ben Priddy's personal site: a WebGPU/wasm site, a Go server with an
 admin CMS, and standalone interactive experiments.
 
-## How the site renders
+## How the site works
 
-- **Canvas** — the public site is a Rust → wasm → wgpu app (`site/`) that draws
-  everything on one full-screen canvas, reading content from `/api/site.json`.
-- **Transcript** — the Go server renders the same CMS content as semantic HTML
-  into every page (`web/templates/public/`). It is visually hidden when WebGPU
-  runs, but it's what search engines and screen readers read (the canvas is
-  `aria-hidden`).
-- **Fallback** — without WebGPU, or if the wasm app fails, the transcript is
-  shown as a plain HTML site.
-- **Admin** — `/admin/` is a plain `html/template` CMS.
+- **Parent page (Go, trusted).** Every URL is served by the main server with
+  the CMS content as a semantic HTML *transcript* (for search engines, screen
+  readers, and browsers without WebGPU). It picks a front end at random per
+  visit and shows it in a sandboxed iframe.
+- **Front ends (untrusted by design).** Served only by a separate
+  **user-content service** on its own domain, behind short-lived signed URLs,
+  with a sandbox CSP. They get content and navigation over `postMessage`
+  (`/site-host.js`). Built-ins: `builtin/site` (the Rust `site/` app, default
+  and fallback) and `builtin/particle-stream`.
+- **Fallback.** If a front end fails, the default loads; if that fails too, the
+  transcript shows as a plain HTML site.
+- **Admin.** `/admin/` is a plain `html/template` CMS.
 - **Planned: vibe-coded front ends.** Anyone can build a front end by chatting
-  with an LLM; approved ones rotate for all visitors. See
-  [`docs/frontends.md`](docs/frontends.md).
+  with an LLM; approved ones join the rotation.
 
-**Status: scaffolded, not deployed.** The Go server runs locally with an
-in-memory store; the database and GCP hosting are next. See
+Design: [`docs/frontends.md`](docs/frontends.md). Contract:
+[`docs/frontend-protocol.md`](docs/frontend-protocol.md). Plan:
 [`docs/restructure-plan.md`](docs/restructure-plan.md).
+
+**Status: runs locally, not deployed.** In-memory store; the database and GCP
+hosting come next.
 
 ## Layout
 
 ```
-cmd/server/          entrypoint (config, graceful shutdown for Cloud Run)
+cmd/server/            main site (config, graceful shutdown for Cloud Run)
+cmd/usercontent/       user-content service (serves front ends)
 internal/
-  config/            env-based settings
-  content/           CMS content types (Page, Experiment)
-  store/             Store interface + in-memory placeholder
-  auth/              admin guard (basic auth, stopgap)
-  server/            routes: public site, /admin, /experiments/<slug>/
+  config/              env-based settings (shared)
+  content/             CMS content types (Page, Experiment)
+  store/               Store interface + in-memory placeholder
+  auth/                admin guard (basic auth, stopgap)
+  server/              public pages, /api/frontend, /api/site.json, /admin
+  usercontent/         signed-URL file serving, sandbox headers
+  fetoken/             HMAC capability tokens for front-end URLs
+  frontend/            front-end refs and the rotation
 web/
-  templates/public/  page shell (canvas + transcript) and transcript pages
-  templates/admin/   admin CMS layout and forms
-  static/            CSS, embedded into the binary
-site/                the public site: Rust → wasm → wgpu, built by trunk
+  templates/public/    page shell (transcript) and transcript pages
+  templates/admin/     admin CMS layout and forms
+  static/              CSS + frontend-host.js (parent side of the protocol)
+  usercontent/         site-host.js (the in-iframe host API)
+site/                  builtin/site: Rust → wasm → wgpu, built by trunk
 experiments/
-  particle-stream/   Rust → wasm → WebGPU particle field
-infra/               Terraform for GCP (not written yet)
-docs/                plans and architecture notes
-scripts/             dev-setup.sh: user-space toolchain install (no root)
-Dockerfile           Cloud Run image: builds site + experiments + server
-Makefile             run / build / vet / site / experiments / docker
+  particle-stream/     builtin/particle-stream
+e2e/                   Playwright end-to-end tests (headless Chromium + WebGPU)
+infra/                 Terraform for GCP (not written yet)
+docs/                  design, protocol, plan
+scripts/               dev-setup.sh (toolchain, no root), build-frontends.sh
+Dockerfile             two images: --target server / --target usercontent
+Makefile               dev / build / test / frontends / e2e / docker
 ```
 
 ## Run locally
 
-Needs Go 1.27+. The wasm builds also need Rust, the `wasm32-unknown-unknown`
-target, trunk 0.21, and a C toolchain for build scripts.
-`scripts/dev-setup.sh` installs all of it into `$HOME` without root (using Zig
-as the C compiler), then add it to PATH:
+Needs Go 1.27+, Rust with the `wasm32-unknown-unknown` target, trunk 0.21, a C
+toolchain, and Node for the e2e tests. `scripts/dev-setup.sh` installs the
+non-Node parts into `$HOME` without root (Zig as the C compiler):
 
 ```sh
 scripts/dev-setup.sh
@@ -59,43 +69,49 @@ export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$HOME/.local/go/bin:$PATH"
 ```
 
 ```sh
-make site           # build the wasm site into site/dist
-make experiments    # build experiments so /experiments/<slug>/ serves them
-make run            # http://localhost:8080, admin at /admin/ (admin / dev)
+scripts/build-frontends.sh          # → build/frontends/builtin/{site,particle-stream}/
+PORT=8091 go run ./cmd/usercontent  # user-content service, http://127.0.0.1:8091
+PORT=8090 go run ./cmd/server       # main site, http://localhost:8090 (admin: admin / dev)
 ```
 
-Without `make site`, the server serves the transcript only.
+(`make frontends` and `make dev` do the same if `make` is installed.) Dev uses
+8090/8091 because 8080/8081 are taken by other local services. `localhost`
+and `127.0.0.1` are different sites to the browser, which is what makes the
+local sandbox realistic.
 
-Environment: `PORT` (8080), `APP_ENV` (`dev`|`prod`), `SITE_DIR`
-(`site/dist`), `EXPERIMENTS_DIR` (`experiments`), `ADMIN_USER` (`admin`), `ADMIN_PASSWORD` (`dev` in dev,
-required in prod).
+```sh
+go test ./...                       # unit tests
+(cd e2e && npm ci) && e2e/run.sh    # end-to-end: builds everything, runs 3 phases
+e2e/run.sh --slow                   # + the 61s token-expiry test
+```
+
+Environment (both binaries): `PORT`, `APP_ENV` (`dev`|`prod`),
+`FRONTEND_SIGNING_KEY` (required in prod), `MAIN_ORIGIN`
+(`http://localhost:8090`), `USERCONTENT_ORIGIN` (`http://127.0.0.1:8091`),
+`FRONTENDS_DIR` (`build/frontends`). Main site only: `ADMIN_USER` (`admin`),
+`ADMIN_PASSWORD` (`dev` in dev, required in prod), `FRONTEND_ROTATION` (comma-
+separated refs; overrides the rotation, used by tests).
 
 ## Routes
 
+Main site:
+
 | Route | What |
 |---|---|
-| `/` | home page (CMS page with empty slug) + published experiments |
+| `/` | home page (transcript) + the front-end iframe |
 | `/<slug>` | CMS page |
-| `/api/site.json` | published CMS content for the wasm site |
-| `/site/` | the built wasm site bundle |
-| `/experiments/` | experiment index |
-| `/experiments/<slug>/` | the experiment's built `dist/` |
+| `/experiments/` | experiment listing |
+| `/api/frontend` | this visit's front end: `{ref, url}` with a fresh signed URL |
+| `/api/site.json` | published CMS content (sent to front ends) |
 | `/admin/` | CMS: edit pages and experiment listings |
 | `/healthz` | health check |
 
-## Experiments
-
-Each experiment is a self-contained workspace under `experiments/<slug>/` with
-its own build and README, built with `--public-url /experiments/<slug>/`. The
-CMS stores only its listing (title, summary, published, order); the server
-serves files only for slugs the CMS knows about. Build output (`target/`,
-`dist/`) is gitignored.
-
-| Experiment | Stack | README |
-|---|---|---|
-| particle-stream | Rust, wgpu, WebGPU, trunk | [experiments/particle-stream/README.md](experiments/particle-stream/README.md) |
+User-content service: `/t/<token>/...` (front-end files), `/site-host.js`,
+`/healthz`.
 
 ## Hosting
 
-- **Now:** none. Vercel was retired on 2026-09-29; nothing deploys.
-- **Planned:** Cloud Run, running the root `Dockerfile` image. See `infra/`.
+- **Now:** none. Vercel was retired on 2026-09-29.
+- **Planned:** Cloud Run in GCP project `benpriddycom`: the main site at
+  `benpriddy.com` and the user-content service at `benpriddy-usercontent.com`
+  (both domains verified).

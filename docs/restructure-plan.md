@@ -38,7 +38,7 @@ where the particle piece becomes one of several embedded experiments.
   forms, `Store` interface with an in-memory placeholder, Dockerfile.
 - [x] **Wasm site scaffold** (2026-09-29): `site/` crate (placeholder wgpu
   scene reading `/api/site.json`), public shell with transcript + fallback.
-- [ ] **Front-end host**: parent page ↔ sandboxed iframe served by a separate
+- [x] **Front-end host** (2026-09-30): parent page ↔ sandboxed iframe served by a separate
   user-content service with signed URLs, host API, rotation, crash fallback. Port `site/` and particle-stream
   onto it as built-in front ends.
 - [ ] **Builder**: chat UI, Go session endpoint → Claude API, file tools,
