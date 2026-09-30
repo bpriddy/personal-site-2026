@@ -53,6 +53,9 @@ where the particle piece becomes one of several embedded experiments.
 - [ ] **CI/CD** to build and deploy the image on push to `main`.
 - [ ] **Design** the home page and site styling.
 - [ ] **Point DNS** at Cloud Run.
+- [ ] **Rotate the Anthropic API key.** Secret `anthropic-api-key-never` in
+  `benpriddycom` holds a key with no expiry; replace it with an expiring key
+  and a rotation routine once the builder is live.
 
 Infrastructure decisions (database, storage, domains, region, admin auth, LLM)
 are recorded in [frontends.md → Decisions](frontends.md#decisions-2026-09-29).
