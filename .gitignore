@@ -18,3 +18,6 @@ crash.log
 # machine-specific / build tooling
 .DS_Store
 /.claude
+
+# built front ends (dev FRONTENDS_DIR)
+/build/
