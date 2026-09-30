@@ -112,3 +112,6 @@ Cutover, once both certificates are ACTIVE and the LB is tested by IP:
 3. After DNS settles, delete the three Cloud Run domain mappings.
 4. Set both services to `--ingress internal-and-cloud-load-balancing`, so they
    can only be reached through the LB.
+5. Set `OBSERVE_XFF_HOPS=2` on `site`. Behind the LB the client IP is one hop
+   further left in `X-Forwarded-For`; without this, every visitor shares one
+   observer rate-limit bucket.

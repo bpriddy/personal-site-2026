@@ -1,6 +1,8 @@
 # Content contract and the site observer
 
-Status: design, 2026-09-30. Nothing here is built yet.
+Status: layers 1–3 built 2026-09-30 (the contract, containment, and the
+observer with content generation and the admin section). Front-end patching
+and revisions are still to come.
 
 Two requirements from Ben:
 
@@ -88,7 +90,8 @@ looks like.
 | Case | Fix | Applied |
 |---|---|---|
 | Content gap | **Generate the value from that item's other content** (Claude, structured output, `claude-opus-5-5`). A subtitle comes from the project's title, body and summary. | Immediately |
-| Type break | Coerce if lossless; otherwise generate a correct value as for a gap | Immediately |
+| Type break on a missing or empty value | Generate as for a gap | Immediately |
+| Type break on a value you wrote | Propose the converted value; never overwrite yours | Review |
 | Front-end failure (prompted front end) | Minimal patch, saved as a **new revision** | Immediately, if a headless render proves it loads, throws nothing, and shows the content |
 
 Review is required only if:

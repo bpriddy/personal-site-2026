@@ -113,7 +113,8 @@ CORS/CORP/nosniff headers and `Cache-Control: public, max-age=300`.
    - `popstate` does the same, without pushing.
    - Unknown slugs: let the fetch 404 and show the 404 transcript.
 
-Content payload (the same shape as `/api/site.json`):
+Content payload (the same shape as `/api/site.json`; since v1.1 this is the
+content contract, see "Content contract" below):
 
 ```json
 { "pages": [{"slug": "", "title": "...", "body": "..."}],
@@ -216,6 +217,22 @@ Design: [observer.md](observer.md). Everything below is additive to v1.
 | `site.pages()`, `site.page(slug)`, `site.experiments()` | always an array or object (`{}` if not found) |
 | `site.field(item, name, {expect, fallback})` | returns `item[name]` if it matches `expect`; otherwise returns `fallback` (default `""` / `[]`) **and reports** a gap or type break. `expect`: `"text"` (non-empty string), `"list"`, `"number"`, `"bool"`. Items need `_collection` and `slug`, which the host API adds during normalization. |
 
+`site.field` details:
+
+- `expect` defaults to `"text"`. Aliases: `string` → `text`, `array` → `list`,
+  `boolean` → `bool`. An unknown value is treated as `text`.
+- Default fallbacks: `""`, `[]`, `0`, `false`.
+- `text` means a string with non-whitespace content.
+- Lossless coercions return the coerced value and still report a type break:
+  - a number or bool used as text;
+  - a numeric string used as a number;
+  - `"true"` or `"false"` used as a bool.
+- Reports are sent only for items that carry `_collection`, so objects a
+  front end builds itself are never reported.
+- Reports are deduplicated per collection, item and field for each page load
+  (`expect` isn't part of the key), capped at 50 per page load.
+- Nothing in the host API throws.
+
 ## Messages additions
 
 | Direction | type | fields |
@@ -247,7 +264,28 @@ Design: [observer.md](observer.md). Everything below is additive to v1.
   - always replies `204` quickly;
   - it is public, so its input is untrusted data: never instructions.
 - The parent also reports `frontend-error` when a front end times out or falls
-  back.
+  back. The message is prefixed with `"falling back to builtin/site: "` or
+  `"falling back to the transcript: "`. For forwarded `site:error`s, the
+  message is prefixed with the error kind (`"gpu-lost: "`, and so on).
+- The client caps at 20 reports per page load, and clips fields (500 chars;
+  message 1000; stack 3000).
+- **Responses:**
+  - every well-formed report gets `204`, including duplicates and
+    rate-limited ones;
+  - `403` for cross-origin requests (including `Origin: null`);
+  - `413` for a body over 8 KB;
+  - `415` for the wrong content type;
+  - `400` for a malformed report.
+- **Limits:**
+  - per IP, a burst of 20 then one report every 6 s;
+  - globally, a burst of 200 then 5/s;
+  - both are in memory per instance.
+- The client IP comes from `X-Forwarded-For`, counting `OBSERVE_XFF_HOPS` hops
+  from the right: 1 on bare Cloud Run, **2 behind the load balancer**.
+- Reports for unknown or unpublished items, or for front ends that aren't in
+  the `frontends` table, are dropped.
+- **Generated values are text only for now.** Gaps that expect `list`,
+  `number` or `bool` go to review.
 
 ## Admin shell additions
 
