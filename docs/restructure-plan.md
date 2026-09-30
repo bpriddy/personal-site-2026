@@ -70,4 +70,3 @@ are recorded in [frontends.md → Decisions](frontends.md#decisions-2026-09-29).
   font atlases?
 - Should particle-stream share code with the site (a Cargo workspace / shared
   crate)?
-- The user-content domain name (depends on the main domain).

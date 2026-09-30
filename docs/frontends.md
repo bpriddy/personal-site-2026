@@ -201,8 +201,8 @@ Unsubmitted drafts are purged 30 days after their last activity.
   in the repo. Local dev keeps the in-memory store until the Postgres store
   lands.
 - **Files:** a Cloud Storage bucket for project files, snapshots and thumbnails.
-- **User-content domain:** a separate registrable domain, e.g.
-  `<main-domain>-usercontent.com`, served by its own Cloud Run service. Never a
+- **User-content domain:** `benpriddy-usercontent.com` (registered at GoDaddy
+  2026-09-30), served by its own Cloud Run service. Never a
   subdomain of the main site.
 - **Running front ends:** real files on the user-content domain, sandboxed
   iframe, strict CSP, HMAC-signed expiring URLs (see Architecture).
