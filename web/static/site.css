@@ -19,11 +19,19 @@ th, td { text-align: left; padding: .4rem; border-bottom: 1px solid var(--rule);
 input, textarea, button { font: inherit; padding: .4rem; }
 .inline { display: flex; gap: .5rem; }
 
-/* public shell: the canvas is the site when WebGPU runs (html.gpu); otherwise
-   the transcript is shown as a plain HTML site */
-#stage { display: none; }
-.gpu #stage { display: block; position: fixed; inset: 0; width: 100vw; height: 100vh; }
-.gpu #transcript {
-  position: absolute; width: 1px; height: 1px; overflow: hidden;
-  clip-path: inset(50%); white-space: nowrap;
+/* public shell (web/static/frontend-host.js): while a front end loads
+   (html.fe-loading) the page is a plain background; once it reports ready
+   (html.fe-live) its iframe fills the viewport. In both states the transcript
+   is visually hidden but stays in the accessibility tree. With neither class
+   the transcript is the site. */
+.fe-loading #transcript, .fe-live #transcript {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
+  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
 }
+.fe-loading body, .fe-live body { background: var(--bg); overflow: hidden; }
+#frontend {
+  position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
+  border: 0; margin: 0; padding: 0; display: block;
+  visibility: hidden; /* not display:none, so the front end lays out at full size while loading */
+}
+.fe-live #frontend { visibility: visible; }

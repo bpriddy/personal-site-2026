@@ -1,6 +1,7 @@
-// Command server runs the personal site: public pages (the HTML transcript plus
-// the front-end host, which embeds a front end from the user-content service),
-// the /api endpoints, and the /admin CMS.
+// Command usercontent runs the user-content service: it serves front-end files
+// to the main site's sandboxed iframe at /t/<token>/<path>, and the host API at
+// /site-host.js. It runs on a separate domain and holds only the signing key.
+// See docs/frontend-protocol.md.
 package main
 
 import (
@@ -14,8 +15,7 @@ import (
 	"time"
 
 	"github.com/bpriddy/personal-site-2026/internal/config"
-	"github.com/bpriddy/personal-site-2026/internal/server"
-	"github.com/bpriddy/personal-site-2026/internal/store"
+	"github.com/bpriddy/personal-site-2026/internal/usercontent"
 )
 
 func main() {
@@ -27,18 +27,20 @@ func main() {
 		os.Exit(1)
 	}
 
-	// in-memory until the database is chosen (see docs/restructure-plan.md)
-	st := store.NewMemory()
-
-	srv, err := server.New(cfg, st, log)
+	h, err := usercontent.New(usercontent.Options{
+		SigningKey: cfg.SigningKey,
+		MainOrigin: cfg.MainOrigin,
+		Source:     usercontent.NewDirSource(cfg.FrontendsDir),
+		Log:        log,
+	})
 	if err != nil {
-		log.Error("server", "err", err)
+		log.Error("usercontent", "err", err)
 		os.Exit(1)
 	}
 
 	httpSrv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           srv,
+		Handler:           h,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -47,7 +49,8 @@ func main() {
 	defer stop()
 
 	go func() {
-		log.Info("listening", "addr", httpSrv.Addr, "env", cfg.Env)
+		log.Info("listening", "addr", httpSrv.Addr, "env", cfg.Env,
+			"frontends_dir", cfg.FrontendsDir, "main_origin", cfg.MainOrigin)
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error("listen", "err", err)
 			os.Exit(1)

@@ -766,6 +766,39 @@ fn current_action_phrases(fallback: &[String]) -> Vec<String> {
     fallback.to_vec()
 }
 
+// ── host API: window.site, defined by /site-host.js when this runs as a front
+// end inside the site's sandboxed iframe (docs/frontend-protocol.md). Absent
+// under `trunk serve`, so every call is a silent no-op there.
+fn site_call(method: &str, args: &[JsValue]) {
+    let Some(w) = web_sys::window() else { return };
+    let Ok(site) = js_sys::Reflect::get(&w, &"site".into()) else { return };
+    if !site.is_object() {
+        return;
+    }
+    if let Ok(f) = js_sys::Reflect::get(&site, &method.into()) {
+        if let Some(f) = f.dyn_ref::<js_sys::Function>() {
+            let args: js_sys::Array = args.iter().collect();
+            let _ = f.apply(&site, &args);
+        }
+    }
+}
+
+// report a fatal problem: console + site.reportError(err, kind). Before
+// site.ready() any report makes the parent fall back; "gpu-lost" always does.
+fn site_error(msg: &str, kind: &str) {
+    web_sys::console::error_1(&msg.into());
+    site_call("reportError", &[js_sys::Error::new(msg).into(), kind.into()]);
+}
+
+// top-level page (trunk serve / direct load) vs. embedded in the site's iframe
+fn standalone() -> bool {
+    let Some(w) = web_sys::window() else { return true };
+    let w: JsValue = w.into();
+    js_sys::Reflect::get(&w, &"top".into())
+        .map(|t| js_sys::Object::is(&t, &w))
+        .unwrap_or(false)
+}
+
 fn set_status(text: &str) {
     if let Some(el) = web_sys::window()
         .and_then(|w| w.document())
@@ -1159,10 +1192,10 @@ async fn run() {
     // embedded previews can load the page while the viewport is still 0-sized;
     // initializing against that poisons every GPU resource — retry instead
     if css_w < 50.0 || css_h < 50.0 {
+        // re-run in place rather than reloading: embedded, the page's signed
+        // URL is only valid for 60s, so a reload can 403
         let retry = Closure::<dyn FnMut()>::new(move || {
-            if let Some(w) = web_sys::window() {
-                w.location().reload().ok();
-            }
+            wasm_bindgen_futures::spawn_local(run());
         });
         window
             .set_timeout_with_callback_and_timeout_and_arguments_0(
@@ -1182,8 +1215,10 @@ async fn run() {
     canvas.set_height(height);
     let aspect = width as f32 / height as f32;
 
-    // a fully procedural page can simply reload on resize (debounced)
-    {
+    // a fully procedural page can simply reload on resize (debounced) — but
+    // only standalone: embedded, the signed index URL expires after 60s, so a
+    // reload would 403. There the canvas just stretches to the new viewport.
+    if standalone() {
         let win2 = window.clone();
         let pending = Rc::new(Cell::new(0i32));
         let pend2 = pending.clone();
@@ -1302,10 +1337,11 @@ async fn run() {
         Ok(a) => a,
         Err(e) => {
             set_status(&format!("WebGPU adapter UNAVAILABLE: {e}"));
+            site_error(&format!("WebGPU adapter unavailable: {e}"), "error");
             return;
         }
     };
-    let (device, queue) = adapter
+    let (device, queue) = match adapter
         .request_device(&wgpu::DeviceDescriptor {
             label: None,
             required_features: wgpu::Features::empty(),
@@ -1315,7 +1351,20 @@ async fn run() {
             trace: wgpu::Trace::Off,
         })
         .await
-        .expect("request_device failed");
+    {
+        Ok(dq) => dq,
+        Err(e) => {
+            set_status(&format!("WebGPU device UNAVAILABLE: {e}"));
+            site_error(&format!("WebGPU request_device failed: {e}"), "gpu-lost");
+            return;
+        }
+    };
+    device.set_device_lost_callback(|reason, msg| {
+        if reason != wgpu::DeviceLostReason::Destroyed {
+            set_status("WebGPU device lost");
+            site_error(&format!("WebGPU device lost: {msg}"), "gpu-lost");
+        }
+    });
 
     let caps = surface.get_capabilities(&adapter);
     let format = caps.formats[0];
@@ -1909,6 +1958,7 @@ async fn run() {
     let mut phase: u8 = 0; // 0 hold, 1 exit (push back + fade), 2 enter (forward + fade in)
     let mut phase_start = t0;
     let mut phrase_cy = phrase_cy0 as f32;
+    let mut presented = false; // site.ready() once the first frame is on screen
 
     let f = Rc::new(RefCell::new(None::<Closure<dyn FnMut()>>));
     let g = f.clone();
@@ -2161,6 +2211,10 @@ async fn run() {
             }
             queue.submit([enc.finish()]);
             frame.present();
+            if !presented {
+                presented = true;
+                site_call("ready", &[]);
+            }
         }
 
         win.request_animation_frame(f.borrow().as_ref().unwrap().as_ref().unchecked_ref())

@@ -116,7 +116,7 @@ every front end speaks the same protocol. The parent only accepts messages whose
 | `site.content` | published pages and experiments, the same data as `/api/site.json` |
 | `site.route` / `site.onRoute(fn)` | current page slug; notified when the parent's URL changes |
 | `site.navigate(slug)` | ask the parent to navigate (the parent owns history) |
-| `site.textTexture(text, opts)` | helper: text → canvas/texture, so rendering content is easy in WebGPU |
+| `site.textCanvas(text, opts)` | helper: text → canvas, so rendering content is easy in WebGPU |
 | `site.ready()` / `site.reportError(e)` | lifecycle and error reporting (feeds the builder's repair loop) |
 
 Ben's own front ends, the Rust `site/` crate and particle-stream, move onto the

@@ -12,7 +12,9 @@ wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 web-sys = { version = "0.3", features = [
   "Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement",
-  "DomTokenList", "Performance", "Response", "Event", "console",
+  "CanvasRenderingContext2d", "TextMetrics", "CssStyleDeclaration",
+  "Performance", "Event", "MouseEvent", "WheelEvent",
+  "TouchEvent", "TouchList", "Touch", "console",
 ] }
 wgpu = "29"
 bytemuck = "1"

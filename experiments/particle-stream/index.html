@@ -10,6 +10,10 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="mobile-web-app-capable" content="yes" />
     <title>Ben Priddy</title>
+    <!-- site host API (window.site), served at the user-content origin root
+         when this runs as a site front end — must load before the app. Under
+         `trunk serve` it is missing, and the app runs standalone. -->
+    <script src="/site-host.js"></script>
     <link data-trunk rel="rust" href="Cargo.toml" data-wasm-opt="z" />
     <!-- UI + dev-tooling glue (dials, section editor, modal, GPU error shim),
          loaded at end-of-body — see ui.js. copy-file ships it verbatim to dist. -->

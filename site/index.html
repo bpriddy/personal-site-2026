@@ -1,8 +1,24 @@
 <!doctype html>
-<!-- build entry for trunk only; the served page is the Go shell template -->
-<html>
+<html lang="en">
   <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Ben Priddy</title>
+    <!-- site host API (window.site), served at the user-content origin root.
+         Must load before the app. Missing under `trunk serve`: the app then
+         runs standalone with placeholder content. -->
+    <script src="/site-host.js"></script>
     <link data-trunk rel="rust" data-wasm-opt="z" />
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0a0e; }
+      #stage {
+        display: block; position: fixed; inset: 0;
+        width: 100%; height: 100%;
+        touch-action: none;
+      }
+    </style>
   </head>
-  <body></body>
+  <body>
+    <canvas id="stage"></canvas>
+  </body>
 </html>

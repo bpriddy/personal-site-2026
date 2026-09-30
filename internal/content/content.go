@@ -12,8 +12,9 @@ type Page struct {
 	UpdatedAt time.Time
 }
 
-// Experiment is a standalone piece built into experiments/<slug>/dist and
-// served at /experiments/<slug>/. The CMS holds its listing metadata only.
+// Experiment is a standalone piece built from experiments/<slug>/. The CMS
+// holds its listing metadata only; the main site lists it but no longer serves
+// its files (front ends are served by the user-content service).
 type Experiment struct {
 	Slug      string
 	Title     string
