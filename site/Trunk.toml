@@ -1,7 +1,6 @@
-# Trunk builds only the js + wasm bundle. The Go server owns the HTML shell
-# (web/templates/public/shell.html) and loads /site/site.js; filehash is off so
-# those names are stable, and the server adds a ?v= cache-buster instead.
+# builtin/site — the default front end. A self-contained trunk app with its
+# own index.html, served as static files by the user-content service. Release
+# bundles use relative paths, built by scripts/build-frontends.sh
+# (`--public-url ./`). `trunk serve` runs it standalone with placeholder content.
 [build]
 target = "index.html"
-public_url = "/site/"
-filehash = false

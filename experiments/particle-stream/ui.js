@@ -28,6 +28,35 @@
   };
 })();
 
+// ── storage + context guards ──
+// As a site front end this page runs in a sandboxed iframe with an OPAQUE
+// origin: merely touching localStorage / indexedDB throws there. Every storage
+// access goes through these helpers, which degrade to "nothing saved".
+function storeGet(key) {
+  try { return window.localStorage.getItem(key); } catch (e) { return null; }
+}
+function storeSet(key, val) {
+  try { window.localStorage.setItem(key, val); } catch (e) {}
+}
+// standalone = the top-level page (trunk serve, or opened directly); embedded
+// = inside the site's iframe. Dev tooling (fps, dial gears, phrase button) is
+// shown only standalone on a local host — the user-content dev origin is
+// 127.0.0.1 too, so the hostname alone can't tell the two apart. The d/f/p
+// keys still work everywhere.
+var IS_STANDALONE = (function () {
+  try { return window.top === window; } catch (e) { return false; }
+})();
+var IS_DEV = IS_STANDALONE &&
+  ["localhost", "127.0.0.1"].indexOf(location.hostname) !== -1;
+// clipboard writes reject (not throw) in the sandbox; swallow the rejection so
+// it isn't forwarded to the parent as an unhandledrejection
+function copyText(text) {
+  try {
+    var p = navigator.clipboard && navigator.clipboard.writeText(text);
+    if (p && p.catch) p.catch(function () {});
+  } catch (e) {}
+}
+
 // tuning dials: window.__DIALS is read by the wasm every frame.
 // values come from dials.json (embedded in the wasm, pushed here via
 // __initDials) overlaid with this browser's localStorage tweaks. The
@@ -36,12 +65,12 @@
 window.__DIALS = {};
 window.__PHRASES = [];
 try {
-  var sp = JSON.parse(localStorage.getItem("phrases") || "null");
+  var sp = JSON.parse(storeGet("phrases") || "null");
   if (Array.isArray(sp) && sp.length) window.__PHRASES = sp;
 } catch (e) {}
 (function () {
   try {
-    var saved = JSON.parse(localStorage.getItem("dials") || "{}");
+    var saved = JSON.parse(storeGet("dials") || "{}");
     for (var k in saved) window.__DIALS[k] = saved[k];
   } catch (e) {}
   var panel = document.getElementById("dials");
@@ -49,9 +78,9 @@ try {
   var panel2 = document.getElementById("dials2");
   var gear2 = document.getElementById("gear2");
   var fps = document.getElementById("fps");
-  // dev tooling is visible locally only; on the deployed site the 'd'/'f'
+  // dev tooling is visible standalone on localhost only; elsewhere the 'd'/'f'
   // keys remain as a hidden door to the dials + fps readout
-  var isDev = ["localhost", "127.0.0.1"].indexOf(location.hostname) !== -1;
+  var isDev = IS_DEV;
   if (!isDev) {
     fps.style.display = "none";
     gear.style.display = "none";
@@ -127,7 +156,7 @@ try {
     phraseText.classList.toggle("invalid", !ok && phraseText.value.trim() !== "");
     if (ok) {
       window.__PHRASES = parsed;
-      try { localStorage.setItem("phrases", JSON.stringify(parsed)); } catch (e) {}
+      storeSet("phrases", JSON.stringify(parsed));
     }
   });
   fillPhrases();
@@ -137,7 +166,8 @@ try {
   // Falls back to a download where the API is unavailable.
   function idbHandle(method, val) {
     return new Promise(function (resolve) {
-      var op = indexedDB.open("bp-fs", 1);
+      var op;
+      try { op = window.indexedDB.open("bp-fs", 1); } catch (e) { resolve(null); return; }
       op.onupgradeneeded = function () { op.result.createObjectStore("h"); };
       op.onsuccess = function () {
         var tx = op.result.transaction("h", method === "get" ? "readonly" : "readwrite");
@@ -158,7 +188,9 @@ try {
   var phrasesHandle = null;
   async function savePhrases() {
     var json = JSON.stringify(window.__PHRASES || [], null, 2) + "\n";
-    try { navigator.clipboard.writeText(json); } catch (e) {}
+    copyText(json);
+    // sandboxed (embedded) there is no file picker or download; the clipboard
+    // copy above is best-effort. Standalone keeps the in-place save.
     if (window.showSaveFilePicker) {
       try {
         if (!phrasesHandle) phrasesHandle = await idbHandle("get");
@@ -183,13 +215,19 @@ try {
         if (e && e.name === "AbortError") return;
       }
     }
-    var a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([json], { type: "application/json" }));
-    a.download = "phrases.json";
-    a.click();
-    flashSave("downloaded");
+    try {
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([json], { type: "application/json" }));
+      a.download = "phrases.json";
+      a.click();
+      flashSave(IS_STANDALONE ? "downloaded" : "unavailable here");
+    } catch (e) {
+      flashSave("save unavailable");
+    }
   }
-  document.getElementById("phrase-save").addEventListener("click", savePhrases);
+  document.getElementById("phrase-save").addEventListener("click", function () {
+    savePhrases().catch(function () { flashSave("save unavailable"); });
+  });
   document.getElementById("phrase-close").addEventListener("click", function () {
     phrasePanel.classList.add("hidden");
     if (isDev) phraseBtn.style.display = "block";
@@ -221,17 +259,19 @@ try {
       window.__DIALS[el.dataset.dial] = Number(el.value);
       el.parentElement.querySelector(".val").textContent =
         Number(el.value).toFixed(2);
-      try { localStorage.setItem("dials", JSON.stringify(window.__DIALS)); } catch (e) {}
+      storeSet("dials", JSON.stringify(window.__DIALS));
     });
   });
   syncSliders();
   function saveDials() {
     var json = JSON.stringify(window.__DIALS, null, 2) + "\n";
-    try { navigator.clipboard.writeText(json); } catch (e) {}
-    var a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([json], { type: "application/json" }));
-    a.download = "dials.json";
-    a.click();
+    copyText(json);
+    try {
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([json], { type: "application/json" }));
+      a.download = "dials.json";
+      a.click();
+    } catch (e) {}
   }
   document.getElementById("dial-save").addEventListener("click", saveDials);
   document.getElementById("dial-save2").addEventListener("click", saveDials);
