@@ -77,6 +77,8 @@ CORS/CORP/nosniff headers and `Cache-Control: public, max-age=300`.
   - `?fallback=1` always returns `frontend.DefaultRef` and doesn't change the
     cookie.
 - Approved rotation, static for now: `builtin/site`, `builtin/particle-stream`.
+  The `FRONTEND_ROTATION` env var (comma-separated refs, each validated) overrides
+  it; the end-to-end tests use it to force a specific front end.
 - The public shell no longer loads the wasm site directly (`/site/` and
   `SITE_DIR` go away); the site is `builtin/site` in the iframe.
 
