@@ -63,103 +63,118 @@ The CMS schema and what front ends see are **decoupled by a contract**.
 
 ## Layer 3: the observer (self-healing)
 
-### Detection sources
+**Principle: prioritize displaying the correct content.** The observer fixes
+things so the page shows the right content, and applies its fixes itself.
+Review is the exception, not the default.
 
-| Source | Examples |
-|---|---|
-| Browser reports, via `POST /api/observe` from the parent page (rate-limited, deduplicated) | uncaught errors, `TypeError`s, WebGPU validation errors, a front end never reaching ready, `gpu-lost` |
-| Content validators, server-side, on save and on a schedule | published page with empty title or body; home page missing; experiment without a summary; contract-normalization warnings (a field had to be defaulted) |
-| Synthetic checks, periodic headless render of each front end in the rotation against current content | a front end that renders blank, throws, or doesn't show CMS content |
+### Coverage is explicit
 
-### Detections
+Detection comes from guard points we place deliberately. There is no attempt at
+catching everything. There are only a few cases to protect against:
 
-Stored in a `detections` table, **deduplicated by signature**. The signature
-is a hash of the kind, front end, normalized error message, and route
-pattern. Each row holds:
+| Case | Guard point | Example |
+|---|---|---|
+| **Content gap**: a field a front end needs is missing or empty | `site.field(item, "subtitle", {expect: "text"})` in the host API: returns a fallback immediately and reports the gap | a front end shows project subtitles; project X has none |
+| **Type break**: a field has the wrong shape | the same call; normalization coerces what it safely can and reports the rest | expected text, got a list |
+| **Front-end failure**: a prompted front end throws or never gets ready | `site-host.js` error capture and the parent's ready timeout | an unguarded `.length` on something undefined |
 
-- kind, front-end ref and route;
-- the signature, an occurrence count, and first- and last-seen times;
-- a sample payload (message, stack, content-contract version, user agent);
-- status: `new`, `triaging`, `auto_fixed`, `needs_review`, `resolved` or
-  `dismissed`;
-- `seen_at`, which drives the notification dots.
+Front ends declare their expectations through `site.field` (the builder's
+system prompt requires it for any content-specific feature). That call is the
+tripwire, and the declared `expect` tells the observer what a correct value
+looks like.
 
-### Triage agent
+### Fixes
 
-For each new signature, the observer runs one Claude call (`claude-opus-5-5`,
-structured output):
+| Case | Fix | Applied |
+|---|---|---|
+| Content gap | **Generate the value from that item's other content** (Claude, structured output, `claude-opus-5-5`). A subtitle comes from the project's title, body and summary. | Immediately |
+| Type break | Coerce if lossless; otherwise generate a correct value as for a gap | Immediately |
+| Front-end failure (prompted front end) | Minimal patch, saved as a **new revision** | Immediately, if a headless render proves it loads, throws nothing, and shows the content |
 
-- **Input:**
-  - the detection;
-  - the content contract;
-  - the relevant content snapshot;
-  - for generated front ends, their source files.
-- **Output:** a plan with:
-  - `diagnosis`;
-  - `fix_kind`: `frontend_patch`, `content_issue`, `contract_default`,
-    `pull_from_rotation` or `none`;
-  - `disruption`: `normal` or `review`;
-  - the patch or proposed change;
-  - the rationale.
-- **Prompt rule:** choose the most straightforward, least clever fix: add a
-  guard or fallback, never redesign or remove features.
+Review is required only if:
 
-### Normal vs. review
+- a patch fails that verification;
+- a fix would **overwrite content you wrote**;
+- the fix touches a built-in front end, which is code in the repo: the observer
+  writes the patch and you merge it.
 
-**"Normal" (auto-applied) must be provably safe:**
+While a problem is unresolved, the failing front end is pulled from the
+rotation (always safe and reversible) and the default front end serves.
 
-- **Defensive patches to generated front ends.**
-  - Only null/empty guards, defaults, or type coercion.
-  - Diff within a size limit.
-  - Rendered in the headless checker against current content, where it must
-    reach ready with no errors and still show the CMS content.
-  - Applied as a **new revision**, so it can be rolled back with one click.
-- **Temporarily pulling a failing front end from the rotation.** Always safe
-  and reversible; the default front end takes its place.
+### Generated content never overwrites yours
 
-**Always "review":**
+- Generated values live in their own table:
+  - `generated_fields`, keyed by (collection, item, field);
+  - each row stores the value, the model, and a hash of the source content it
+    was generated from.
+- The contract layer merges them in: **your value, then the generated value,
+  then the default.** A generated field is marked in the payload
+  (`_generated: ["subtitle"]`) so the admin and front ends can tell it apart.
+- **Editing the item yourself** means your value wins from then on.
+  Generated values whose source content changed are marked stale and
+  regenerated the next time they're needed.
+- Generation can create fields the CMS schema doesn't have yet (a `subtitle`
+  on projects). This is how additive needs get met without a migration; if a
+  field proves permanent, promote it into the schema.
 
-- anything that changes layout, features or visible behavior;
-- any change to the built-in front ends (they're code in the repo; the observer
-  proposes a patch, a human merges it);
-- **any content edit.** The agent never invents or rewrites your content. For
-  empty-content detections it tells you what's missing and where.
+### Detections and the admin
 
-### Admin
+- The `detections` table records:
+  - kind, front end, route, and the collection/item/field;
+  - a deduplication signature, occurrence count, and first- and last-seen
+    times;
+  - a sample payload;
+  - the fix applied or proposed;
+  - status: `new`, `fixed`, `needs_review`, `reverted` or `dismissed`;
+  - `seen_at`.
+- **Observer** section in the admin:
+  - a **notification dot** with a count of detections not yet seen;
+  - dots on each new row, cleared when you view it.
+- **Each detection** shows:
+  - what happened and how often;
+  - what the observer did, e.g. "generated a subtitle for Project X: '…'";
+  - one-click **Accept** (promote a generated value into your content), **Edit**,
+    **Regenerate**, **Revert** and **Dismiss**.
 
-A new **Observer** section:
+## Front-end revisions and reprompting
 
-- A **notification dot** on the admin nav with a count of detections not yet
-  seen. Dots on each new row. Viewing a detection marks it seen.
-- **Tabs:** Needs review, Auto-fixed (with the diff and a Revert button),
-  Resolved, Dismissed.
-- **Each detection shows:** what happened and how often, the agent's diagnosis
-  and plan, the patch diff, and Approve / Reject / Dismiss buttons.
+- Every front end is a series of **immutable revisions**:
+  - `frontend_revisions`: ref, revision number, parent revision, files, the
+    prompt conversation that produced it, author (you, a visitor, or the
+    observer), and creation time;
+  - a front end's **active revision** is what the rotation serves.
+- **Reprompt** a front end from the admin:
+  - the builder chat opens with the active revision's files and prompt
+    history;
+  - each result is a new revision;
+  - the snapshot you started from is untouched.
+- **Rollback** moves the active pointer to any earlier revision.
+- Observer patches are revisions too (author: observer), so they show up in
+  the same history and roll back the same way.
 
 ## Build order
 
 1. **Contract.**
    - `content-contract.json`;
    - server normalization plus `contractVersion`;
-   - host-API normalization and safe accessors;
+   - host-API normalization, safe accessors and `site.field`;
    - the additive-only compatibility test;
-   - update the built-in `site` front end to use the accessors;
-   - e2e tests with deliberately malformed content.
+   - update the built-in `site` front end;
+   - e2e tests with malformed and missing content.
 2. **Observer data and admin.**
    - `/api/observe` ingestion (rate limits, deduplication);
-   - content validators;
-   - the `detections` table;
+   - `detections` and `generated_fields` tables;
+   - contract merge of generated values;
    - the admin section with notification dots.
-3. **Triage agent.**
-   - Claude call with structured output;
-   - normal/review classification;
-   - "pull from rotation" auto-action;
-   - review flow.
-4. **Auto-patching generated front ends.** Needs the builder, since generated
-   front ends are what it patches:
-   - revisions;
-   - the headless verification gate;
-   - revert.
-5. **Builder (admin-only first).** Ben prompts his own front ends from the
-   admin; they go live through the same review and rotation. The public builder
-   comes later.
+3. **Observer fixes.**
+   - content-gap generation and type-break handling (Claude);
+   - Accept / Edit / Regenerate / Revert;
+   - pull-from-rotation.
+4. **Revisions and the admin builder.**
+   - `frontend_revisions`;
+   - Ben prompts and reprompts his own front ends;
+   - rollback;
+   - front ends served by revision from Cloud Storage.
+5. **Observer front-end patches.** Patch revisions with the headless
+   verification gate.
+6. **Public builder.**
