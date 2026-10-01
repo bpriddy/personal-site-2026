@@ -130,7 +130,7 @@ same host API as **built-in front ends**. `site/` is the default and the fallbac
    (`claude-opus-5-5`, adaptive thinking, streamed to the browser over SSE). The
    API key never reaches the browser. The model edits a multi-file project
    through file tools (write file, replace text in a file).
-3. **Preview:** after each edit the builder reloads the draft in the sandboxed
+3. **Preview:** the live site itself is the preview (visitors), or the sandboxed
    iframe with a freshly signed URL.
    Console errors, exceptions and WebGPU validation errors are sent back to the
    model automatically so it can repair them.

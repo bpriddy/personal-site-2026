@@ -413,3 +413,63 @@ Both go to `/build`.
   - purging drafts after 30 days;
   - a draft that falls back to the default front end still shows the "your
     front end" banner.
+
+---
+
+# v1.3 (2026-10-01): building on the site
+
+The `/build` pages are replaced by a **modal on the live site**, and the live
+site is the only preview. This supersedes the v1.2 route table.
+
+## Entry and modal
+
+- The corner button, the transcript link and `/?build=1` all open the modal in
+  place. The modal reads `?build=1`, then strips it from the URL.
+- `/build`, `/build/` and `/build/<slug>` redirect (302) to `/?build=1`.
+- Inside the modal:
+  - **Build** (prompt-first);
+  - streaming progress;
+  - **Your creations**: every front end with all its versions. Picking a
+    version switches the site to it in place.
+  - **Change it**: reprompt from the version currently on the site;
+  - **Submit version N for review**, with its status;
+  - **Back to the normal site**.
+- While a build runs, closing the modal minimizes it to a pill.
+- The modal is accessible: `role=dialog` with focus trap, Esc to close, and
+  focus returns to whatever opened it.
+
+## API (owner-only; 404 for non-owners; POSTs behind CrossOriginProtection; limit refusals come back as `{"error": "<friendly message>"}`)
+
+| Route | |
+|---|---|
+| `GET /build/api/frontends` | `canBuild`, any limit notice, `maxPrompt`, the current live selection, and each front end with status, running flag and versions |
+| `POST /build/api/new` | `{prompt, title?}` → 201 `{id, slug, title}` |
+| `POST /build/api/fe/{slug}/chat` | SSE, same format as the admin chat |
+| `POST /build/api/fe/{slug}/live` | `{rev}` (empty means the latest version) → sets `fe_live` |
+| `POST /build/api/fe/{slug}/submit` | `{rev}` → `{status, message}` |
+| `POST /build/api/exit` | clears `fe_live` → 204 |
+
+Reserved visitor slugs: `new`, `preview`, `api`.
+
+## View live, version-specific
+
+- **`fe_live`** is `"<front-end id>:<revision id>"`. It's a session cookie,
+  `HttpOnly` and `SameSite=Lax`.
+- `/api/frontend` serves exactly that version, but only if this session owns
+  the front end and the version belongs to it. Anything else is cleared. A
+  legacy value without a version means the latest.
+- Draft responses add `revision`, `number`, `title`, and
+  `exit: "/build/api/exit"`.
+
+## Parent page additions
+
+`frontend-host.js` exposes `window.siteHost`:
+
+- `reload()` reloads the iframe with a fresh `/api/frontend`, without reloading
+  the page;
+- `exitDraft()`;
+- `current()`.
+
+It fires a `sitehost:load` event on each load. The modal uses these to switch
+the site in place. `builder-stream.js` is the SSE chat client shared by the
+modal and the admin builder.
