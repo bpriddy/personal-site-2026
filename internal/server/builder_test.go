@@ -355,3 +355,31 @@ func jsonString(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b)
 }
+
+func TestBuilderPromptFirstCreate(t *testing.T) {
+	e := newBuilderServer(t, true)
+	prompt := "A minimal, elegant dark page with my name large!"
+	rec := e.form("/admin/builder/new", url.Values{"prompt": {prompt}})
+	loc := rec.Header().Get("Location")
+	if rec.Code != 303 || !strings.HasPrefix(loc, "/admin/builder/fe/a-minimal-elegant-dark-page#start=") {
+		t.Fatalf("got %d %q", rec.Code, loc)
+	}
+	if got, _ := url.QueryUnescape(strings.SplitN(loc, "#start=", 2)[1]); got != prompt {
+		t.Fatalf("start prompt = %q", got)
+	}
+	// same prompt again: a free slug, not an error
+	rec = e.form("/admin/builder/new", url.Values{"prompt": {prompt}})
+	if loc := rec.Header().Get("Location"); !strings.HasPrefix(loc, "/admin/builder/fe/a-minimal-elegant-dark-page-2#start=") {
+		t.Fatalf("second create = %q", loc)
+	}
+	// a chosen name wins over the derived one
+	rec = e.form("/admin/builder/new", url.Values{"prompt": {"anything"}, "title": {"Night sky"}})
+	if loc := rec.Header().Get("Location"); !strings.HasPrefix(loc, "/admin/builder/fe/night-sky#start=") {
+		t.Fatalf("named create = %q", loc)
+	}
+	// prompts with no letters still get a valid slug
+	rec = e.form("/admin/builder/new", url.Values{"prompt": {"!!! ???"}})
+	if loc := rec.Header().Get("Location"); !strings.HasPrefix(loc, "/admin/builder/fe/untitled#start=") {
+		t.Fatalf("symbol-only create = %q", loc)
+	}
+}

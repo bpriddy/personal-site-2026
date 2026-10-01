@@ -123,4 +123,14 @@
       ta.disabled = btn.disabled = false;
     });
   });
+  // prompt-first creation lands here with #start=<prompt>: send it once
+  (function () {
+    var m = /^#start=(.*)$/.exec(location.hash);
+    if (!m) return;
+    history.replaceState(null, "", location.pathname + location.search);
+    var ta = form.querySelector("textarea");
+    if (!ta || ta.disabled) return;
+    try { ta.value = decodeURIComponent(m[1].replace(/\+/g, " ")); } catch (e) { return; }
+    if (ta.value.trim()) form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event("submit", { cancelable: true }));
+  })();
 })();

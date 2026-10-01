@@ -8,10 +8,13 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/bpriddy/personal-site-2026/internal/builder"
 	"github.com/bpriddy/personal-site-2026/internal/frontend"
@@ -136,12 +139,20 @@ func (s *Server) builderNew(w http.ResponseWriter, r *http.Request) {
 	if b == nil {
 		return
 	}
+	prompt := strings.TrimSpace(r.FormValue("prompt"))
 	slug := strings.TrimSpace(strings.ToLower(r.FormValue("slug")))
 	title := strings.TrimSpace(r.FormValue("title"))
+	if prompt != "" && slug == "" {
+		// prompt-first: name it from the prompt; the chat starts on arrival
+		if title == "" {
+			title = titleFromPrompt(prompt)
+		}
+		slug = s.freeSlug(r, slugify(title))
+	}
 	if title == "" {
 		title = slug
 	}
-	if !frontend.ValidSlug(slug) || len(title) > 200 {
+	if !frontend.ValidSlug(slug) || len(title) > 200 || len(prompt) > 8000 {
 		http.Redirect(w, r, "/admin/builder/?error="+urlQuery("Slugs are lowercase letters, digits and dashes, starting with a letter or digit."), http.StatusSeeOther)
 		return
 	}
@@ -153,7 +164,67 @@ func (s *Server) builderNew(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, "builder: create", err)
 		return
 	}
-	http.Redirect(w, r, "/admin/builder/fe/"+slug, http.StatusSeeOther)
+	dest := "/admin/builder/fe/" + slug
+	if prompt != "" {
+		// builder.js reads #start=, fills the chat and sends it
+		dest += "#start=" + url.QueryEscape(prompt)
+	}
+	http.Redirect(w, r, dest, http.StatusSeeOther)
+}
+
+// titleFromPrompt names a front end after the first few words of its prompt.
+func titleFromPrompt(prompt string) string {
+	words := strings.FieldsFunc(prompt, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '-' && r != '\''
+	})
+	if len(words) > 5 {
+		words = words[:5]
+	}
+	t := strings.Join(words, " ")
+	if t == "" {
+		return "Untitled"
+	}
+	rs := []rune(t)
+	rs[0] = unicode.ToUpper(rs[0])
+	return string(rs)
+}
+
+// slugify turns a title into a valid fe/ slug.
+func slugify(title string) string {
+	var b strings.Builder
+	dash := false
+	for _, r := range strings.ToLower(title) {
+		if r < 128 && (unicode.IsLetter(r) || unicode.IsDigit(r)) {
+			b.WriteRune(r)
+			dash = false
+		} else if !dash && b.Len() > 0 {
+			b.WriteByte('-')
+			dash = true
+		}
+		if b.Len() >= 40 {
+			break
+		}
+	}
+	s := strings.Trim(b.String(), "-")
+	if !frontend.ValidSlug(s) {
+		return "frontend"
+	}
+	return s
+}
+
+// freeSlug returns base, or base-2, base-3, ... if taken.
+func (s *Server) freeSlug(r *http.Request, base string) string {
+	b := s.builderStore()
+	for i := 1; i < 100; i++ {
+		cand := base
+		if i > 1 {
+			cand = base + "-" + strconv.Itoa(i)
+		}
+		if _, err := b.BuilderFrontend(r.Context(), frontend.PromptedID(cand)); errors.Is(err, store.ErrNotFound) {
+			return cand
+		}
+	}
+	return base + "-" + strconv.FormatInt(time.Now().Unix(), 36)
 }
 
 // builderRotation adds a front end to the rotation or removes it, then

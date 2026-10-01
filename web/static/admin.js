@@ -24,3 +24,15 @@
   refresh();
   setInterval(function () { if (!document.hidden) refresh(); }, 60000);
 })();
+
+// mark the current admin nav tab
+(function () {
+  var path = location.pathname;
+  var links = document.querySelectorAll(".site-header nav a");
+  var best = null;
+  for (var i = 0; i < links.length; i++) {
+    var href = links[i].getAttribute("href");
+    if (href && href !== "/" && path.indexOf(href) === 0 && (!best || href.length > best.getAttribute("href").length)) best = links[i];
+  }
+  if (best) best.setAttribute("aria-current", "page");
+})();

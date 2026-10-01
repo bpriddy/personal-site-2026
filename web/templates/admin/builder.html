@@ -6,6 +6,17 @@
 {{if .Error}}<p class="b-error" role="alert">{{.Error}}</p>{{end}}
 {{if .Disabled}}<p class="b-notice">{{.Disabled}}</p>{{end}}
 {{if .RotationOverridden}}<p class="b-notice"><strong>FRONTEND_ROTATION is set:</strong> it overrides the rotation toggles below.</p>{{end}}
+<form method="post" action="/admin/builder/new" class="b-create stack">
+  <label for="new-prompt"><strong>Describe a new front end</strong></label>
+  <textarea id="new-prompt" name="prompt" rows="4" required maxlength="8000" {{if .Disabled}}disabled{{end}}
+    placeholder="e.g. A minimal, elegant dark page with my name large and my pages listed; a subtle animated WebGPU background if available"></textarea>
+  <details class="b-muted"><summary>Name it yourself (optional)</summary>
+    <input name="title" placeholder="Name, e.g. Night sky" maxlength="200" aria-label="Name">
+  </details>
+  <button class="b-primary" {{if .Disabled}}disabled{{end}}>Create and start building</button>
+  <p class="b-muted">Claude builds it as revision r1 with a live preview. Nothing reaches visitors until you make a revision active and add it to the rotation.</p>
+</form>
+
 <p>Visitors see one front end from the rotation at random per visit. A prompted front end serves its <em>active</em> revision; <code>builtin/site</code> is always the fallback.</p>
 
 <section>
@@ -22,11 +33,6 @@
     </tr>{{end}}
   </table>
   {{else}}<p class="b-muted">None yet.</p>{{end}}
-  <form method="post" action="/admin/builder/new" class="inline b-new">
-    <input name="title" placeholder="Name, e.g. Night sky" required maxlength="200" aria-label="Name">
-    <input name="slug" placeholder="slug, e.g. night-sky" required pattern="[a-z0-9][a-z0-9\-]*" maxlength="63" aria-label="Slug">
-    <button>New front end</button>
-  </form>
 </section>
 
 <section>

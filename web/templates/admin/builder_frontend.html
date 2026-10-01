@@ -77,7 +77,7 @@
       <td>r{{.Number}}{{if .Active}} <span class="b-badge b-on">active</span>{{end}}{{if .ParentNumber}}<br><span class="b-muted">from r{{.ParentNumber}}</span>{{end}}</td>
       <td>{{.CreatedAt.Format "Jan 2 15:04"}}</td>
       <td>{{.Author}}</td>
-      <td>{{.Summary}}</td>
+      <td><details class="b-summary"><summary>{{.Summary}}</summary>{{.Summary}}</details></td>
       <td>{{$id := .ID}}{{range .Files}}<a href="/admin/builder/rev/{{$id}}/{{.Path}}" target="_blank" rel="noopener">{{.Path}}</a> <span class="b-muted">{{.Size}}B</span><br>{{end}}</td>
       <td class="b-rev-actions">
         <a href="?rev={{.ID}}">{{if .Selected}}Previewing{{else}}Preview / reprompt{{end}}</a>

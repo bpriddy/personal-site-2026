@@ -60,3 +60,21 @@ input, textarea, button { font: inherit; padding: .4rem; }
 .badge { font-size: .75rem; padding: 0 .3rem; border: 1px solid var(--rule); border-radius: .25rem; }
 .actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-top: .35rem; }
 .actions form { margin: 0; }
+
+/* admin: nav tabs, primary actions, prompt-first create */
+.site-header nav { display: flex; flex-wrap: wrap; gap: .25rem; }
+.site-header nav a { padding: .35rem .7rem; border-radius: .4rem; color: inherit; }
+.site-header nav a:hover { background: var(--rule); }
+.site-header nav a[aria-current="page"] { background: var(--fg); color: var(--bg); }
+.b-primary, a.button-link {
+  display: inline-block; padding: .6rem 1rem; border: 0; border-radius: .4rem;
+  background: #2f6fde; color: #fff; font-weight: 600; text-decoration: none; cursor: pointer;
+}
+.b-primary:disabled { background: #999; cursor: not-allowed; }
+.b-create { padding: 1rem; margin: 1rem 0 1.5rem; border: 2px solid #2f6fde; border-radius: .6rem; }
+.b-create textarea { width: 100%; }
+.b-create details input { margin-top: .5rem; width: 100%; }
+/* revision summaries: three lines, tap to expand */
+.b-summary > summary { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; list-style: none; cursor: pointer; }
+.b-summary > summary::-webkit-details-marker { display: none; }
+.b-summary[open] > summary { display: none; }
