@@ -15,6 +15,13 @@ test("the front page links to the builder, in the transcript and over the front 
   await expect(button).toHaveAttribute("href", "/build");
   await waitLive(page);
   await expect(button).toBeVisible(); // still there over the live front end
+  // pinned to the bottom-right corner, and the topmost element there
+  const box = (await button.boundingBox())!;
+  const vp = page.viewportSize()!;
+  expect(vp.width - (box.x + box.width)).toBeLessThan(40);
+  expect(vp.height - (box.y + box.height)).toBeLessThan(40);
+  expect(await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest("#make-own") !== null,
+    [box.x + box.width / 2, box.y + box.height / 2])).toBe(true);
   // it's above the iframe: a click lands on it, not the front end
   await button.click();
   await expect(page).toHaveURL(/\/build$/);

@@ -86,7 +86,7 @@ input, textarea, button { font: inherit; padding: .4rem; }
 .make-own-link { font-weight: 600; }
 .make-own {
   position: fixed; z-index: 2147483000;
-  left: calc(12px + env(safe-area-inset-left)); bottom: calc(12px + env(safe-area-inset-bottom));
+  right: calc(12px + env(safe-area-inset-right)); bottom: calc(12px + env(safe-area-inset-bottom));
   display: inline-flex; align-items: center; min-height: 36px; padding: .4rem .85rem;
   border-radius: 999px; border: 1px solid rgb(255 255 255 / .55);
   background: rgb(17 19 24 / .88); color: #fff; font: 600 13px/1.2 system-ui, sans-serif;
