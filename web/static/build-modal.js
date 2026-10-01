@@ -15,6 +15,12 @@
 // button / a click outside close it; focus returns to whatever opened it).
 // While a build streams, closing it minimizes it to a small pill instead, so
 // the visitor can watch the site change behind it.
+//
+// Its look is the "Studio" (docs/design-pov.md, 5.5; build-modal.css): a
+// sheet docked right on wide screens and a bottom sheet on phones (drag the
+// grabber down to close), a mono header with the run's state, the visitor's
+// versions as a numbered log of their own prompts, and the composer pinned
+// at the bottom (Enter sends, Shift+Enter is a new line).
 (function () {
   "use strict";
 
@@ -60,23 +66,48 @@
   dialog.setAttribute("aria-describedby", "bm-desc");
   dialog.tabIndex = -1;
 
+  // a hairline that runs along the sheet's top edge while Claude works
+  var runLine = el("div", "bm-runline");
+  runLine.setAttribute("aria-hidden", "true");
+  var grab = el("div", "bm-grab");
+  grab.setAttribute("aria-hidden", "true");
+
   var head = el("div", "bm-head");
   var title = el("h2", "bm-title", "Make your own version");
   title.id = "bm-title";
+  var headMeta = el("span", "bm-head-meta");
+  var runState = el("span", "bm-state", "Idle");
   var minBtn = button("bm-icon bm-minimize", "", function () { minimize(); });
   minBtn.setAttribute("aria-label", "Minimize while it builds");
   minBtn.title = "Minimize while it builds";
-  minBtn.append(iconLine());
+  minBtn.append(el("span", "bm-icon-text", "Hide"), iconLine());
   minBtn.hidden = true;
   var closeBtn = button("bm-icon bm-close", "", function () { close(); });
   closeBtn.setAttribute("aria-label", "Close");
-  closeBtn.title = "Close";
-  closeBtn.append(iconCross());
-  head.append(title, minBtn, closeBtn);
+  closeBtn.title = "Close (Esc)";
+  closeBtn.append(el("span", "bm-icon-text", "Esc"), iconCross());
+  head.append(title, headMeta, runState, minBtn, closeBtn);
 
   var body = el("div", "bm-body");
-  var desc = el("p", "bm-lede", "Describe how you'd like Ben's site to look and feel. Claude builds it in a minute or two, with Ben's real pages inside, and you'll see it right here on the site. Only you can see it until you send it to Ben.");
+  var intro = el("div", "bm-intro");
+  var lede = el("p", "bm-lede", "This site is rebuilt by its visitors. Describe yours.");
+  var desc = el("p", "bm-desc", "Say how Ben's site should look and feel. Claude builds it in a minute or two, with Ben's real pages inside, and it appears right here on the site. Only you can see it until you send it to Ben.");
   desc.id = "bm-desc";
+  var starters = el("div", "bm-starters");
+  starters.setAttribute("role", "group");
+  starters.setAttribute("aria-label", "Ideas to start from");
+  [
+    ["Brutalist", "Brutalist: raw grid, heavy type, nothing rounded"],
+    ["Made of water", "Made of water: everything ripples gently, deep blue, calm"],
+    ["A 1994 GeoCities page, but good", "A 1994 GeoCities page, but good: tiled background, marquee energy, done with real taste"]
+  ].forEach(function (s) {
+    starters.append(button("bm-starter", s[0], function () {
+      ta.value = s[1];
+      ta.focus();
+      ta.setSelectionRange(ta.value.length, ta.value.length);
+    }));
+  });
+  intro.append(lede, desc, starters);
   var notice = el("p", "bm-notice");
   notice.setAttribute("role", "status");
   notice.hidden = true;
@@ -94,18 +125,28 @@
   var ta = el("textarea", "bm-input");
   ta.id = "bm-prompt";
   ta.name = "prompt";
-  ta.rows = 3;
-  ta.placeholder = "e.g. A quiet night sky with slowly drifting stars, and the pages as constellations you can tap";
+  ta.rows = 2;
+  ta.placeholder = "Describe the site you want \u2014 a mood, a reference, a rule.";
+  var hint = el("p", "bm-hint");
   var row = el("div", "bm-row");
+  var keys = el("p", "bm-keys", "Enter to send \u00b7 Shift+Enter for a new line");
+  keys.setAttribute("aria-hidden", "true");
   var buildBtn = el("button", "bm-btn bm-btn-primary bm-build", "Build");
   buildBtn.type = "submit";
-  var newBtn = button("bm-btn bm-btn-quiet bm-new", "Start a new one instead", function () {
+  var newBtn = button("bm-btn bm-btn-text bm-new", "Start a new one instead", function () {
     setMode({ kind: "new", slug: "", rev: "" });
     ta.focus();
   });
-  row.append(buildBtn, newBtn);
-  var hint = el("p", "bm-hint");
-  form.append(label, ta, row, hint);
+  row.append(keys, newBtn, buildBtn);
+  form.append(label, ta, hint, row);
+  // Enter sends; Shift+Enter (or an IME composition) stays in the text
+  ta.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter" || e.shiftKey || e.isComposing || e.altKey) return;
+    e.preventDefault();
+    if (buildBtn.disabled) return;
+    if (form.requestSubmit) form.requestSubmit(buildBtn);
+    else buildBtn.click();
+  });
 
   var progress = el("section", "bm-progress");
   progress.hidden = true;
@@ -113,6 +154,7 @@
   var pStatus = el("p", "bm-status");
   pStatus.setAttribute("role", "status");
   var pSteps = el("ol", "bm-steps");
+  pSteps.setAttribute("aria-hidden", "true"); // the status line speaks for it
   var notes = el("details", "bm-notes");
   var notesSum = el("summary", null, "Claude's notes");
   var pThinking = el("div", "bm-thinking");
@@ -129,8 +171,10 @@
   mine.append(mineH, empty, list);
 
   var foot = el("p", "bm-foot", "There's no account: your creations live in this browser, so clearing your cookies loses them.");
-  body.append(desc, notice, liveBox, form, progress, mine, foot);
-  dialog.append(head, body);
+  body.append(intro, notice, liveBox, progress, mine, foot);
+  var composer = el("div", "bm-composer");
+  composer.append(form);
+  dialog.append(runLine, grab, head, body, composer);
   wrap.append(backdrop, dialog);
 
   // minimized while a build streams
@@ -139,7 +183,7 @@
   pill.hidden = true;
   var pillDot = el("span", "bm-pill-dot");
   pillDot.setAttribute("aria-hidden", "true");
-  var pillText = el("span", "bm-pill-text", "Building…");
+  var pillText = el("span", "bm-pill-text", "Building\u2026");
   pill.append(pillDot, pillText);
 
   document.body.append(wrap, pill);
@@ -148,16 +192,16 @@
     var ns = "http://www.w3.org/2000/svg";
     var s = document.createElementNS(ns, "svg");
     s.setAttribute("viewBox", "0 0 24 24");
-    s.setAttribute("width", "20");
-    s.setAttribute("height", "20");
+    s.setAttribute("width", "14");
+    s.setAttribute("height", "14");
     s.setAttribute("aria-hidden", "true");
     s.setAttribute("focusable", "false");
     var p = document.createElementNS(ns, "path");
     p.setAttribute("d", d);
     p.setAttribute("fill", "none");
     p.setAttribute("stroke", "currentColor");
-    p.setAttribute("stroke-width", "2");
-    p.setAttribute("stroke-linecap", "round");
+    p.setAttribute("stroke-width", "1.5");
+    p.setAttribute("stroke-linecap", "square");
     s.append(p);
     return s;
   }
@@ -247,28 +291,45 @@
     if (mode.kind === "new") {
       label.textContent = "Describe your version of the site";
       buildBtn.textContent = "Build";
-      ta.placeholder = "e.g. A quiet night sky with slowly drifting stars, and the pages as constellations you can tap";
+      ta.placeholder = "Describe the site you want \u2014 a mood, a reference, a rule.";
       hint.textContent = "";
       newBtn.hidden = true;
     } else if (rv) {
       label.textContent = "What should change in version " + rv.number + " of “" + f.title + "”?";
       buildBtn.textContent = "Make the change";
-      ta.placeholder = "e.g. Make the text bigger and the background warmer";
+      ta.placeholder = "What should change? A colour, a feeling, a rule.";
       hint.textContent = "Changes start from version " + rv.number + ". Older versions stay as they are.";
       newBtn.hidden = false;
     } else {
       label.textContent = "Describe “" + f.title + "”";
       buildBtn.textContent = "Build";
-      ta.placeholder = "e.g. A quiet night sky with slowly drifting stars";
+      ta.placeholder = "Describe it \u2014 a mood, a reference, a rule.";
       hint.textContent = "";
       newBtn.hidden = false;
     }
     var off = !!busy;
     ta.disabled = buildBtn.disabled = newBtn.disabled = off;
+    composer.classList.toggle("bm-composer-off", !enabled);
   }
+
+  // the header's meta: which draft and version is on the site, and whether
+  // Claude is working
+  function renderHead() {
+    var live = state && state.live;
+    var lf = live ? findFrontend(live.slug) : null;
+    var n = state ? state.frontends.length : 0;
+    headMeta.textContent = live && lf ? "Draft " + two(n - state.frontends.indexOf(lf)) + " / v" + live.number : "";
+    runState.textContent = busy ? "Working" : "Idle";
+    dialog.classList.toggle("bm-busy", !!busy);
+    var empty = !n && !busy;
+    intro.classList.toggle("bm-intro-empty", empty);
+    starters.hidden = !empty || !(state && state.enabled);
+  }
+  function two(n) { return (n < 10 ? "0" : "") + n; }
 
   function render() {
     if (!state) return;
+    renderHead();
     if (!busy) showNotice(state.notice || "");
     // what the site shows
     var live = state.live;
@@ -287,7 +348,8 @@
       var li = el("li", "bm-fe");
       li.setAttribute("data-slug", f.slug);
       var h = el("div", "bm-fe-head");
-      h.append(el("span", "bm-fe-title", f.title), el("span", "bm-chip bm-chip-" + f.status.key, f.status.label));
+      var count = el("span", "bm-fe-count", f.revisions.length ? two(f.revisions.length) + (f.revisions.length === 1 ? " version" : " versions") : "");
+      h.append(el("span", "bm-fe-title", f.title), el("span", "bm-chip bm-chip-" + f.status.key, f.status.label), count);
       li.append(h);
       if (f.status.key !== "draft") li.append(el("p", "bm-fe-note", f.status.note));
       if (f.running || (busy && busy.slug === f.slug)) li.append(el("p", "bm-fe-note bm-working", "Claude is working on a new version…"));
@@ -314,7 +376,9 @@
         b.setAttribute("data-rev", rv.id);
         b.setAttribute("aria-pressed", on ? "true" : "false");
         var top = el("span", "bm-rev-top");
-        top.append(el("span", "bm-rev-n", "Version " + rv.number));
+        var mark = el("span", "bm-rev-mark");
+        mark.setAttribute("aria-hidden", "true");
+        top.append(mark, el("span", "bm-rev-n", "Version " + rv.number));
         if (rv.parentNumber) top.append(el("span", "bm-rev-from", "from version " + rv.parentNumber));
         top.append(el("span", "bm-rev-state", on ? "On the site" : "Show on the site"));
         b.append(top);
@@ -330,18 +394,18 @@
       {
         var acts = el("div", "bm-fe-actions");
         if (state.enabled) {
-          acts.append(keyed(button("bm-btn bm-change", "Change it", function () {
+          acts.append(keyed(button("bm-btn bm-btn-text bm-change", "Change it", function () {
             setMode({ kind: "change", slug: f.slug, rev: selected.id });
             ta.focus();
           }), "change:" + f.slug));
         }
         var st = f.status;
         var sub;
-        if (st.revision === selected.id && st.key === "pending") sub = button("bm-btn bm-btn-quiet", "Version " + selected.number + " is with Ben");
-        else if (st.revision === selected.id && st.key === "approved") sub = button("bm-btn bm-btn-quiet", "Version " + selected.number + " is approved");
-        else if (st.revision === selected.id && st.key === "rejected") sub = button("bm-btn bm-btn-quiet", "Change it to submit again");
+        if (st.revision === selected.id && st.key === "pending") sub = button("bm-btn bm-btn-outline", "Version " + selected.number + " is with Ben");
+        else if (st.revision === selected.id && st.key === "approved") sub = button("bm-btn bm-btn-outline", "Version " + selected.number + " is approved");
+        else if (st.revision === selected.id && st.key === "rejected") sub = button("bm-btn bm-btn-outline", "Change it to submit again");
         if (sub) sub.disabled = true;
-        else sub = button("bm-btn bm-btn-quiet bm-submit", "Submit version " + selected.number + " for review", function () { submit(f, selected, sub); });
+        else sub = button("bm-btn bm-btn-outline bm-submit", "Submit version " + selected.number + " for review", function () { submit(f, selected, sub); });
         acts.append(keyed(sub, "submit:" + f.slug));
         li.append(acts);
         li.append(el("p", "bm-hint", "Submitting sends version " + selected.number + " to Ben. If he approves it, visitors may see it."));
@@ -407,6 +471,16 @@
     notes.open = false;
   }
 
+  // a line of the mono log: VERB  path, typed in; the newest carries the caret
+  function logStep(text) {
+    var m = /^(\S+)\s+(.*)$/.exec(text || "");
+    var li = el("li", "bm-step");
+    if (m) li.append(el("span", "bm-step-verb", m[1]), el("span", "bm-step-what", m[2]));
+    else li.textContent = text;
+    pSteps.append(li);
+    pSteps.scrollTop = pSteps.scrollHeight;
+  }
+
   function setPill(text, done) {
     pillText.textContent = text;
     pill.classList.toggle("bm-pill-done", !!done);
@@ -426,6 +500,7 @@
     var m = mode;
     busy = { slug: m.slug, title: "" };
     renderForm();
+    renderHead();
     minBtn.hidden = false;
     setPill("Building…", false);
 
@@ -455,7 +530,7 @@
         },
         onThinking: function (t) { pThinking.textContent += t; },
         onText: function (t) { pText.textContent += t; },
-        onTool: function (text) { pSteps.append(el("li", null, text)); }
+        onTool: function (text) { logStep(text); }
       }).then(function (res) { res.slug = target.slug; return res; });
     }).then(function (res) {
       if (res.outcome !== "revision") {
@@ -464,7 +539,8 @@
         return finish(false);
       }
       ta.value = "";
-      pStatus.textContent = "Version " + res.number + " is ready. Showing it on the site…";
+      logStep("Live version " + res.number);
+      pStatus.textContent = "Version " + res.number + " is ready. Showing it on the site\u2026";
       // switch the site to it right away
       return api("/fe/" + encodeURIComponent(res.slug) + "/live", { rev: res.revision }).then(function (live) {
         if (state) state.live = live;
@@ -526,21 +602,38 @@
     root.classList.remove("bm-minimized");
     if (isOpen) return;
     isOpen = true;
+    clearTimeout(hideTimer);
+    wrap.classList.remove("bm-leaving");
+    dialog.style.transform = "";
     wrap.hidden = false;
     root.classList.add("bm-open");
     setInert(true);
     refresh();
     // focus the prompt if it's usable, else the dialog itself
     var target = !form.hidden && !ta.disabled ? ta : dialog;
-    target.focus();
+    target.focus({ preventScroll: true });
   }
 
+  // hide closes the sheet; the exit is a short reverse of the entrance (CSS),
+  // after which it leaves the page's layout
+  var hideTimer = 0;
   function hide() {
     isOpen = false;
     clearTimeout(pollTimer);
-    wrap.hidden = true;
     root.classList.remove("bm-open");
     setInert(false);
+    var quick = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (quick) {
+      wrap.hidden = true;
+      return;
+    }
+    wrap.classList.add("bm-leaving");
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(function () {
+      wrap.classList.remove("bm-leaving");
+      dialog.style.transform = "";
+      if (!isOpen) wrap.hidden = true;
+    }, 320);
   }
 
   // close: while a build streams it only minimizes
@@ -567,6 +660,45 @@
   }
 
   backdrop.addEventListener("click", function () { close(); });
+
+  // phones: drag the sheet down by its grabber or header to close it
+  // (released past 40% of its height, or flicked down)
+  (function () {
+    var startY = 0, startT = 0, dy = 0, dragging = false;
+    function isSheet() { return window.matchMedia && window.matchMedia("(max-width: 1023px)").matches; }
+    function down(e) {
+      if (!isSheet() || e.button > 0 || e.target.closest("button")) return;
+      dragging = true;
+      startY = e.clientY;
+      startT = Date.now();
+      dy = 0;
+      dialog.classList.add("bm-dragging");
+      try { e.target.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
+    }
+    function move(e) {
+      if (!dragging) return;
+      dy = Math.max(0, e.clientY - startY);
+      dialog.style.transform = "translateY(" + dy + "px)";
+    }
+    function up() {
+      if (!dragging) return;
+      dragging = false;
+      dialog.classList.remove("bm-dragging");
+      var v = dy / Math.max(1, Date.now() - startT); // px per ms
+      if (dy > dialog.offsetHeight * 0.4 || (v > 0.5 && dy > 24)) {
+        close();
+        if (isOpen) dialog.style.transform = ""; // minimizing instead keeps it
+      } else {
+        dialog.style.transform = "";
+      }
+    }
+    [grab, head].forEach(function (n) {
+      n.addEventListener("pointerdown", down);
+      n.addEventListener("pointermove", move);
+      n.addEventListener("pointerup", up);
+      n.addEventListener("pointercancel", up);
+    });
+  })();
   document.addEventListener("keydown", function (e) {
     if (!isOpen) return;
     if (e.key === "Escape") {

@@ -202,13 +202,19 @@ func (s *Server) builderNew(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, dest, http.StatusSeeOther)
 }
 
-// titleFromPrompt names a front end after the first few words of its prompt.
+// titleFromPrompt names a front end after the first few words of its prompt,
+// without a dangling small word at the end ("Make it feel like a quiet
+// gallery", not "Make it feel like a"): the title is shown large in the
+// builder.
 func titleFromPrompt(prompt string) string {
 	words := strings.FieldsFunc(prompt, func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '-' && r != '\''
 	})
-	if len(words) > 5 {
-		words = words[:5]
+	if len(words) > 7 {
+		words = words[:7]
+	}
+	for len(words) > 1 && danglingWords[strings.ToLower(words[len(words)-1])] {
+		words = words[:len(words)-1]
 	}
 	t := strings.Join(words, " ")
 	if t == "" {
@@ -217,6 +223,13 @@ func titleFromPrompt(prompt string) string {
 	rs := []rune(t)
 	rs[0] = unicode.ToUpper(rs[0])
 	return string(rs)
+}
+
+// danglingWords don't end a title.
+var danglingWords = map[string]bool{
+	"a": true, "an": true, "the": true, "and": true, "or": true, "but": true, "of": true, "to": true,
+	"in": true, "on": true, "at": true, "for": true, "with": true, "by": true, "from": true, "like": true,
+	"as": true, "is": true, "it": true, "its": true, "my": true, "your": true, "that": true, "this": true,
 }
 
 // slugify turns a title into a valid fe/ slug.

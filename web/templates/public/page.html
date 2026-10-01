@@ -1,6 +1,9 @@
 {{define "title"}}{{.Page.Title}} · Ben Priddy{{end}}
 {{define "main"}}
-<h1>{{.Page.Title}}</h1>
-<div class="body">{{range paragraphs .Page.Body}}<p>{{.}}</p>
-{{end}}</div>
+<section class="page-head">
+  <h1 class="display">{{.Page.Title}}</h1>
+</section>
+<section class="bio bio-page">
+  <div class="bio-text body">{{template "prose" .Page.Body}}</div>
+</section>
 {{end}}

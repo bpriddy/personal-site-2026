@@ -1,6 +1,7 @@
 // Package usercontent is the user-content service: it serves front-end files
 // at /t/<token>/<path> to the main site's sandboxed iframe, plus the host API
-// script. See docs/frontend-protocol.md ("User-content service").
+// script and the house fonts. See docs/frontend-protocol.md ("User-content
+// service").
 package usercontent
 
 import (
@@ -18,6 +19,7 @@ import (
 
 	"github.com/bpriddy/personal-site-2026/internal/fetoken"
 	"github.com/bpriddy/personal-site-2026/internal/frontend"
+	"github.com/bpriddy/personal-site-2026/web"
 	webuc "github.com/bpriddy/personal-site-2026/web/usercontent"
 )
 
@@ -29,6 +31,7 @@ const (
 	cacheIndex    = "no-store"
 	cacheAsset    = "private, max-age=1800"
 	cacheSiteHost = "public, max-age=300"
+	cacheFont     = "public, max-age=31536000, immutable"
 )
 
 // Options configures a Handler.
@@ -38,6 +41,7 @@ type Options struct {
 	Source     FileSource       // front-end files
 	Now        func() time.Time // clock; nil means time.Now
 	Log        *slog.Logger     // nil means discard
+	Fonts      fs.FS            // served at /fonts/<file>; nil means web.Fonts
 }
 
 // Handler implements the user-content routes.
@@ -48,6 +52,7 @@ type Handler struct {
 	log      *slog.Logger
 	csp      string
 	siteHost []byte
+	fonts    fs.FS
 }
 
 func New(o Options) (*Handler, error) {
@@ -67,6 +72,10 @@ func New(o Options) (*Handler, error) {
 		log:      o.Log,
 		csp:      csp(o.MainOrigin),
 		siteHost: []byte(strings.ReplaceAll(webuc.SiteHostJS, "__MAIN_ORIGIN__", o.MainOrigin)),
+		fonts:    o.Fonts,
+	}
+	if h.fonts == nil {
+		h.fonts = web.Fonts
 	}
 	if h.now == nil {
 		h.now = time.Now
@@ -127,6 +136,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		hd.Set("Cache-Control", cacheSiteHost)
 		hd.Set("Content-Length", strconv.Itoa(len(h.siteHost)))
 		w.Write(h.siteHost)
+	case strings.HasPrefix(p, "/fonts/"):
+		if !allowMethod(w, r) {
+			return
+		}
+		h.serveFont(w, r, strings.TrimPrefix(p, "/fonts/"))
 	case p == "/health":
 		if !allowMethod(w, r) {
 			return
@@ -229,6 +243,36 @@ func (h *Handler) serveToken(w http.ResponseWriter, r *http.Request, rest string
 		if _, err := io.Copy(w, obj.Body); err != nil {
 			h.log.Debug("usercontent: copy", "ref", claims.Ref, "name", name, "err", err)
 		}
+	}
+}
+
+// serveFont serves one house font (or its license) from /fonts/<name>, the
+// same files the main site has at /static/fonts/. Front ends load them with
+// @font-face url("/fonts/<name>"): same origin as the front end, so the
+// sandbox CSP's font-src 'self' allows it. The sandboxed document's origin is
+// opaque, so fonts are CORS requests with Origin: null, hence the wildcard.
+// Fixed names, cached for a year.
+func (h *Handler) serveFont(w http.ResponseWriter, r *http.Request, name string) {
+	hd := w.Header()
+	hd.Set("Access-Control-Allow-Origin", "*")
+	hd.Set("Cross-Origin-Resource-Policy", "cross-origin")
+	hd.Set("X-Content-Type-Options", "nosniff")
+	ext := strings.ToLower(path.Ext(name))
+	if strings.Contains(name, "/") || !cleanName(name) || (ext != ".woff2" && ext != ".txt") {
+		http.NotFound(w, r)
+		return
+	}
+	b, err := fs.ReadFile(h.fonts, name)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	hd.Set("Content-Type", contentType(name))
+	hd.Set("Cache-Control", cacheFont)
+	hd.Set("Content-Length", strconv.Itoa(len(b)))
+	w.WriteHeader(http.StatusOK)
+	if r.Method != http.MethodHead {
+		w.Write(b)
 	}
 }
 

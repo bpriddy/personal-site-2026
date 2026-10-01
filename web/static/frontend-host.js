@@ -290,6 +290,9 @@
         var cur = document.querySelector("#transcript main");
         if (!next || !cur) throw new Error("no transcript in " + path);
         cur.replaceWith(document.importNode(next, true));
+        var nextNav = doc.querySelector("#transcript .site-header nav");
+        var curNav = document.querySelector("#transcript .site-header nav");
+        if (nextNav && curNav) curNav.replaceWith(document.importNode(nextNav, true));
         document.title = doc.title;
         post({ type: "site:route", route: slug });
       })
@@ -310,22 +313,47 @@
   // They sit above the front-end iframe, so every front end gets them.
 
   // "Make your own version of this site": a small fixed button that opens the
-  // builder modal (build-modal.js).
+  // builder modal (build-modal.js). Styled in site.css (docs/design-pov.md,
+  // 5.4): an accent dot, the label (twice, for the hover roll; shorter on
+  // phones), and the keyboard shortcut, which works on the parent page.
+  var MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
+  function span(cls, text) {
+    var e = document.createElement("span");
+    e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
   function drawMakeOwn() {
     var a = document.createElement("button");
     a.type = "button";
     a.id = "make-own";
     a.className = "make-own";
     a.setAttribute("aria-haspopup", "dialog");
+    a.setAttribute("aria-label", "Make your own version of this site");
+    a.setAttribute("aria-keyshortcuts", MAC ? "Meta+K" : "Control+K");
     a.addEventListener("click", function () { openBuilder(a); });
-    var long = document.createElement("span");
-    long.className = "make-own-long";
-    long.textContent = "Make your own version of this site";
-    var short = document.createElement("span");
-    short.className = "make-own-short";
-    short.textContent = "Make your own version";
-    a.append(long, short);
+    var dot = span("make-own-dot");
+    dot.setAttribute("aria-hidden", "true");
+    var roll = span("make-own-roll");
+    roll.setAttribute("aria-hidden", "true");
+    [0, 1].forEach(function () {
+      var line = span("make-own-line");
+      line.append(span("make-own-long", "Make your own version"), span("make-own-short", "Make your own"));
+      roll.append(line);
+    });
+    var kbd = span("make-own-kbd", MAC ? "\u2318K" : "Ctrl K");
+    kbd.setAttribute("aria-hidden", "true");
+    a.append(dot, roll, kbd);
     document.body.appendChild(a);
+    root.classList.add("has-cta");
+    // Cmd/Ctrl+K opens the builder from anywhere on the parent page
+    document.addEventListener("keydown", function (e) {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && (e.key === "k" || e.key === "K")) {
+        if (root.classList.contains("bm-open")) return; // the modal handles its own keys
+        e.preventDefault();
+        openBuilder(a);
+      }
+    });
   }
 
   function openBuilder(opener) {
@@ -333,9 +361,10 @@
     else location.assign("/?build=1");
   }
 
-  // View live: "You're viewing your front end; only you can see this ·
-  // Keep building · Exit". Exit clears fe_live and reloads the front end in
-  // place, back to the visit's pick.
+  // View live: a tape across the top (docs/design-pov.md, 5.6): "Your draft —
+  // only you can see this", which draft and version, "Back to studio" and
+  // "Exit draft". Exit clears fe_live and reloads the front end in place,
+  // back to the visit's pick.
   var banner = null;
   function fitBanner() {
     if (banner) root.style.setProperty("--draft-h", banner.offsetHeight + "px");
@@ -346,32 +375,33 @@
       banner.id = "draft-banner";
       banner.className = "draft-banner";
       banner.setAttribute("role", "status");
-      var text = document.createElement("span");
-      text.className = "draft-banner-text";
-      var sep = document.createElement("span");
-      sep.setAttribute("aria-hidden", "true");
-      sep.textContent = " · ";
+      var dot = span("draft-banner-dot");
+      dot.setAttribute("aria-hidden", "true");
+      var text = span("draft-banner-text");
+      text.append(span("draft-banner-long", "Your draft \u2014 only you can see this"), span("draft-banner-short", "Your draft"));
+      var which = span("draft-banner-which");
+      var actions = span("draft-banner-actions");
       var more = document.createElement("button");
       more.type = "button";
       more.className = "draft-banner-build";
-      more.textContent = "Keep building";
+      more.append(span("draft-banner-long", "Back to studio"), span("draft-banner-short", "Studio"));
       more.addEventListener("click", function () { openBuilder(more); });
-      var sep2 = sep.cloneNode(true);
       var btn = document.createElement("button");
       btn.type = "button";
       btn.className = "draft-banner-exit";
-      btn.textContent = "Exit";
+      btn.append(span("draft-banner-long", "Exit draft"), span("draft-banner-short", "Exit"));
       btn.addEventListener("click", function () {
         btn.disabled = true;
         exitDraft().then(function () { btn.disabled = false; });
       });
-      banner.append(text, sep, more, sep2, btn);
+      actions.append(more, btn);
+      banner.append(dot, text, which, actions);
       document.body.appendChild(banner);
       window.addEventListener("resize", fitBanner);
     }
     banner.setAttribute("data-exit", exit);
-    var what = "your front end" + (title ? " \u201c" + title + "\u201d" : "") + (number ? ", version " + number : "");
-    banner.querySelector(".draft-banner-text").textContent = "You're viewing " + what + "; only you can see this";
+    banner.querySelector(".draft-banner-which").textContent =
+      (title ? "\u201c" + title + "\u201d" + (number ? ", " : "") : "") + (number ? "version " + number : "");
     root.classList.add("fe-draft");
     // the front end starts below the banner, so the banner never covers it
     fitBanner();

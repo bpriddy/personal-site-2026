@@ -1,0 +1,136 @@
+/* admin.css: Ben's admin (docs/design-pov.md, 5.7), the lighter touch. The
+   same tokens and fonts as the site (base.css), Paper (light) by default,
+   no grain, no WebGL, no load sequence; motion is colour changes only.
+   Instrument Sans at 14px, Fragment Mono for ids, slugs, times and counts,
+   Newsreader only for the page title. */
+
+body.admin { font-size: .875rem; line-height: 1.5; font-weight: 420; }
+body.admin * { transition-duration: var(--d-1) !important; }
+
+.admin .site-header {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s-2) var(--s-5);
+  padding: var(--s-3) var(--m); background: var(--bg); border-bottom: 1px solid var(--rule);
+}
+.admin .site-header a { text-decoration: none; }
+.admin .brand {
+  font-family: var(--font-mono); font-size: var(--t-meta); letter-spacing: .06em; text-transform: uppercase;
+}
+.admin .site-header nav { display: flex; flex-wrap: wrap; gap: 0 var(--s-1); }
+.admin .site-header nav a {
+  display: inline-flex; align-items: center; min-height: 36px; padding: 0 var(--s-3);
+  font-family: var(--font-mono); font-size: var(--t-meta); letter-spacing: .06em; text-transform: uppercase;
+  color: var(--fg-2); border-bottom: 1px solid transparent;
+}
+.admin .site-header nav a:hover { color: var(--fg); }
+.admin .site-header nav a[aria-current="page"] { color: var(--fg); border-bottom-color: var(--fg); }
+
+.admin main { max-width: 72rem; margin: 0 auto; padding: var(--s-7) var(--m) var(--s-9); }
+.admin main:has(.builder-wide) { max-width: 100rem; }
+.admin h1 {
+  margin: 0 0 var(--s-6); font-family: var(--font-display); font-weight: 360; font-size: var(--t-title);
+  font-variation-settings: "opsz" 48; line-height: 1; letter-spacing: -.02em; text-wrap: balance;
+}
+.admin h2 {
+  margin: var(--s-7) 0 var(--s-3); font-family: var(--font-mono); font-size: var(--t-meta); font-weight: 400;
+  letter-spacing: .06em; text-transform: uppercase; color: var(--fg-2);
+}
+.admin h1 code { font-family: var(--font-mono); font-size: .9rem; letter-spacing: 0; color: var(--fg-2); vertical-align: middle; }
+.admin p { margin: var(--s-3) 0; max-width: 72ch; }
+.admin section { margin-top: var(--s-6); }
+.admin code, .admin pre, .admin kbd { font-family: var(--font-mono); font-size: .8125rem; }
+.admin a { text-decoration-color: var(--rule-strong); }
+.admin a:hover { text-decoration-color: var(--fg); }
+
+/* tables: full width, hairlines, no zebra, 40px rows; scroll sideways on phones */
+.admin table {
+  width: 100%; border-collapse: collapse; margin: 0 0 var(--s-4);
+  font-variant-numeric: tabular-nums;
+}
+.admin th, .admin td { text-align: left; vertical-align: top; padding: 10px var(--s-3) 10px 0; border-bottom: 1px solid var(--rule); }
+.admin th {
+  font-family: var(--font-mono); font-size: var(--t-meta); font-weight: 400; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--fg-2); border-bottom-color: var(--rule-strong); white-space: nowrap;
+}
+.admin td code { color: var(--fg-2); }
+@media (max-width: 767px) {
+  .admin table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .admin th, .admin td { min-width: 7rem; }
+}
+
+/* forms: mono labels above, bottom-border fields */
+.admin input:not([type="checkbox"]):not([type="hidden"]), .admin textarea {
+  width: 100%; min-height: 40px; padding: var(--s-2) 0; border: 0; border-bottom: 1px solid var(--rule-strong);
+  border-radius: 0; background: transparent; color: var(--fg); font-family: var(--font-text); font-size: .9375rem;
+}
+.admin textarea { line-height: 1.5; resize: vertical; }
+.admin input:focus, .admin textarea:focus { outline: none; border-bottom-color: var(--fg); }
+.admin input:focus-visible, .admin textarea:focus-visible { box-shadow: 0 2px 0 -1px var(--accent); }
+.admin input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--fg); }
+.admin .stack { display: grid; gap: var(--s-5); max-width: 48rem; }
+.admin .stack label {
+  display: grid; gap: var(--s-2);
+  font-family: var(--font-mono); font-size: var(--t-meta); letter-spacing: .06em; text-transform: uppercase; color: var(--fg-2);
+}
+.admin .stack label > input, .admin .stack label > textarea { text-transform: none; letter-spacing: 0; }
+.admin .stack .check { display: flex; align-items: center; gap: var(--s-2); }
+.admin .inline { display: flex; flex-wrap: wrap; align-items: end; gap: var(--s-3); max-width: 32rem; }
+.admin .inline input { flex: 1 1 12rem; }
+
+/* buttons: --fg filled for the main action, outlined otherwise; never the accent */
+.admin button, .admin .button-link {
+  display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 0 var(--s-4);
+  font: 500 .8125rem/1.2 var(--font-text); font-stretch: 92%; color: var(--fg);
+  background: transparent; border: 1px solid var(--rule-strong); border-radius: var(--r-1);
+  cursor: pointer; text-decoration: none; white-space: nowrap;
+}
+.admin button:hover:not(:disabled), .admin .button-link:hover { border-color: var(--fg); }
+.admin button:disabled { color: var(--fg-3); cursor: not-allowed; }
+.admin .b-primary, .admin a.button-link {
+  color: var(--bg); background: var(--fg); border-color: var(--fg); font-weight: 600;
+}
+.admin .b-primary:hover:not(:disabled), .admin a.button-link:hover { background: color-mix(in oklab, var(--fg) 85%, var(--bg)); }
+.admin .b-primary:disabled { color: var(--fg-3); background: transparent; border-color: var(--rule-strong); }
+.admin form { margin: 0; }
+
+/* badges: the nav counts */
+.admin .dot {
+  display: inline-block; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 6px;
+  border-radius: var(--r-pill); background: var(--accent); color: var(--accent-ink);
+  font: 400 10px/18px var(--font-mono); letter-spacing: 0; text-align: center; vertical-align: middle;
+}
+.admin .dot[hidden] { display: none; }
+.admin .dot-new { min-width: 6px; width: 6px; height: 6px; padding: 0; margin: 0 var(--s-2) 0 0; vertical-align: .15em; }
+
+.admin .notice, .admin .b-notice {
+  margin: var(--s-4) 0; padding: var(--s-2) 0 var(--s-2) var(--s-4); border-left: 1px solid var(--rule-strong);
+  color: var(--fg); max-width: 72ch;
+}
+.admin .notice.problem { border-left-color: var(--accent); }
+.admin .muted, .admin .b-muted { color: var(--fg-2); }
+.admin .badge, .admin .b-badge {
+  display: inline-block; padding: 2px 6px; border: 1px solid var(--rule-strong); border-radius: var(--r-1);
+  font: 400 var(--t-meta)/1.3 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--fg-2);
+}
+.admin .b-on { color: var(--fg); border-color: var(--fg); }
+
+/* observer */
+.admin .tabs { display: flex; flex-wrap: wrap; gap: 0 var(--s-5); margin: var(--s-5) 0; border-bottom: 1px solid var(--rule); }
+.admin .tabs a {
+  padding: var(--s-2) 0; margin-bottom: -1px; text-decoration: none; color: var(--fg-2);
+  font-family: var(--font-mono); font-size: var(--t-meta); letter-spacing: .06em; text-transform: uppercase;
+  border-bottom: 1px solid transparent;
+}
+.admin .tabs a:hover { color: var(--fg); }
+.admin .tabs a[aria-current="page"] { color: var(--fg); border-bottom-color: var(--fg); }
+.admin .tabs .count { color: var(--fg-3); margin-left: .25em; }
+.admin .detections { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule); }
+.admin .detection { padding: var(--s-4) 0; border-bottom: 1px solid var(--rule); overflow-wrap: anywhere; }
+.admin .detection-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s-1) var(--s-3); }
+.admin .detection .kind { font: 400 var(--t-meta)/1.3 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
+.admin .detection p { margin: var(--s-2) 0; }
+.admin .detection pre { white-space: pre-wrap; font-size: .75rem; color: var(--fg-2); }
+.admin .detection summary { cursor: pointer; color: var(--fg-2); }
+.admin .action { color: var(--fg); }
+.admin .actions { display: flex; flex-wrap: wrap; gap: var(--s-2); align-items: end; margin-top: var(--s-3); }
+.admin .actions .inline { flex: 1 1 18rem; }
