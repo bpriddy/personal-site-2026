@@ -473,3 +473,14 @@ Reserved visitor slugs: `new`, `preview`, `api`.
 It fires a `sitehost:load` event on each load. The modal uses these to switch
 the site in place. `builder-stream.js` is the SSE chat client shared by the
 modal and the admin builder.
+
+## v1.3 addition: house fonts
+
+- The user-content service serves the house fonts at `/fonts/<file>`.
+  - Fonts: Newsreader, Instrument Sans and Fragment Mono, all SIL OFL 1.1, as
+    WOFF2.
+  - Embedded in the binary; `font/woff2`, CORS `*`, one-year immutable cache.
+- Front ends, including visitor-generated ones, may use them with `@font-face`.
+  `font-src 'self'` covers it because it's the same origin.
+- The main site serves the same files at `/static/fonts/`.
+- The builder system prompt lists the paths and gives an `@font-face` snippet.
