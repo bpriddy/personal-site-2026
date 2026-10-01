@@ -4,6 +4,7 @@
 package server
 
 import (
+	"fmt"
 	"html/template"
 	"io/fs"
 	"log/slog"
@@ -92,6 +93,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) routes() {
 	static, _ := fs.Sub(web.FS, "static")
 	s.mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(static)))
+	// the house fonts: fixed names, cached for a year (web.Fonts)
+	fonts := http.StripPrefix("/static/fonts/", http.FileServerFS(web.Fonts))
+	s.mux.Handle("GET /static/fonts/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		fonts.ServeHTTP(w, r)
+	}))
 	s.mux.HandleFunc("GET /api/site.json", s.siteJSON)
 	s.mux.HandleFunc("GET /api/frontend", s.apiFrontend)
 	s.mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
@@ -162,8 +169,10 @@ func (s *Server) render(w http.ResponseWriter, name string, status int, data any
 }
 
 // renderPublic renders a page in the public shell, under the public CSP.
-func (s *Server) renderPublic(w http.ResponseWriter, name string, status int, data map[string]any) {
+func (s *Server) renderPublic(w http.ResponseWriter, r *http.Request, name string, status int, data map[string]any) {
 	w.Header().Set("Content-Security-Policy", s.publicCSP)
+	data["Nav"] = s.publicNav(r)
+	data["Year"] = s.now().Year()
 	s.render(w, "public/"+name, status, data)
 }
 
@@ -191,14 +200,50 @@ func (s *Server) fail(w http.ResponseWriter, msg string, err error) {
 
 var templateFuncs = template.FuncMap{
 	// paragraphs splits plain-text CMS bodies on blank lines, so the transcript
-	// keeps the same paragraphs the canvas front ends draw.
-	"paragraphs": func(body string) []string {
-		var out []string
-		for _, p := range strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n\n") {
-			if p = strings.TrimSpace(p); p != "" {
-				out = append(out, p)
+	// keeps the same paragraphs the front ends draw.
+	"paragraphs": paragraphs,
+	// nameLines sets a name on two lines, first word and the rest ("Ben" /
+	// "Priddy"), the way the default front end does.
+	"nameLines": func(title string) []string {
+		f := strings.Fields(title)
+		if len(f) < 2 {
+			return f
+		}
+		return []string{f[0], strings.Join(f[1:], " ")}
+	},
+	// prose tags a body's paragraphs for the type scale (docs/design-pov.md,
+	// 5.1 "Bio"): the first real paragraph is the lede; a short line before it
+	// ("Coming soon.") is an aside, set in italic; the rest is body text.
+	"prose": func(body string) []proseBlock {
+		var out []proseBlock
+		lede := false
+		for i, p := range paragraphs(body) {
+			switch {
+			case i == 0 && len([]rune(p)) <= 40:
+				out = append(out, proseBlock{p, "aside"})
+			case !lede:
+				lede = true
+				out = append(out, proseBlock{p, "lede"})
+			default:
+				out = append(out, proseBlock{p, "body"})
 			}
 		}
 		return out
 	},
+	// two pads a number to two digits, like the site's indices (01, 02)
+	"two": func(n int) string { return fmt.Sprintf("%02d", n) },
+	"inc": func(n int) int { return n + 1 },
+}
+
+// proseBlock is one paragraph and its role in the type scale.
+type proseBlock struct{ Text, Kind string }
+
+func paragraphs(body string) []string {
+	var out []string
+	for _, p := range strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n\n") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

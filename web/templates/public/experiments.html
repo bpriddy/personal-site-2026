@@ -1,7 +1,10 @@
 {{define "title"}}Experiments · Ben Priddy{{end}}
 {{define "main"}}
-<h1>Experiments</h1>
-<ul class="experiments">
-  {{range .Experiments}}<li><strong>{{.Title}}</strong><p>{{.Summary}}</p></li>{{else}}<li>Nothing published yet.</li>{{end}}
-</ul>
+<section class="page-head">
+  <h1 class="display">Experiments</h1>
+  <p class="label">( {{two (len .Experiments)}} published )</p>
+</section>
+<section class="index index-page">
+  {{if .Experiments}}{{template "experiment-list" .Experiments}}{{else}}<p class="prose-aside">Nothing published yet.</p>{{end}}
+</section>
 {{end}}

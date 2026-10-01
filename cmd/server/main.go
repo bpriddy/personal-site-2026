@@ -67,7 +67,11 @@ func main() {
 	var agent *builder.Builder
 	if cfg.Dev() && os.Getenv("BUILDER_DEMO_MODEL") == "1" {
 		// offline: a canned model for local work and the e2e tests (never in prod)
-		agent = builder.New(&builder.DemoModel{Delay: 300 * time.Millisecond}, builder.Config{Model: "demo"})
+		delay := 300 * time.Millisecond
+		if d, err := time.ParseDuration(os.Getenv("BUILDER_DEMO_DELAY")); err == nil && d >= 0 {
+			delay = d // e.g. 3s, to look at the streaming UI
+		}
+		agent = builder.New(&builder.DemoModel{Delay: delay}, builder.Config{Model: "demo"})
 		log.Warn("builder: BUILDER_DEMO_MODEL=1; using the offline demo model, not Claude")
 	} else if client := llm.NewClient(cfg.AnthropicAPIKey); client != nil {
 		agent = builder.New(builder.ClaudeModel{Client: client}, builder.Config{Model: llm.Model, Fallbacks: true})

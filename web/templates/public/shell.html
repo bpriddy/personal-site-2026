@@ -2,9 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <title>{{block "title" .}}Ben Priddy{{end}}</title>
   <meta name="description" content="{{block "description" .}}Ben Priddy{{end}}">
+  <meta name="theme-color" content="#0F0F0D" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#F1EEE7" media="(prefers-color-scheme: light)">
+  {{/* the house fonts (docs/design-pov.md, section 8): the two on the critical path */}}
+  <link rel="preload" href="/static/fonts/newsreader-roman.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/fonts/instrument-sans-roman.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/static/base.css">
   <link rel="stylesheet" href="/static/site.css">
   <link rel="stylesheet" href="/static/build-modal.css">
   {{/* loads the visitor's front end in a sandboxed iframe (docs/frontend-protocol.md) */}}
@@ -17,12 +23,15 @@
   {{/* transcript: the CMS content as semantic HTML. Visually hidden while a
        front end loads or runs (html.fe-loading / html.fe-live), always present
        for search engines and screen readers, and the whole site when no front
-       end can run. */}}
+       end can run. It is the identity (docs/design-pov.md, 5.3): the same
+       composition as the default front end, which layers over it. */}}
   <div id="transcript">
     <header class="site-header">
       <a class="brand" href="/">Ben Priddy</a>
-      <nav>
-        <a href="/experiments/">Experiments</a>
+      <p class="role">Creative technology <span aria-hidden="true">/</span> AI</p>
+      <nav aria-label="Pages">
+        {{range .Nav}}<a href="{{.Href}}"{{if .Current}} aria-current="page"{{end}}><span class="idx">{{.Index}}</span> {{.Label}}</a>
+        {{end}}
         {{/* the public builder (docs/frontend-protocol.md, v1.2 "Entry point"):
              opens the builder modal (build-modal.js); frontend-host.js also
              draws a fixed button over front ends */}}
@@ -30,6 +39,21 @@
       </nav>
     </header>
     <main>{{block "main" .}}{{end}}</main>
+    <footer class="site-footer">
+      <p>&copy; {{.Year}} Ben Priddy</p>
+      <p>This site is rebuilt by its visitors</p>
+    </footer>
   </div>
 </body>
 </html>{{end}}
+
+{{define "experiment-list"}}<ol class="index-list">
+  {{range $i, $e := .}}<li class="index-row">
+    <span class="idx" aria-hidden="true">{{two (inc $i)}}</span>
+    <h3 class="index-title">{{$e.Title}}</h3>
+    {{with $e.Summary}}<p class="index-summary">{{.}}</p>{{end}}
+  </li>{{end}}
+</ol>{{end}}
+
+{{define "prose"}}{{range prose .}}<p class="prose-{{.Kind}}">{{.Text}}</p>
+{{end}}{{end}}

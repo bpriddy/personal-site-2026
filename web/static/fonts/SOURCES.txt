@@ -1,0 +1,26 @@
+House fonts (docs/design-pov.md, section 8). All SIL Open Font License 1.1;
+each family's license is next to its files. No Reserved Font Names are declared.
+
+Fetched 2026-10-01 from Fontsource v5.3.0 builds of the upstream Google Fonts
+sources (Latin subset), then instanced with fontTools varLib.instancer to the
+axis ranges the design uses (smaller files; modified versions under OFL 1.1):
+
+newsreader-roman.woff2       Newsreader (Production Type), wght 300-400, opsz 16-72
+  from @fontsource-variable/newsreader@5.3.0 newsreader-latin-opsz-normal.woff2
+newsreader-italic.woff2      Newsreader Italic, wght 300-400, opsz 16-72
+  from @fontsource-variable/newsreader@5.3.0 newsreader-latin-opsz-italic.woff2
+instrument-sans-roman.woff2  Instrument Sans (Instrument), wght 400-600, wdth 85-100
+  from @fontsource-variable/instrument-sans@5.3.0 instrument-sans-latin-standard-normal.woff2
+instrument-sans-italic.woff2 Instrument Sans Italic, wght 400-600, wdth 85-100
+  from @fontsource-variable/instrument-sans@5.3.0 instrument-sans-latin-standard-italic.woff2
+fragment-mono-regular.woff2  Fragment Mono (Wei Huang), 400, unmodified
+  from @fontsource/fragment-mono@5.3.0 fragment-mono-latin-400-normal.woff2
+fragment-mono-italic.woff2   Fragment Mono Italic, 400, unmodified
+  from @fontsource/fragment-mono@5.3.0 fragment-mono-latin-400-italic.woff2
+
+Licenses: OFL-newsreader.txt, OFL-instrumentsans.txt, OFL-fragmentmono.txt
+(from github.com/google/fonts, ofl/<family>/OFL.txt).
+
+Served at /static/fonts/<file> (main site) and /fonts/<file> (user-content
+service), cached for a year: never change a file in place; add a new name.
+The Latin subset has no arrows (← → ↗) or ⌘ ↵ ⇧; avoid them in house type.

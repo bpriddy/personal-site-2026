@@ -1,19 +1,19 @@
 {{define "title"}}Admin · Ben Priddy{{end}}
 {{define "main"}}
-<h1>Admin</h1>
-<p><a class="b-primary button-link" href="/admin/builder/#new-prompt">+ Prompt a new front end</a></p>
+<h1>Content</h1>
+<p><a class="b-primary button-link" href="/admin/builder/#new-prompt">Prompt a new front end</a></p>
 <section>
   <h2>Pages</h2>
   <table>
     <tr><th>Slug</th><th>Title</th><th>Published</th><th>Updated</th></tr>
     {{range .Pages}}<tr>
-      <td><a href="/admin/pages/edit?slug={{.Slug}}">/{{.Slug}}</a></td>
+      <td><a href="/admin/pages/edit?slug={{.Slug}}"><code>/{{.Slug}}</code></a></td>
       <td>{{.Title}}</td><td>{{if .Published}}yes{{else}}no{{end}}</td>
-      <td>{{.UpdatedAt.Format "2006-01-02 15:04"}}</td>
+      <td><code>{{.UpdatedAt.Format "2006-01-02 15:04"}}</code></td>
     </tr>{{end}}
   </table>
   <form method="get" action="/admin/pages/edit" class="inline">
-    <input name="slug" placeholder="new-page-slug" required pattern="[a-z0-9-]+">
+    <input name="slug" placeholder="new-page-slug" required pattern="[a-z0-9-]+" aria-label="New page slug">
     <button>New page</button>
   </form>
 </section>
@@ -22,15 +22,15 @@
   <table>
     <tr><th>Slug</th><th>Title</th><th>Published</th><th>Order</th></tr>
     {{range .Experiments}}<tr>
-      <td><a href="/admin/experiments/{{.Slug}}">{{.Slug}}</a></td>
-      <td>{{.Title}}</td><td>{{if .Published}}yes{{else}}no{{end}}</td><td>{{.Order}}</td>
+      <td><a href="/admin/experiments/{{.Slug}}"><code>{{.Slug}}</code></a></td>
+      <td>{{.Title}}</td><td>{{if .Published}}yes{{else}}no{{end}}</td><td><code>{{.Order}}</code></td>
     </tr>{{end}}
   </table>
 </section>
 <section>
   <h2>Front ends</h2>
-  {{if .RotationOverridden}}<p><strong>FRONTEND_ROTATION is set:</strong> it overrides the rotation below.</p>{{end}}
-  <p>Visitors see one front end from the rotation at random per visit. <code>builtin/site</code> is always the fallback.</p>
+  {{if .RotationOverridden}}<p class="notice"><strong>FRONTEND_ROTATION is set:</strong> it overrides the rotation below.</p>{{end}}
+  <p class="muted">Visitors see one front end from the rotation at random per visit. <code>builtin/site</code> is always the fallback.</p>
   <table>
     <tr><th>Ref</th><th>Title</th><th>In rotation</th><th></th></tr>
     {{range .Frontends}}<tr>

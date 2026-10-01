@@ -1,116 +1,340 @@
-/* placeholder styling — the real design comes later */
-:root { --fg: #111; --muted: #666; --bg: #fff; --rule: #ddd; }
-@media (prefers-color-scheme: dark) { :root { --fg: #eee; --muted: #999; --bg: #111; --rule: #333; } }
-* { box-sizing: border-box; }
-body { margin: 0; font: 16px/1.5 system-ui, sans-serif; color: var(--fg); background: var(--bg); }
-.site-header { display: flex; justify-content: space-between; padding: 1rem; border-bottom: 1px solid var(--rule); }
-.site-header a { color: inherit; text-decoration: none; }
-.brand { font-weight: 700; }
-main { max-width: 48rem; margin: 0 auto; padding: 1rem; }
-.lede { font-size: 1.2rem; color: var(--muted); }
-.experiments { list-style: none; padding: 0; }
-.experiments li { padding: .75rem 0; border-bottom: 1px solid var(--rule); }
-.experiments p { margin: .25rem 0 0; color: var(--muted); }
-table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; }
-th, td { text-align: left; padding: .4rem; border-bottom: 1px solid var(--rule); }
-.stack { display: grid; gap: 1rem; }
-.stack label { display: grid; gap: .25rem; }
-.stack .check { display: flex; gap: .5rem; align-items: center; }
-input, textarea, button { font: inherit; padding: .4rem; }
-.inline { display: flex; gap: .5rem; }
+/* site.css: the public shell (docs/design-pov.md, sections 5 and 6), on
+   base.css. The transcript is the identity: the plain-HTML site that search
+   engines, screen readers and browsers without WebGPU (or JavaScript) get, set
+   in the same composition as the default front end so one can cross-fade
+   into the other. Then the parent-drawn chrome over every front end: the
+   "Make your own version" button and the draft tape. */
 
-/* public shell (web/static/frontend-host.js): while a front end loads
-   (html.fe-loading) the page is a plain background; once it reports ready
-   (html.fe-live) its iframe fills the viewport. In both states the transcript
-   is visually hidden but stays in the accessibility tree. With neither class
-   the transcript is the site. */
+@view-transition { navigation: auto; }
+
+body.public { min-height: 100vh; min-height: 100svh; }
+/* grain: one static tile, never animated, under nothing interactive */
+body.public::after {
+  content: ""; position: fixed; inset: 0; z-index: var(--z-grain); pointer-events: none;
+  background: url("/static/grain.png") repeat; background-size: 256px 256px;
+  opacity: var(--grain-opacity); mix-blend-mode: overlay;
+}
+.fe-live body.public::after { display: none; } /* front ends bring their own surface */
+@media (prefers-reduced-transparency: reduce) { body.public::after { display: none; } }
+
+/* ── transcript ─────────────────────────────────────────────────────────── */
+#transcript {
+  position: relative; padding: 0 var(--m);
+  display: flex; flex-direction: column; min-height: 100vh; min-height: 100svh;
+}
+#transcript main { flex: 1; }
+.grid, .site-header, .hero, .bio, .index-row, .page-head, .site-footer {
+  display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--g);
+}
+
+/* meta row */
+.site-header {
+  position: absolute; top: 0; left: var(--m); right: var(--m); z-index: 2;
+  padding-top: calc(var(--m) + env(safe-area-inset-top)); align-items: baseline;
+  view-transition-name: meta-row;
+}
+.site-header, .site-header a, .label, .cue, .idx, .site-footer {
+  font-family: var(--font-mono); font-size: var(--t-meta); line-height: 1.3;
+  letter-spacing: .06em; text-transform: uppercase; font-variant-numeric: tabular-nums;
+}
+.site-header a { text-decoration: none; }
+.brand { grid-column: 1 / 4; color: var(--fg); }
+.role { grid-column: 4 / 7; color: var(--fg-2); }
+.site-header nav {
+  grid-column: 7 / 13; justify-self: end;
+  display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--s-2) var(--s-5);
+}
+.site-header nav a { position: relative; color: var(--fg); }
+.site-header nav .idx { color: var(--fg-2); margin-right: .35em; transition: color var(--d-2) var(--ease-quint); }
+.site-header nav a[aria-current="page"]::before {
+  content: ""; position: absolute; left: -12px; top: 50%; width: 6px; height: 6px; margin-top: -3px;
+  border-radius: var(--r-pill); background: var(--accent);
+}
+@media (hover: hover) and (pointer: fine) {
+  .site-header nav a:hover .idx { color: var(--accent); }
+  .brand:hover { color: var(--fg-2); }
+}
+/* the transcript's builder link is the no-JavaScript entry; with JavaScript
+   the corner button (frontend-host.js) takes its place */
+.has-cta .make-own-link { display: none; }
+
+/* the one gesture: the name, bottom-left of the first viewport */
+.hero {
+  min-height: 100vh; min-height: 100svh; align-items: end; align-content: end;
+  padding-bottom: calc(var(--s-8) + env(safe-area-inset-bottom));
+}
+.name {
+  grid-column: 1 / 11; align-self: end;
+  font-family: var(--font-display); font-weight: 300; font-size: var(--t-mega);
+  font-variation-settings: "opsz" 72; line-height: .86; letter-spacing: -.045em;
+  margin-left: -.04em; /* optical: the B's stem sits on the margin */
+  view-transition-name: name;
+}
+.name .line { display: block; overflow: clip; padding-bottom: .06em; margin-bottom: -.06em; }
+.name .line > span { display: inline-block; }
+.cue {
+  grid-column: 11 / 13; justify-self: end; align-self: end; color: var(--fg-2);
+  padding-bottom: calc(var(--t-mega) * .86 + .2em); /* the baseline of the first line, clear of the corner button */
+}
+
+/* labels: mono, in brackets, in the first three columns */
+.label { color: var(--fg-2); }
+
+/* bio */
+.bio { margin-top: var(--gap-section); align-items: start; }
+.bio > .label { grid-column: 1 / 4; padding-top: .75em; }
+.bio-text { grid-column: 5 / 12; display: grid; gap: var(--s-6); }
+.prose-aside, .prose-lede {
+  font-family: var(--font-display); font-size: var(--t-lede); font-weight: 340;
+  font-variation-settings: "opsz" 24; line-height: 1.22; letter-spacing: -.01em;
+  max-width: 34ch; text-wrap: pretty;
+}
+.prose-aside { font-style: italic; color: var(--fg-2); }
+.prose-lede { color: var(--fg); }
+.prose-body {
+  max-width: 62ch; color: var(--fg-2); text-wrap: pretty;
+  margin-right: calc((100% - 62ch) * 0); /* columns 5-9 on wide screens via max-width */
+}
+.bio-text .prose-aside + .prose-lede { margin-top: calc(var(--s-2) * -1); }
+
+/* experiments index: hairline rows, numbered */
+.index { margin-top: var(--gap-section); }
+.index > .label { display: block; margin-bottom: var(--s-6); }
+.index-list { border-bottom: 1px solid var(--rule); }
+.index-row {
+  position: relative; align-items: baseline;
+  padding: var(--s-6) 0; border-top: 1px solid var(--rule);
+}
+.index-row .idx { grid-column: 1 / 3; color: var(--fg-2); }
+.index-title {
+  grid-column: 3 / 9;
+  font-family: var(--font-display); font-weight: 340; font-size: var(--t-title);
+  font-variation-settings: "opsz" 48; line-height: 1; letter-spacing: -.02em; text-wrap: balance;
+}
+.index-summary { grid-column: 9 / 13; color: var(--fg-2); max-width: 40ch; text-wrap: pretty; }
+
+/* other pages: a display title, top-left under the meta row */
+.page-head {
+  padding-top: calc(var(--m) + var(--s-10) + env(safe-area-inset-top)); align-items: end;
+  view-transition-name: page-head;
+}
+.display {
+  grid-column: 1 / 10;
+  font-family: var(--font-display); font-weight: 320; font-size: var(--t-display);
+  font-variation-settings: "opsz" 72; line-height: .95; letter-spacing: -.035em; text-wrap: balance;
+  margin-left: -.03em;
+}
+.page-head .label { grid-column: 10 / 13; justify-self: end; padding-bottom: .5em; }
+.page-404 .label { text-transform: none; letter-spacing: 0; font-family: var(--font-text); font-size: var(--t-body); }
+.page-404 .label a { font-family: var(--font-mono); font-size: var(--t-meta); letter-spacing: .06em; text-transform: uppercase; }
+.bio-page { margin-top: var(--s-9); }
+.index-page { margin-top: var(--s-9); }
+
+/* footer: one quiet meta row; the right edge stays clear for the corner button */
+.site-footer {
+  margin-top: var(--gap-section); padding: var(--s-5) 0 calc(var(--s-9) + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--rule); color: var(--fg-2);
+}
+.site-footer p:first-child { grid-column: 1 / 4; }
+.site-footer p:last-child { grid-column: 4 / 10; }
+
+/* load sequence (docs/design-pov.md, section 6): CSS only, text readable from
+   the first paint; skipped under reduced motion (base.css) */
+@keyframes rise-in { from { transform: translateY(105%); } }
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes draw-x { from { transform: scaleX(0); } }
+.site-header > * { animation: fade-in var(--d-3) var(--ease-out) backwards; }
+.site-header > :nth-child(1) { animation-delay: 60ms; }
+.site-header > :nth-child(2) { animation-delay: 110ms; }
+.site-header > :nth-child(3) { animation-delay: 160ms; }
+.name .line > span { animation: rise-in var(--d-5) var(--ease-out) backwards; animation-delay: 120ms; }
+.name .line + .line > span { animation-delay: 200ms; }
+.cue { animation: fade-in var(--d-4) var(--ease-out) 750ms backwards; }
+.display { animation: fade-in var(--d-4) var(--ease-out) backwards; }
+
+/* scroll reveals, once each, where scroll-driven animations exist */
+@supports (animation-timeline: view()) {
+  @keyframes reveal-up { from { opacity: 0; transform: translateY(24px); } }
+  .bio .label, .index > .label, .bio-text > *, .index-row > * {
+    animation: reveal-up linear both; animation-timeline: view(); animation-range: entry 0% entry 40%;
+  }
+  .bio .label, .index > .label { animation-name: fade-in; }
+}
+
+/* view transitions between transcript pages */
+::view-transition-old(root) { animation: fade-out 200ms var(--ease-in) both; }
+::view-transition-new(root) { animation: route-in var(--d-4) var(--ease-out) both; }
+@keyframes fade-out { to { opacity: 0; } }
+@keyframes route-in { from { opacity: 0; transform: translateY(16px); } }
+
+/* tablet: 6 columns */
+@media (max-width: 1023px) {
+  .grid, .site-header, .hero, .bio, .index-row, .page-head, .site-footer { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .brand { grid-column: 1 / 3; }
+  .role { grid-column: 3 / 5; }
+  .site-header nav { grid-column: 5 / 7; }
+  .name { grid-column: 1 / 7; }
+  .cue { display: none; }
+  .bio > .label { grid-column: 1 / 7; padding: 0 0 var(--s-5); }
+  .bio-text { grid-column: 1 / 7; }
+  .index-row .idx { grid-column: 1 / 2; }
+  .index-title { grid-column: 2 / 7; }
+  .index-summary { grid-column: 2 / 7; margin-top: var(--s-3); }
+  .display { grid-column: 1 / 7; }
+  .page-head .label { grid-column: 1 / 7; justify-self: start; padding-top: var(--s-5); }
+  .site-footer p:first-child { grid-column: 1 / 3; }
+  .site-footer p:last-child { grid-column: 3 / 7; }
+}
+/* phone: 4 columns, recomposed (docs/design-pov.md, 5.2) */
+@media (max-width: 599px) {
+  .grid, .site-header, .hero, .bio, .index-row, .page-head, .site-footer { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .site-header { row-gap: var(--s-2); }
+  .brand { grid-column: 1 / 3; }
+  .role { display: none; }
+  .site-header nav { grid-column: 3 / 5; flex-direction: column; align-items: flex-end; gap: var(--s-2); }
+  .hero { padding-bottom: calc(var(--s-9) + env(safe-area-inset-bottom)); }
+  .name { grid-column: 1 / 5; font-size: min(29vw, 9rem); }
+  .hero::after {
+    content: "Creative technology / AI"; grid-column: 1 / 5; margin-top: var(--s-5);
+    font-family: var(--font-mono); font-size: var(--t-meta); letter-spacing: .06em; text-transform: uppercase; color: var(--fg-2);
+    animation: fade-in var(--d-4) var(--ease-out) 750ms backwards;
+  }
+  .bio > .label, .bio-text { grid-column: 1 / 5; }
+  .bio-text { gap: var(--s-5); }
+  .index-row { row-gap: var(--s-3); padding: var(--s-5) 0; }
+  .index-row .idx { grid-column: 1 / 2; }
+  .index-title { grid-column: 2 / 5; }
+  .index-summary { grid-column: 2 / 5; margin: 0; }
+  .display { grid-column: 1 / 5; }
+  .page-head .label { grid-column: 1 / 5; }
+  .site-footer { row-gap: var(--s-2); }
+  .site-footer p:first-child, .site-footer p:last-child { grid-column: 1 / 5; }
+}
+
+/* ── the front end over the transcript (web/static/frontend-host.js) ───────
+   While a front end loads (html.fe-loading) the page is plain ground; once
+   it reports ready (html.fe-live) its iframe cross-fades in over the
+   viewport. In both states the transcript is visually hidden but stays in
+   the accessibility tree. With neither class the transcript is the site. */
 .fe-loading #transcript, .fe-live #transcript {
   position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
-  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; min-height: 0;
 }
-.fe-loading body, .fe-live body { background: var(--bg); overflow: hidden; }
+.fe-loading body, .fe-live body { overflow: hidden; }
 #frontend {
-  position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
-  border: 0; margin: 0; padding: 0; display: block;
-  visibility: hidden; /* not display:none, so the front end lays out at full size while loading */
+  position: fixed; inset: 0; z-index: var(--z-frontend);
+  width: 100vw; height: 100vh; height: 100dvh;
+  border: 0; margin: 0; padding: 0; display: block; background: transparent;
+  visibility: hidden; opacity: 0; /* not display:none: the front end lays out at full size while loading */
+  transform-origin: left center;
+  transition: opacity var(--d-4) var(--ease-out), transform var(--d-4) var(--ease-out);
 }
-.fe-live #frontend { visibility: visible; }
+.fe-live #frontend { visibility: visible; opacity: 1; }
 
-/* admin: observer (web/static/admin.js, templates/admin/observer.html).
-   #observer-dot is the nav badge counting unseen detections (hidden at 0);
-   .dot-new marks rows that were unseen before this view. */
-.dot {
-  display: inline-block; min-width: 1.25rem; height: 1.25rem; padding: 0 .35rem; margin-left: .35rem;
-  border-radius: .625rem; background: #d33; color: #fff; font-size: .75rem; line-height: 1.25rem;
-  text-align: center; font-weight: 700; vertical-align: middle;
-}
-.dot[hidden] { display: none; }
-.dot-new { min-width: .6rem; width: .6rem; height: .6rem; padding: 0; margin: 0 .35rem 0 0; }
-.notice { padding: .5rem .75rem; border: 1px solid var(--rule); border-radius: .25rem; }
-.notice.problem { border-color: #d33; }
-.tabs { display: flex; flex-wrap: wrap; gap: 1rem; margin: 1rem 0; border-bottom: 1px solid var(--rule); }
-.tabs a { color: inherit; text-decoration: none; padding: .25rem 0; }
-.tabs a[aria-current="page"] { font-weight: 700; border-bottom: 2px solid currentColor; }
-.tabs .count { color: var(--muted); }
-.detections { list-style: none; padding: 0; }
-.detection { padding: .75rem 0; border-bottom: 1px solid var(--rule); overflow-wrap: anywhere; }
-.detection p { margin: .35rem 0; }
-.detection pre { white-space: pre-wrap; font-size: .8rem; }
-.muted { color: var(--muted); }
-.badge { font-size: .75rem; padding: 0 .3rem; border: 1px solid var(--rule); border-radius: .25rem; }
-.actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-top: .35rem; }
-.actions form { margin: 0; }
-
-/* admin: nav tabs, primary actions, prompt-first create */
-.site-header nav { display: flex; flex-wrap: wrap; gap: .25rem; }
-.site-header nav a { padding: .35rem .7rem; border-radius: .4rem; color: inherit; }
-.site-header nav a:hover { background: var(--rule); }
-.site-header nav a[aria-current="page"] { background: var(--fg); color: var(--bg); }
-.b-primary, a.button-link {
-  display: inline-block; padding: .6rem 1rem; border: 0; border-radius: .4rem;
-  background: #2f6fde; color: #fff; font-weight: 600; text-decoration: none; cursor: pointer;
-}
-.b-primary:disabled { background: #999; cursor: not-allowed; }
-.b-create { padding: 1rem; margin: 1rem 0 1.5rem; border: 2px solid #2f6fde; border-radius: .6rem; }
-.b-create textarea { width: 100%; }
-.b-create details input { margin-top: .5rem; width: 100%; }
-/* revision summaries: three lines, tap to expand */
-.b-summary > summary { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; list-style: none; cursor: pointer; }
-.b-summary > summary::-webkit-details-marker { display: none; }
-.b-summary[open] > summary { display: none; }
-
-/* public shell: the public builder's entry point and View live banner
-   (docs/frontend-protocol.md, v1.2), drawn by frontend-host.js above the
-   front-end iframe. Fixed colours, not theme tokens: they must stay legible
-   over any front end, light or dark. */
-.make-own-link { font-weight: 600; }
+/* ── "Make your own version" (docs/design-pov.md, 5.4) ────────────────────
+   Drawn by frontend-host.js over every front end, pinned bottom-right. */
 .make-own {
-  position: fixed; z-index: 2147483000;
-  right: calc(12px + env(safe-area-inset-right)); bottom: calc(12px + env(safe-area-inset-bottom));
-  display: inline-flex; align-items: center; min-height: 36px; padding: .4rem .85rem;
-  border-radius: 999px; border: 1px solid rgb(255 255 255 / .55);
-  background: rgb(17 19 24 / .88); color: #fff; font: 600 13px/1.2 system-ui, sans-serif;
-  text-decoration: none; box-shadow: 0 2px 10px rgb(0 0 0 / .35); cursor: pointer;
-  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  position: fixed; z-index: var(--z-cta);
+  right: max(min(var(--m), 32px), env(safe-area-inset-right)); bottom: max(min(var(--m), 32px), env(safe-area-inset-bottom));
+  display: inline-flex; align-items: center; gap: var(--s-3);
+  height: 44px; padding: 0 18px 0 14px; margin: 0;
+  border: 1px solid var(--rule-strong); border-radius: var(--r-pill); overflow: hidden; isolation: isolate;
+  background: var(--bg-raised); color: var(--fg); cursor: pointer;
+  font: 500 var(--t-ui)/1 var(--font-text); font-stretch: 90%; letter-spacing: .005em; white-space: nowrap;
+  animation: cta-in var(--d-3) var(--ease-out) 1150ms backwards;
+  transition: transform var(--d-1) var(--ease-quint), color var(--d-3) var(--ease-out);
 }
-.make-own:hover { background: rgb(17 19 24 / .97); }
-.make-own:focus-visible { outline: 3px solid #7d93ff; outline-offset: 2px; }
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .make-own {
+    background: color-mix(in oklab, var(--bg) 72%, transparent);
+    -webkit-backdrop-filter: blur(14px) saturate(1.2); backdrop-filter: blur(14px) saturate(1.2);
+  }
+}
+@keyframes cta-in { from { opacity: 0; transform: translateY(8px); } }
+/* the fill wipes in from the left on hover and focus */
+.make-own::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; background: var(--fg);
+  clip-path: inset(0 100% 0 0); transition: clip-path var(--d-3) var(--ease-out);
+}
+.make-own-dot {
+  flex: none; width: 8px; height: 8px; border-radius: var(--r-pill); background: var(--accent);
+  animation: breathe 2.4s ease-in-out infinite;
+}
+@keyframes breathe { 50% { opacity: .55; } }
+/* the label rolls: the line leaves upward and its twin arrives from below */
+.make-own-roll { position: relative; display: block; overflow: hidden; height: 1.2em; line-height: 1.2em; }
+.make-own-roll > span { display: block; transition: transform var(--d-3) var(--ease-out); }
+.make-own-roll > span + span { position: absolute; left: 0; top: 0; transform: translateY(100%); }
 .make-own-short { display: none; }
-@media (max-width: 30rem) {
+.make-own-kbd {
+  font-family: var(--font-mono); font-size: var(--t-meta); letter-spacing: .06em; text-transform: uppercase;
+  color: var(--fg-2); transition: color var(--d-3) var(--ease-out);
+}
+.make-own:hover, .make-own:focus-visible { color: var(--bg); }
+.make-own:hover::before, .make-own:focus-visible::before { clip-path: inset(0); }
+.make-own:hover .make-own-kbd, .make-own:focus-visible .make-own-kbd { color: color-mix(in oklab, var(--bg) 70%, var(--fg)); }
+.make-own:hover .make-own-roll > span:first-child, .make-own:focus-visible .make-own-roll > span:first-child { transform: translateY(-100%); }
+.make-own:hover .make-own-roll > span + span, .make-own:focus-visible .make-own-roll > span + span { transform: none; }
+.make-own:active { transform: scale(.97); }
+.make-own:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (hover: none), (pointer: coarse) { .make-own-kbd { display: none; } }
+@media (max-width: 599px), (pointer: coarse) {
+  .make-own { height: 48px; }
+}
+@media (max-width: 599px) {
   .make-own-long { display: none; }
-  .make-own-short { display: inline; }
+  .make-own-short { display: block; }
 }
+@media (prefers-reduced-motion: reduce) {
+  .make-own-dot { animation: none; }
+  .make-own::before { transition: none; }
+}
+
+/* ── the draft tape (docs/design-pov.md, 5.6) ─────────────────────────────
+   Drawn by frontend-host.js while the visitor views their own draft. The
+   front end starts below it (--draft-h), so it never covers anything. */
 .draft-banner {
-  /* a strip across the top; the front end starts below it (--draft-h, set by
-     frontend-host.js), so the banner never covers the front end */
-  position: fixed; z-index: 2147483001; top: 0; left: 0; right: 0;
-  padding: calc(.45rem + env(safe-area-inset-top)) .9rem .45rem;
-  background: #fff6d6; color: #1d1a10; border-bottom: 1px solid #b8962e;
-  font: 500 13px/1.35 system-ui, sans-serif; text-align: center;
+  position: fixed; z-index: var(--z-banner); top: 0; left: 0; right: 0;
+  display: flex; align-items: center; gap: var(--s-5);
+  min-height: calc(32px + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) max(var(--m), env(safe-area-inset-right)) 0 max(var(--m), env(safe-area-inset-left));
+  background: var(--bg); color: var(--fg);
+  border-bottom: 2px solid var(--accent);
+  font-family: var(--font-mono); font-size: var(--t-meta); line-height: 1.3; letter-spacing: .06em;
+  text-transform: uppercase; font-variant-numeric: tabular-nums; white-space: nowrap;
+  animation: tape-in var(--d-3) var(--ease-out) backwards;
 }
-.fe-draft #frontend { top: var(--draft-h, 2.5rem); height: calc(100vh - var(--draft-h, 2.5rem)); height: calc(100dvh - var(--draft-h, 2.5rem)); }
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .draft-banner {
+    background: color-mix(in oklab, var(--bg) 88%, transparent);
+    -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  }
+}
+@keyframes tape-in { from { transform: translateY(-100%); } }
+.draft-banner-dot { flex: none; width: 6px; height: 6px; border-radius: var(--r-pill); background: var(--accent); }
+.draft-banner-text { flex: 1 1 0; overflow: hidden; text-overflow: ellipsis; }
+.draft-banner-which { flex: 1 1 0; overflow: hidden; text-overflow: ellipsis; text-align: center; color: var(--fg-2); }
+.draft-banner-actions { flex: 1 1 0; display: flex; justify-content: flex-end; gap: var(--s-5); }
 .draft-banner button {
-  font: inherit; font-weight: 700; color: #1d1a10; background: none; border: 0; padding: 0;
-  text-decoration: underline; cursor: pointer;
+  font: inherit; letter-spacing: inherit; text-transform: inherit; color: var(--fg);
+  background: none; border: 0; padding: var(--s-2) 0; cursor: pointer;
+  text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: .3em;
+  text-decoration-color: var(--rule-strong);
+  transition: text-decoration-color var(--d-2) var(--ease-quint);
 }
-.draft-banner button:focus-visible { outline: 2px solid #1d1a10; outline-offset: 2px; }
+.draft-banner button:hover { text-decoration-color: var(--fg); }
+.draft-banner button:disabled { color: var(--fg-2); cursor: default; }
+.draft-banner-short { display: none; }
+.fe-draft #frontend {
+  top: var(--draft-h, 34px);
+  height: calc(100vh - var(--draft-h, 34px)); height: calc(100dvh - var(--draft-h, 34px));
+}
+@media (max-width: 767px) {
+  .draft-banner-which { display: none; }
+}
+@media (max-width: 599px) {
+  .draft-banner { gap: var(--s-3); }
+  .draft-banner-long { display: none; }
+  .draft-banner-short { display: inline; }
+  .draft-banner-actions { gap: var(--s-4); }
+}

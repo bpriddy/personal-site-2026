@@ -506,3 +506,71 @@ stacks well. If house fonts are wanted inside front ends later, the user-content
 service could serve the same three OFL files at a fixed same-origin path, and the
 system prompt could permit that one path. That is a protocol change, so it is not
 assumed here.
+
+---
+
+## 9. As built (2026-10-01)
+
+What shipped from this document, and where it deliberately differs.
+
+**Fonts.** The six WOFF2 files and the three `OFL.txt` licenses live in
+`web/static/fonts/` (sources and changes in `SOURCES.txt`). The variable
+files are instanced with fontTools to the axis ranges the design uses:
+Newsreader `wght` 300–400 and `opsz` 16–72 (84 KB roman, 93 KB italic), Instrument
+Sans `wght` 400–600 and `wdth` 85–100 (53 KB, 57 KB), Fragment Mono unchanged (25 KB,
+26 KB). The critical path (Newsreader roman, Instrument Sans roman, Fragment Mono)
+is about 160 KB, down from 215 KB. The files are embedded in both binaries
+(`web.Fonts`): the main site serves them at `/static/fonts/`, and the user-content
+service serves them at `/fonts/<file>` with `Access-Control-Allow-Origin: *`, so
+any front end, including visitor-made ones, can load them under `font-src 'self'`.
+Both cache them for a year (`immutable`): never change a file in place. The Latin
+subset has no arrows or ⌘ ↵ ⇧, so the house type avoids them.
+
+**Stylesheets.** `base.css` (fonts, tokens, reset, reduced motion), `site.css` (the
+transcript, the corner button, the draft tape), `build-modal.css` (the Studio, its
+`--bm-*` properties now aliases of the tokens) and `admin.css` + `builder.css`.
+The grain is `web/static/grain.png` (generated, 4-bit, 33 KB).
+
+**Transcript (5.3).** The same composition as 5.1/5.2: meta row, the name on two
+lines at `--t-mega`, `( About )` bio, `( Experiments — 0N )` index with hairline
+rows, a quiet footer. The meta row's nav comes from the published pages and is
+numbered. The role line is fixed chrome ("Creative technology / AI"), not CMS
+content, and there is no clock or location (nothing honest to show). A short
+first paragraph ("Coming soon.") is set as an italic aside and the next one is
+the lede (the doc's rule would have made "Coming soon." the loudest line).
+Experiments aren't links (they have no pages), so index rows have no hover.
+
+**Default front end (5.1, 5.2, 6).** `site/` now renders DOM (Rust, `web-sys`) in
+the house fonts and calls `site.ready()` as soon as the text is up, so it works
+without WebGPU. WebGPU adds one thing: a fixed grid of fine dots behind the page
+that swell into a halftone halo of the name (a mask drawn from the name's own
+letterforms), lean toward the pointer, and appear outward from the letters on load.
+It is monochrome, static under reduced motion, and a lost device only hides it.
+Consequence: without WebGPU the default front end goes live instead of falling back,
+so `e2e/tests/no-webgpu.spec.ts` now checks that, and checks the transcript by
+making the user-content origin unreachable.
+
+**Corner button (5.4).** As specified, inset `min(--m, 32px)`. There is no
+hide-on-scroll: scrolling happens inside the cross-origin front end, which the
+parent can't observe. Cmd/Ctrl+K opens the builder from the parent page.
+
+**Studio (5.5).** The dialog keeps its accessible name "Make your own version"
+(the e2e tests and screen readers use it) and sets it in the mono header. There are
+no thumbnails to make a contact sheet from (front ends are cross-origin), so each
+creation is a serif title with its versions as a hairline log of the visitor's own
+prompts, newest first, with an accent dot on the one on the site. The Build button
+is the accent rectangle (it is the composer's submit); Submit for review is an
+outline button. Enter sends and Shift+Enter is a new line. On phones and tablets it
+is a 92svh bottom sheet; dragging the grabber or header down closes it.
+
+**Builder taste (7).** The taste brief is in `internal/builder/prompt.go` as "Taste
+bar", followed by "Type: the house fonts" with the `/fonts/` paths and an
+`@font-face` snippet. Two edits to the brief keep it consistent with the prompt's
+existing rule against stock defaults (numbered section labels, monospace labels):
+"hairline rules and alignment beat cards", without "numbering", and no monospace
+suggestion. The note about the corner button's size was updated to the new pill.
+
+**Admin (5.7).** Paper by default (`data-theme="light"`), Newsreader page titles,
+mono meta labels and table heads, hairline tables that scroll sideways on phones,
+bottom-border fields, and `--fg` primary buttons. The accent appears only in the
+nav count badges.

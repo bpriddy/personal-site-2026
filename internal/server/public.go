@@ -3,7 +3,9 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/bpriddy/personal-site-2026/internal/content"
 	"github.com/bpriddy/personal-site-2026/internal/contract"
@@ -21,7 +23,7 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, "experiments", err)
 		return
 	}
-	s.renderPublic(w, "home.html", http.StatusOK, map[string]any{"Page": page, "Experiments": exps})
+	s.renderPublic(w, r, "home.html", http.StatusOK, map[string]any{"Page": page, "Experiments": exps})
 }
 
 func (s *Server) page(w http.ResponseWriter, r *http.Request) {
@@ -34,7 +36,7 @@ func (s *Server) page(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, "page", err)
 		return
 	}
-	s.renderPublic(w, "page.html", http.StatusOK, map[string]any{"Page": page})
+	s.renderPublic(w, r, "page.html", http.StatusOK, map[string]any{"Page": page})
 }
 
 func (s *Server) experiments(w http.ResponseWriter, r *http.Request) {
@@ -43,13 +45,13 @@ func (s *Server) experiments(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, "experiments", err)
 		return
 	}
-	s.renderPublic(w, "experiments.html", http.StatusOK, map[string]any{"Experiments": exps})
+	s.renderPublic(w, r, "experiments.html", http.StatusOK, map[string]any{"Experiments": exps})
 }
 
 // notFound renders the 404 transcript in the public shell, so a front end's
 // navigation to an unknown slug swaps in a real "not found" page.
-func (s *Server) notFound(w http.ResponseWriter, _ *http.Request) {
-	s.renderPublic(w, "notfound.html", http.StatusNotFound, map[string]any{})
+func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
+	s.renderPublic(w, r, "notfound.html", http.StatusNotFound, map[string]any{})
 }
 
 // siteJSON serves the content contract (docs/content-contract.json): the same
@@ -80,4 +82,39 @@ func (s *Server) publishedExperiments(r *http.Request) ([]content.Experiment, er
 		}
 	}
 	return out, nil
+}
+
+// navItem is one entry of the transcript's pages nav (the meta row).
+type navItem struct {
+	Href, Label, Index string
+	Current            bool
+}
+
+// publicNav lists the published pages (home first) and, when any are
+// published, the experiments, numbered 01, 02, ... like the default front
+// end's nav. Errors just leave the nav out: it never breaks a page.
+func (s *Server) publicNav(r *http.Request) []navItem {
+	var out []navItem
+	route := strings.Trim(r.URL.Path, "/")
+	add := func(href, label, slug string) {
+		out = append(out, navItem{Href: href, Label: label, Index: fmt.Sprintf("%02d", len(out)+1), Current: route == slug})
+	}
+	if pages, err := s.store.Pages(r.Context()); err == nil {
+		for _, p := range pages {
+			if !p.Published {
+				continue
+			}
+			label := strings.TrimSpace(p.Title)
+			if p.Slug == "" {
+				label = "Index"
+			} else if label == "" {
+				label = p.Slug
+			}
+			add("/"+p.Slug, label, p.Slug)
+		}
+	}
+	if exps, err := s.publishedExperiments(r); err == nil && len(exps) > 0 {
+		add("/experiments/", "Experiments", "experiments")
+	}
+	return out
 }

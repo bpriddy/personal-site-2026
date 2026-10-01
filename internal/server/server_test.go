@@ -336,7 +336,8 @@ func TestBodyParagraphs(t *testing.T) {
 	s := newTestServer(t)
 	s.store.SavePage(context.Background(), content.Page{Slug: "", Title: "Ben Priddy", Body: "Coming soon.\n\nFirst <b>para</b>.\r\n\r\n\n\nSecond.", Published: true})
 	body := get(s, "/").Body.String()
-	for _, want := range []string{`<p class="lede">Coming soon.</p>`, `<p class="lede">First &lt;b&gt;para&lt;/b&gt;.</p>`, `<p class="lede">Second.</p>`} {
+	// a short first line is an aside, then the lede, then body text (docs/design-pov.md, 5.1)
+	for _, want := range []string{`<p class="prose-aside">Coming soon.</p>`, `<p class="prose-lede">First &lt;b&gt;para&lt;/b&gt;.</p>`, `<p class="prose-body">Second.</p>`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("home missing %s", want)
 		}

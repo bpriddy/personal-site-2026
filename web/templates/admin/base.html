@@ -1,16 +1,17 @@
 {{define "base"}}<!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
   <title>{{block "title" .}}Admin{{end}}</title>
-  <link rel="stylesheet" href="/static/site.css">
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/admin.css">
   <script src="/static/admin.js" defer></script>
 </head>
-<body>
+<body class="admin">
   <header class="site-header">
-    <a class="brand" href="/admin/">Admin</a>
+    <a class="brand" href="/admin/">Ben Priddy &mdash; Admin</a>
     <nav>
       <a href="/admin/">Content</a>
       <a href="/admin/builder/">Builder<span id="builder-dot" class="dot" hidden></span></a>
