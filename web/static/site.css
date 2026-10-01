@@ -78,3 +78,40 @@ input, textarea, button { font: inherit; padding: .4rem; }
 .b-summary > summary { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; list-style: none; cursor: pointer; }
 .b-summary > summary::-webkit-details-marker { display: none; }
 .b-summary[open] > summary { display: none; }
+
+/* public shell: the public builder's entry point and View live banner
+   (docs/frontend-protocol.md, v1.2), drawn by frontend-host.js above the
+   front-end iframe. Fixed colours, not theme tokens: they must stay legible
+   over any front end, light or dark. */
+.make-own-link { font-weight: 600; }
+.make-own {
+  position: fixed; z-index: 2147483000;
+  left: calc(12px + env(safe-area-inset-left)); bottom: calc(12px + env(safe-area-inset-bottom));
+  display: inline-flex; align-items: center; min-height: 36px; padding: .4rem .85rem;
+  border-radius: 999px; border: 1px solid rgb(255 255 255 / .55);
+  background: rgb(17 19 24 / .88); color: #fff; font: 600 13px/1.2 system-ui, sans-serif;
+  text-decoration: none; box-shadow: 0 2px 10px rgb(0 0 0 / .35);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.make-own:hover { background: rgb(17 19 24 / .97); }
+.make-own:focus-visible { outline: 3px solid #7d93ff; outline-offset: 2px; }
+.make-own-short { display: none; }
+@media (max-width: 30rem) {
+  .make-own-long { display: none; }
+  .make-own-short { display: inline; }
+}
+.draft-banner {
+  /* a strip across the top; the front end starts below it (--draft-h, set by
+     frontend-host.js), so the banner never covers the front end */
+  position: fixed; z-index: 2147483001; top: 0; left: 0; right: 0;
+  padding: calc(.45rem + env(safe-area-inset-top)) .9rem .45rem;
+  background: #fff6d6; color: #1d1a10; border-bottom: 1px solid #b8962e;
+  font: 500 13px/1.35 system-ui, sans-serif; text-align: center;
+}
+.fe-draft #frontend { top: var(--draft-h, 2.5rem); height: calc(100vh - var(--draft-h, 2.5rem)); height: calc(100dvh - var(--draft-h, 2.5rem)); }
+.draft-banner a { color: #1d1a10; font-weight: 700; }
+.draft-banner button {
+  font: inherit; font-weight: 700; color: #1d1a10; background: none; border: 0; padding: 0;
+  text-decoration: underline; cursor: pointer;
+}
+.draft-banner a:focus-visible, .draft-banner button:focus-visible { outline: 2px solid #1d1a10; outline-offset: 2px; }

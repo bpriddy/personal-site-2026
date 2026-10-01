@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/bpriddy/personal-site-2026/internal/builder"
 	"github.com/bpriddy/personal-site-2026/internal/frontend"
@@ -101,7 +102,23 @@ func (s *Server) builderIndex(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, "builder: frontends", err)
 		return
 	}
-	var builtins, prompted []builderRow
+	var builtins, prompted, visitors []builderRow
+	var subs []submissionRow
+	visitorIDs := map[string]bool{}
+	if v := s.visitorStore(); v != nil {
+		if visitorIDs, err = v.VisitorFrontendIDs(r.Context()); err != nil {
+			s.fail(w, "builder: visitor frontends", err)
+			return
+		}
+		all, err := v.Submissions(r.Context(), 20)
+		if err != nil {
+			s.fail(w, "builder: submissions", err)
+			return
+		}
+		for _, sub := range all {
+			subs = append(subs, submissionRow{Submission: sub, Slug: strings.TrimPrefix(sub.FrontendID, "fe/")})
+		}
+	}
 	for _, f := range fes {
 		row := builderRow{FrontendInfo: f}
 		if frontend.IsBuiltin(f.ID) {
@@ -126,10 +143,23 @@ func (s *Server) builderIndex(w http.ResponseWriter, r *http.Request) {
 				row.Servable = true
 			}
 		}
+		if visitorIDs[f.ID] {
+			if row.Revisions > 0 { // empty visitor drafts are just noise here
+				visitors = append(visitors, row)
+			}
+			continue
+		}
 		prompted = append(prompted, row)
 	}
+	pending := 0
+	for _, sub := range subs {
+		if sub.Status == store.SubmissionPending {
+			pending++
+		}
+	}
 	s.render(w, "admin/builder.html", http.StatusOK, map[string]any{
-		"Builtins": builtins, "Prompted": prompted, "Disabled": s.builderDisabledReason(),
+		"Builtins": builtins, "Prompted": prompted, "Visitors": visitors, "Submissions": subs, "Pending": pending,
+		"Disabled":           s.builderDisabledReason(),
 		"RotationOverridden": s.rotationOverride != nil, "Error": r.URL.Query().Get("error"),
 	})
 }
@@ -219,6 +249,9 @@ func (s *Server) freeSlug(r *http.Request, base string) string {
 		cand := base
 		if i > 1 {
 			cand = base + "-" + strconv.Itoa(i)
+		}
+		if reservedBuildSlugs[cand] { // /build/new, /build/preview
+			continue
 		}
 		if _, err := b.BuilderFrontend(r.Context(), frontend.PromptedID(cand)); errors.Is(err, store.ErrNotFound) {
 			return cand
@@ -380,7 +413,7 @@ func (s *Server) builderFrontend(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "admin/builder_frontend.html", http.StatusOK, map[string]any{
 		"FE": f, "Slug": r.PathValue("slug"), "Revisions": rows, "Selected": selected,
 		"Conversation": conv, "PreviewRef": previewRef, "Runs": failed, "Running": running,
-		"Disabled": s.builderDisabledReason(), "Self": r.URL.Path,
+		"Disabled": s.builderDisabledReason(), "Self": r.URL.Path, "Visitor": s.isVisitorFrontend(r, f.ID),
 		"RotationOverridden": s.rotationOverride != nil,
 	})
 }
@@ -504,9 +537,7 @@ func (s *Server) siteContent(ctx context.Context) json.RawMessage {
 	return json.RawMessage(strings.TrimSpace(rec.Body.String()))
 }
 
-// builderChat runs one chat turn: Ben's prompt applied to a parent revision
-// by the model, streamed to the browser as server-sent events, ending in a
-// new revision. Request: JSON {"prompt": "...", "parent": "<rev id or empty>"}.
+// builderChat runs one of Ben's chat turns (see runChat).
 func (s *Server) builderChat(w http.ResponseWriter, r *http.Request) {
 	b := s.needBuilderStore(w)
 	if b == nil {
@@ -516,8 +547,7 @@ func (s *Server) builderChat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, reason, http.StatusServiceUnavailable)
 		return
 	}
-	id := frontend.PromptedID(r.PathValue("slug"))
-	f, err := b.BuilderFrontend(r.Context(), id)
+	f, err := b.BuilderFrontend(r.Context(), frontend.PromptedID(r.PathValue("slug")))
 	if errors.Is(err, store.ErrNotFound) || (err == nil && f.Kind != store.KindPrompted) {
 		http.NotFound(w, r)
 		return
@@ -525,22 +555,54 @@ func (s *Server) builderChat(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, "builder: frontend", err)
 		return
 	}
+	s.runChat(w, r, f, chatCaller{author: "ben"})
+}
+
+// chatCaller says who is chatting: Ben (admin, no limits, raw errors) or a
+// visitor (the public builder: limits, friendly messages, owner session).
+type chatCaller struct {
+	author  string // recorded on the revision: "ben" or "visitor"
+	visitor bool
+	session []byte // sha256(sid), visitors only
+	ipHash  []byte // visitors only
+}
+
+// runChat runs one chat turn: a prompt applied to a parent revision of f by
+// the model, streamed to the browser as server-sent events, ending in a new
+// revision. Request: JSON {"prompt": "...", "parent": "<rev id or empty>"}.
+// The caller has checked that the chat is enabled and that the caller may
+// chat with f.
+func (s *Server) runChat(w http.ResponseWriter, r *http.Request, f store.FrontendInfo, c chatCaller) {
+	b := s.builderStore()
+	id := f.ID
+	// say says why a request can't run: friendly text for visitors
+	say := func(status int, admin, visitor string) {
+		if c.visitor {
+			admin = visitor
+		}
+		http.Error(w, admin, status)
+	}
 	var in struct {
 		Prompt string `json:"prompt"`
 		Parent string `json:"parent"`
 	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&in); err != nil || strings.TrimSpace(in.Prompt) == "" {
-		http.Error(w, "send JSON {\"prompt\": \"...\", \"parent\": \"<revision id>\"}", http.StatusBadRequest)
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || strings.TrimSpace(in.Prompt) == "" {
+		say(http.StatusBadRequest, "send JSON {\"prompt\": \"...\", \"parent\": \"<revision id>\"}", buildMessage(msgEmpty, s.limits))
 		return
 	}
 	in.Prompt = strings.TrimSpace(in.Prompt)
+	if c.visitor && utf8.RuneCountInString(in.Prompt) > s.limits.MaxPrompt {
+		say(http.StatusBadRequest, "", buildMessage(msgTooLong, s.limits))
+		return
+	}
 
-	req := builder.Request{FrontendID: id, Title: f.Title, Prompt: in.Prompt}
+	req := builder.Request{FrontendID: id, Title: f.Title, Prompt: in.Prompt, Visitor: c.visitor}
 	var history []builder.Turn
 	if in.Parent != "" {
 		parent, err := b.Revision(r.Context(), in.Parent)
 		if err != nil || parent.FrontendID != id {
-			http.Error(w, "unknown parent revision", http.StatusBadRequest)
+			say(http.StatusBadRequest, "unknown parent revision", "That version doesn't exist any more. Reload the page and try again.")
 			return
 		}
 		if req.Parent, err = s.builder.files.Read(r.Context(), parent.ID); err != nil {
@@ -554,7 +616,7 @@ func (s *Server) builderChat(w http.ResponseWriter, r *http.Request) {
 	s.builder.mu.Lock()
 	if s.builder.running[id] {
 		s.builder.mu.Unlock()
-		http.Error(w, "a chat run is already in progress for "+id, http.StatusConflict)
+		say(http.StatusConflict, "a chat run is already in progress for "+id, buildMessage(store.LimitConcurrent, s.limits))
 		return
 	}
 	s.builder.running[id] = true
@@ -568,13 +630,25 @@ func (s *Server) builderChat(w http.ResponseWriter, r *http.Request) {
 	// The run outlives a closed tab: it finishes and saves its revision.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), RunTimeout)
 	defer cancel()
-	req.Content = s.siteContent(ctx)
 
-	runID, err := b.StartRun(ctx, store.Run{FrontendID: id, ParentID: in.Parent, Prompt: in.Prompt})
+	run := store.Run{FrontendID: id, ParentID: in.Parent, Prompt: in.Prompt}
+	var runID int64
+	var err error
+	if c.visitor {
+		runID, err = s.visitorStore().StartVisitorRun(ctx, run, c.session, c.ipHash, s.runQuota())
+		var qe *store.QuotaError
+		if errors.As(err, &qe) {
+			say(http.StatusTooManyRequests, "", buildMessage(qe.Limit, s.limits))
+			return
+		}
+	} else {
+		runID, err = b.StartRun(ctx, run)
+	}
 	if err != nil {
 		s.fail(w, "builder: start run", err)
 		return
 	}
+	req.Content = s.siteContent(ctx)
 
 	ev := newEventStream(w)
 	stopPing := ev.keepAlive(15 * time.Second)
@@ -589,15 +663,23 @@ func (s *Server) builderChat(w http.ResponseWriter, r *http.Request) {
 			builder.Turn{Role: "user", Text: in.Prompt, At: started},
 			builder.Turn{Role: "assistant", Text: res.Summary, At: s.now(), Actions: res.Actions})
 		conv, _ := json.Marshal(turns)
-		rev, err = s.saveRevision(ctx, store.Revision{FrontendID: id, ParentID: in.Parent, Author: "ben",
+		rev, err = s.saveRevision(ctx, store.Revision{FrontendID: id, ParentID: in.Parent, Author: c.author,
 			Summary: res.Summary, Conversation: conv}, res.Files)
 	}
 	if err != nil {
-		s.log.Error("builder: run", "frontend", id, "err", err)
+		s.log.Error("builder: run", "frontend", id, "visitor", c.visitor, "err", err)
 		if ferr := b.FinishRun(ctx, runID, "", err.Error()); ferr != nil {
 			s.log.Error("builder: finish run", "err", ferr)
 		}
-		ev.send(builder.Event{Type: "error", Text: err.Error()})
+		text := err.Error()
+		if c.visitor {
+			// never show a visitor internals (API errors, spend limits, ...)
+			text = buildMessage(msgUnavailable, s.limits)
+			if errors.Is(err, builder.ErrRefused) {
+				text = buildMessage(msgRefused, s.limits)
+			}
+		}
+		ev.send(builder.Event{Type: "error", Text: text})
 		return
 	}
 	if ferr := b.FinishRun(ctx, runID, rev.ID, ""); ferr != nil {

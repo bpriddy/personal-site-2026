@@ -1,0 +1,23 @@
+{{define "base"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex">
+  <title>{{block "title" .}}Make your own version · Ben Priddy{{end}}</title>
+  {{/* the public builder: its own layout, without the front-end host
+       (frontend-host.js), under the public CSP: no inline scripts or styles */}}
+  <link rel="stylesheet" href="/static/build.css">
+  {{block "scripts" .}}{{end}}
+</head>
+<body class="bl">
+  <header class="bl-top">
+    <a class="bl-brand" href="/">Ben Priddy</a>
+    <a class="bl-toplink" href="/">Back to the site</a>
+  </header>
+  <main class="bl-main">{{block "main" .}}{{end}}</main>
+  <footer class="bl-foot">
+    <p>Made with Claude. Your front ends live in this browser only: there's no account, so clearing your cookies loses them.</p>
+  </footer>
+</body>
+</html>{{end}}

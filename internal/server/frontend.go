@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"slices"
 	"strings"
@@ -19,26 +20,63 @@ type frontendResponse struct {
 	Ref   string `json:"ref"`   // the front-end ID
 	Serve string `json:"serve"` // the servable ref the token carries
 	URL   string `json:"url"`
+	// View live (v1.2): the visitor's own draft, shown only to them
+	Draft bool   `json:"draft,omitempty"`
+	Exit  string `json:"exit,omitempty"` // POST on=0 here to stop viewing it
 }
 
 // apiFrontend tells the parent page which front end to load and hands it a
 // freshly signed user-content URL for that front end's index. See
-// docs/frontend-protocol.md, "Main site" and "Front ends vs. revisions".
+// docs/frontend-protocol.md, "Main site", "Front ends vs. revisions" and
+// "View live".
 func (s *Server) apiFrontend(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 
 	id, serve := frontend.DefaultRef, frontend.DefaultRef
-	if r.URL.Query().Get("fallback") != "1" { // fallback leaves the visit's pick alone
-		rot := s.currentRotation(r.Context())
-		id = s.visitPick(w, r, rot.ids)
-		serve = rot.serve[id]
+	var resp frontendResponse
+	if r.URL.Query().Get("fallback") != "1" { // fallback leaves the visit's pick (and fe_live) alone
+		if draft, ok := s.liveDraft(w, r); ok {
+			resp = draft
+		} else {
+			rot := s.currentRotation(r.Context())
+			id = s.visitPick(w, r, rot.ids)
+			serve = rot.serve[id]
+		}
 	}
-
-	resp := frontendResponse{Ref: id, Serve: serve, URL: s.signedIndexURL(serve)}
+	if resp.Ref == "" {
+		resp = frontendResponse{Ref: id, Serve: serve, URL: s.signedIndexURL(serve)}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		s.log.Error("api/frontend", "err", err)
 	}
+}
+
+// liveDraft serves View live: if the fe_live cookie names a front end the
+// request's session owns and that has a revision, it returns that front end's
+// latest revision as a draft. Any other fe_live cookie is cleared.
+func (s *Server) liveDraft(w http.ResponseWriter, r *http.Request) (frontendResponse, bool) {
+	c, err := r.Cookie(liveCookie)
+	if err != nil {
+		return frontendResponse{}, false
+	}
+	if v := s.visitorStore(); v != nil && frontend.IsPrompted(c.Value) {
+		f, err := v.OwnedFrontend(r.Context(), c.Value, readSession(r))
+		if err == nil {
+			revs, err := s.builderStore().Revisions(r.Context(), f.ID)
+			if err == nil && len(revs) > 0 {
+				serve := frontend.RevRef(revs[0].ID)
+				return frontendResponse{Ref: f.ID, Serve: serve, URL: s.signedIndexURL(serve),
+					Draft: true, Exit: "/build/" + strings.TrimPrefix(f.ID, "fe/") + "/live"}, true
+			}
+		}
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			s.log.Error("api/frontend: live draft", "err", err)
+			return frontendResponse{}, false // keep the cookie: maybe it works next time
+		}
+	}
+	s.clearLive(w)
+	return frontendResponse{}, false
 }
 
 // signedIndexURL mints a fresh user-content URL for a servable ref's index.

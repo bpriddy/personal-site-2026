@@ -65,10 +65,20 @@ func main() {
 		log.Info("revisions: cloud storage", "bucket", cfg.FrontendsBucket)
 	}
 	var agent *builder.Builder
-	if client := llm.NewClient(cfg.AnthropicAPIKey); client != nil {
+	if cfg.Dev() && os.Getenv("BUILDER_DEMO_MODEL") == "1" {
+		// offline: a canned model for local work and the e2e tests (never in prod)
+		agent = builder.New(&builder.DemoModel{Delay: 300 * time.Millisecond}, builder.Config{Model: "demo"})
+		log.Warn("builder: BUILDER_DEMO_MODEL=1; using the offline demo model, not Claude")
+	} else if client := llm.NewClient(cfg.AnthropicAPIKey); client != nil {
 		agent = builder.New(builder.ClaudeModel{Client: client}, builder.Config{Model: llm.Model, Fallbacks: true})
 	} else {
-		log.Warn("builder: ANTHROPIC_API_KEY unset; builder chat disabled")
+		log.Warn("builder: ANTHROPIC_API_KEY unset; builder chat (admin and public) disabled")
+	}
+	// the public builder's limits (BUILD_*; client IPs as the observer counts them)
+	limits, err := server.BuildLimitsFromEnv(os.Getenv)
+	if err != nil {
+		log.Error("build limits", "err", err)
+		os.Exit(1)
 	}
 
 	// Cloud Run sends SIGTERM before stopping an instance
@@ -78,7 +88,8 @@ func main() {
 	obs := newObserver(cfg, st, obsStore, log)
 	obs.Start(ctx)
 
-	srv, err := server.New(cfg, st, log, server.WithObserver(obs), server.WithBuilder(agent, files))
+	srv, err := server.New(cfg, st, log, server.WithObserver(obs), server.WithBuilder(agent, files),
+		server.WithBuildLimits(limits))
 	if err != nil {
 		log.Error("server", "err", err)
 		os.Exit(1)

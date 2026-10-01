@@ -1,0 +1,92 @@
+{{define "title"}}{{.FE.Title}} · Make your own version{{end}}
+{{define "scripts"}}
+<script src="/static/builder-preview.js" defer></script>
+<script src="/static/builder.js" defer></script>
+{{end}}
+{{define "main"}}
+<nav class="bl-crumbs"><a href="/build">← Your front ends</a></nav>
+<header class="bl-head">
+  <h1>{{.FE.Title}}</h1>
+  <span class="bl-chip bl-chip-{{.Status.Key}}">{{.Status.Label}}</span>
+</header>
+<p class="bl-note">{{.Status.Note}}</p>
+{{if .Message}}<p class="bl-msg" role="status">{{.Message}}</p>{{end}}
+
+<div class="bl-grid">
+  <section class="bl-stage" aria-label="Preview">
+    {{if .PreviewRef}}
+    <div id="preview" class="bl-preview" data-ref="{{.PreviewRef}}" data-frontend="{{.FE.ID}}"
+      data-preview-url="/build/preview" data-observe="0" data-friendly="1" data-state="idle"></div>
+    <div class="bl-preview-bar">
+      <span>Version {{.Selected.Number}}</span>
+      <span id="preview-state" class="bl-quiet" aria-live="polite">loading…</span>
+      <span class="bl-spacer"></span>
+      <button type="button" id="preview-home" class="bl-btn-ghost">Home</button>
+      <button type="button" id="preview-reload" class="bl-btn-ghost">Reload</button>
+    </div>
+    <div class="bl-actions">
+      <form method="post" action="/build/{{.Slug}}/live">
+        <input type="hidden" name="on" value="1">
+        <button class="bl-btn">View it live on the site</button>
+      </form>
+      <form method="post" action="/build/{{.Slug}}/submit">
+        <input type="hidden" name="rev" value="{{.Selected.ID}}">
+        {{if and (eq .Status.Rev .Selected.ID) (eq .Status.Key "pending")}}<button class="bl-btn-ghost" disabled>Version {{.Selected.Number}} is with Ben</button>
+        {{else if and (eq .Status.Rev .Selected.ID) (eq .Status.Key "approved")}}<button class="bl-btn-ghost" disabled>Version {{.Selected.Number}} is approved</button>
+        {{else if and (eq .Status.Rev .Selected.ID) (eq .Status.Key "rejected")}}<button class="bl-btn-ghost" disabled>Change it to submit again</button>
+        {{else}}<button class="bl-btn-ghost">Submit version {{.Selected.Number}} for review</button>{{end}}
+      </form>
+    </div>
+    <p class="bl-quiet bl-small">View live shows the whole site with your front end, in this browser only. Submitting sends this version to Ben; if he approves it, visitors may see it.</p>
+    {{else}}
+    <div class="bl-preview bl-empty"><p>Your first version will appear here. It usually takes a minute or two.</p></div>
+    {{end}}
+  </section>
+
+  <section class="bl-talk" aria-label="Chat with Claude">
+    <h2 class="bl-h2">Chat with Claude</h2>
+    {{if .Running}}<p class="bl-msg bl-msg-quiet" role="status">Claude is still working on a change. Reload in a minute to see it.</p>{{end}}
+    <ol id="chat" class="bl-chat">
+      {{range .Conversation}}<li class="b-turn b-{{.Role}}">
+        <div class="b-who">{{if eq .Role "user"}}You{{else}}Claude{{end}}</div>
+        {{range paragraphs .Text}}<p>{{.}}</p>{{end}}
+      </li>{{end}}
+    </ol>
+    <div id="chat-stream" class="bl-stream" hidden>
+      <div id="chat-status" class="bl-quiet" aria-live="polite"></div>
+      <div id="chat-thinking" class="b-thinking"></div>
+      <div id="chat-text" class="b-text"></div>
+      <ol id="chat-tools" class="b-tools"></ol>
+    </div>
+    {{if .Disabled}}
+    <p class="bl-msg bl-msg-quiet">{{.DisabledText}}</p>
+    {{else}}
+    <form id="chat-form" class="bl-prompt" data-action="/build/{{.Slug}}/chat" data-parent="{{with .Selected}}{{.ID}}{{end}}"
+      data-slug="{{.Slug}}" data-friendly="1" data-user-label="You" data-assistant-label="Claude">
+      <label for="chat-prompt" class="bl-label">{{if .Selected}}What should change?{{else}}Describe your front end{{end}}</label>
+      <textarea id="chat-prompt" name="prompt" rows="4" required maxlength="{{.MaxPrompt}}"
+        placeholder="{{if .Selected}}e.g. Make the text bigger and the background warmer{{else}}e.g. A quiet night sky with slowly drifting stars{{end}}"></textarea>
+      <button class="bl-btn">{{if .Selected}}Make the change{{else}}Build it{{end}}</button>
+      {{if .Selected}}<p class="bl-quiet bl-small">Changes start from version {{.Selected.Number}}. Older versions stay as they are.</p>{{end}}
+    </form>
+    {{end}}
+  </section>
+</div>
+
+{{if .Revisions}}
+<section class="bl-versions" aria-labelledby="versions">
+  <h2 id="versions" class="bl-h2">Versions</h2>
+  <ol class="bl-version-list">
+    {{range .Revisions}}<li class="{{if .Selected}}bl-current{{end}}">
+      <div class="bl-version-head">
+        <strong>Version {{.Number}}</strong>
+        <span class="bl-quiet">{{.CreatedAt.Format "Jan 2, 15:04"}}{{if .ParentNumber}} · from version {{.ParentNumber}}{{end}}</span>
+        {{if and (eq $.Status.Rev .ID) (ne $.Status.Key "draft")}}<span class="bl-chip bl-chip-{{$.Status.Key}}">{{$.Status.Label}}</span>{{end}}
+      </div>
+      {{if .Summary}}<details class="bl-summary"><summary>{{.Summary}}</summary><p>{{.Summary}}</p></details>{{end}}
+      {{if .Selected}}<span class="bl-quiet bl-small">Showing in the preview</span>{{else}}<a href="?rev={{.ID}}">Preview and change this one</a>{{end}}
+    </li>{{end}}
+  </ol>
+</section>
+{{end}}
+{{end}}

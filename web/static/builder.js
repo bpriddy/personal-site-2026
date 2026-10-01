@@ -1,6 +1,12 @@
-// builder.js: the builder chat. Posts Ben's prompt, streams the run's
-// server-sent events (text, thinking, file operations) into the page, and
-// when the run saves a revision, reloads onto it so the preview shows it.
+// builder.js: the builder chat, shared by the admin builder and the public one
+// (/build). Posts the prompt, streams the run's server-sent events (text,
+// thinking, file operations) into the page, and when the run saves a
+// revision, reloads onto it so the preview shows it.
+//
+// #chat-form attributes: data-action (the chat URL), data-parent (the
+// revision to change), data-user-label / data-assistant-label (default "Ben"
+// / "Claude"), data-friendly="1" (visitors: plain-language progress, server
+// messages shown as they are, no internal warnings).
 (function () {
   "use strict";
 
@@ -12,6 +18,12 @@
   var textEl = document.getElementById("chat-text");
   var toolsEl = document.getElementById("chat-tools");
   var chat = document.getElementById("chat");
+  var friendly = form.getAttribute("data-friendly") === "1";
+  var userLabel = form.getAttribute("data-user-label") || "Ben";
+  var assistantLabel = form.getAttribute("data-assistant-label") || "Claude";
+  var UNAVAILABLE = "The builder is unavailable right now. Please try again in a little while.";
+  var DONE_VERBS = { write_file: "Wrote", str_replace: "Edited", delete_file: "Removed", read_file: "Read" };
+  var statusClass = statusEl.className;
 
   function addTool(text, cls) {
     var li = document.createElement("li");
@@ -25,17 +37,31 @@
     li.className = "b-turn b-" + role;
     var who = document.createElement("div");
     who.className = "b-who";
-    who.textContent = role === "user" ? "Ben" : "Claude";
+    who.textContent = role === "user" ? userLabel : assistantLabel;
     var p = document.createElement("p");
     p.textContent = text;
     li.append(who, p);
     chat.appendChild(li);
   }
 
+  function setStatus(text, isError) {
+    statusEl.textContent = text;
+    statusEl.className = isError ? "b-error" : statusClass;
+  }
+
+  function failText(msg) {
+    if (friendly) return msg || UNAVAILABLE;
+    return "Failed: " + (msg || "unknown error");
+  }
+
   function handle(ev) {
     switch (ev.type) {
       case "status":
-        statusEl.textContent = ev.text || "";
+        if (friendly) {
+          setStatus(ev.tool ? assistantLabel + " is writing your front end…" : assistantLabel + " is working on it. This usually takes a minute or two…");
+        } else {
+          setStatus(ev.text || "");
+        }
         break;
       case "thinking":
         thinkingEl.textContent += ev.text || "";
@@ -45,17 +71,20 @@
         textEl.textContent += ev.text || "";
         break;
       case "tool":
-        addTool((ev.tool || "") + (ev.path ? " " + ev.path : "") + (ev.text ? " (" + ev.text + ")" : ""));
+        if (friendly) {
+          if (DONE_VERBS[ev.tool] && ev.path) addTool(DONE_VERBS[ev.tool] + " " + ev.path);
+        } else {
+          addTool((ev.tool || "") + (ev.path ? " " + ev.path : "") + (ev.text ? " (" + ev.text + ")" : ""));
+        }
         break;
       case "warning":
-        addTool("⚠ " + (ev.text || ""), "b-warn");
+        if (!friendly) addTool("⚠ " + (ev.text || ""), "b-warn");
         break;
       case "error":
-        statusEl.textContent = "Failed: " + (ev.text || "unknown error");
-        statusEl.className = "b-error";
+        setStatus(failText(ev.text), true);
         return "error";
       case "revision":
-        statusEl.textContent = "Saved r" + ev.number + ". Loading the preview…";
+        setStatus(friendly ? "Version " + ev.number + " is ready. Loading it…" : "Saved r" + ev.number + ". Loading the preview…");
         addTurn("assistant", ev.text || "");
         form.setAttribute("data-new-rev", ev.revision);
         return "revision";
@@ -72,8 +101,7 @@
     ta.disabled = btn.disabled = true;
     addTurn("user", prompt);
     streamBox.hidden = false;
-    statusEl.className = "b-muted";
-    statusEl.textContent = "Starting…";
+    setStatus("Starting…");
     thinkingEl.textContent = textEl.textContent = "";
     toolsEl.replaceChildren();
     var outcome = "";
@@ -84,7 +112,13 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prompt: prompt, parent: form.getAttribute("data-parent") || "" })
     }).then(function (r) {
-      if (!r.ok) return r.text().then(function (t) { throw new Error(t || "HTTP " + r.status); });
+      if (!r.ok) {
+        return r.text().then(function (t) {
+          // for visitors, only these carry a message written for them
+          if (friendly && [400, 409, 429, 503].indexOf(r.status) < 0) t = "";
+          throw new Error((t || "").trim() || (friendly ? "" : "HTTP " + r.status));
+        });
+      }
       var reader = r.body.getReader();
       var dec = new TextDecoder();
       var buf = "";
@@ -114,12 +148,16 @@
         return;
       }
       if (!outcome) {
-        statusEl.textContent = "The connection ended before the run finished. It may still complete: reload in a minute.";
+        setStatus(friendly
+          ? "The connection dropped, but " + assistantLabel + " may still be working on it. Reload the page in a minute."
+          : "The connection ended before the run finished. It may still complete: reload in a minute.");
       }
       ta.disabled = btn.disabled = false;
     }).catch(function (err) {
-      statusEl.className = "b-error";
-      statusEl.textContent = "Failed: " + (err && err.message ? err.message : String(err));
+      var msg = err && typeof err.message === "string" ? err.message : String(err);
+      // a network failure's message is the browser's, not ours
+      if (friendly && err instanceof TypeError) msg = "";
+      setStatus(failText(msg), true);
       ta.disabled = btn.disabled = false;
     });
   });

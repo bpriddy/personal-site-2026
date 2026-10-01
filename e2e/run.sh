@@ -13,7 +13,7 @@
 #   site             FRONTEND_ROTATION=builtin/site             all specs
 #   particle-stream  FRONTEND_ROTATION=builtin/particle-stream  ready + navigation
 #   broken           FRONTEND_ROTATION=builtin/e2e-broken       fallback + its observer report
-#   prompted         (unset: rotation from the store)            builder-published front end
+#   prompted         (unset: rotation from the store)            builder-published front end, public builder
 # If FRONTEND_ROTATION is already set in the environment, it runs a single
 # "custom" phase with that rotation and all specs.
 #
@@ -31,6 +31,8 @@ LOGS="$RUN_DIR/logs"
 MAIN_PORT="${E2E_MAIN_PORT:-8090}"
 UC_PORT="${E2E_UC_PORT:-8091}"
 export APP_ENV=dev
+# the public builder runs offline: a canned model instead of Claude (dev only)
+export BUILDER_DEMO_MODEL=1
 export FRONTENDS_DIR="${FRONTENDS_DIR:-$ROOT/build/frontends}"
 export MAIN_ORIGIN="http://localhost:$MAIN_PORT"
 export USERCONTENT_ORIGIN="http://127.0.0.1:$UC_PORT"
@@ -151,7 +153,7 @@ declare -A SPECS_OF=(
   [site]=""
   [particle-stream]="tests/builtins-ready.spec.ts tests/navigation.spec.ts"
   [broken]="tests/fallback.spec.ts tests/contract.spec.ts"
-  [prompted]="tests/prompted.spec.ts"
+  [prompted]="tests/prompted.spec.ts tests/public-builder.spec.ts"
   [custom]=""
 )
 if [[ -n "${FRONTEND_ROTATION:-}" ]]; then

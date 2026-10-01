@@ -25,6 +25,30 @@
   setInterval(function () { if (!document.hidden) refresh(); }, 60000);
 })();
 
+// #builder-dot on the Builder tab: visitor submissions awaiting review, from
+// GET /admin/builder/pending.json ({"pending": N}); hidden at 0.
+(function () {
+  "use strict";
+  var dot = document.getElementById("builder-dot");
+  if (!dot || !window.fetch) return;
+
+  function refresh() {
+    fetch("/admin/builder/pending.json", { credentials: "same-origin", cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d) return;
+        var n = Number(d.pending) || 0;
+        dot.textContent = n > 99 ? "99+" : String(n);
+        dot.hidden = n <= 0;
+        dot.setAttribute("aria-label", n + (n === 1 ? " submission" : " submissions") + " awaiting review");
+      })
+      .catch(function () {});
+  }
+
+  refresh();
+  setInterval(function () { if (!document.hidden) refresh(); }, 60000);
+})();
+
 // mark the current admin nav tab
 (function () {
   var path = location.pathname;

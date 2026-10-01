@@ -35,6 +35,10 @@ type Server struct {
 	// "Builder" and "Observer"). Configured by Options passed to New.
 	builder  builderState  // builder.go
 	observer observerState // observer.go
+
+	// the public builder (build.go)
+	limits     BuildLimits   // build_limits.go; WithBuildLimits
+	newLimiter windowLimiter // POST /build/new per client IP
 }
 
 // An Option configures optional subsystems (builder, observer) at New.
@@ -56,6 +60,7 @@ func New(cfg config.Config, st store.Store, log *slog.Logger, opts ...Option) (*
 		cfg: cfg, store: st, log: log, tmpl: tmpl, mux: http.NewServeMux(),
 		rotationOverride: rot, intn: rand.IntN, now: time.Now,
 		publicCSP: publicCSP(cfg.UsercontentOrigin),
+		limits:    DefaultBuildLimits,
 	}
 	for _, o := range opts {
 		if err := o(s); err != nil {
@@ -107,6 +112,8 @@ func (s *Server) routes() {
 	// basic auth credentials ride along on cross-site requests, so reject those
 	guarded := http.NewCrossOriginProtection().Handler(admin)
 	s.builderRoutes(admin)
+	s.reviewRoutes(admin)
+	s.buildRoutes(s.mux)
 	s.observerRoutes(s.mux, admin)
 	s.mux.Handle("/admin/", auth.Basic(s.cfg.AdminUser, s.cfg.AdminPassword, guarded))
 }
@@ -116,6 +123,7 @@ func (s *Server) routes() {
 var layouts = map[string]string{
 	"public": "templates/public/shell.html",
 	"admin":  "templates/admin/base.html",
+	"build":  "templates/build/layout.html", // the public builder (no front-end host)
 }
 
 // parseTemplates builds one template set per page: its layout + that page.

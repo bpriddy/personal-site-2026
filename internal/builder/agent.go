@@ -63,6 +63,10 @@ type Request struct {
 	History    []Turn          // the parent revision's conversation
 	Prompt     string          // Ben's message
 	Content    json.RawMessage // the site's current content (/api/site.json), for reference
+	// Visitor: the prompt comes from an anonymous visitor (the public
+	// builder), not Ben. The model is told so (VisitorNote); the prompt itself
+	// still goes only into user messages.
+	Visitor bool
 }
 
 // Result is a finished run.
@@ -122,6 +126,10 @@ func (b *Builder) Run(ctx context.Context, req Request, emit func(Event)) (*Resu
 		Thinking: anthropic.BetaThinkingConfigParamUnion{OfAdaptive: &anthropic.BetaThinkingConfigAdaptiveParam{
 			Display: anthropic.BetaThinkingConfigAdaptiveDisplaySummarized,
 		}},
+	}
+	if req.Visitor {
+		// after the cached system prompt, so the cache still serves both kinds
+		params.System = append(params.System, anthropic.BetaTextBlockParam{Text: VisitorNote})
 	}
 	if b.cfg.Fallbacks {
 		params.Fallbacks = anthropic.BetaFallbacksParamOfDefault()
@@ -262,7 +270,11 @@ func firstMessage(req Request) string {
 		sb.Write(req.Content)
 		sb.WriteString("\n</content>\n\n")
 	}
-	sb.WriteString("Ben's request:\n\n")
+	if req.Visitor {
+		sb.WriteString("The visitor's request:\n\n")
+	} else {
+		sb.WriteString("Ben's request:\n\n")
+	}
 	sb.WriteString(req.Prompt)
 	return sb.String()
 }

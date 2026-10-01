@@ -17,6 +17,29 @@
   <p class="b-muted">Claude builds it as revision r1 with a live preview. Nothing reaches visitors until you make a revision active and add it to the rotation.</p>
 </form>
 
+<section id="submissions">
+  <h2>Submissions{{if .Pending}} <span class="dot">{{.Pending}}</span>{{end}}</h2>
+  {{if .Submissions}}
+  <table class="b-table">
+    <tr><th>Front end</th><th>Version</th><th>Status</th><th></th></tr>
+    {{range .Submissions}}<tr>
+      <td><a href="/admin/builder/fe/{{.Slug}}?rev={{.RevisionID}}">{{.Title}}</a><br><code>{{.FrontendID}}</code></td>
+      <td>r{{.RevisionNumber}}<br><span class="b-muted">submitted {{.SubmittedAt.Format "Jan 2 15:04"}}</span></td>
+      <td>{{if eq .Status "pending"}}<span class="b-badge">pending</span>{{else if eq .Status "approved"}}<span class="b-badge b-on">approved</span>{{else}}<span class="b-badge">rejected</span>{{end}}
+        {{if not .ReviewedAt.IsZero}}<br><span class="b-muted">{{.ReviewedAt.Format "Jan 2 15:04"}}</span>{{end}}</td>
+      <td class="b-rev-actions">
+        <a href="/admin/builder/fe/{{.Slug}}?rev={{.RevisionID}}">Preview</a>
+        {{if eq .Status "pending"}}
+        <form method="post" action="/admin/builder/submissions/{{.ID}}/approve" class="b-inline"><button class="b-primary">Approve</button></form>
+        <form method="post" action="/admin/builder/submissions/{{.ID}}/reject" class="b-inline"><button>Reject</button></form>
+        {{end}}
+      </td>
+    </tr>{{end}}
+  </table>
+  <p class="b-muted">Approve makes that version the front end's active revision and adds it to the rotation. Reject keeps it private to the visitor.</p>
+  {{else}}<p class="b-muted">No visitor has submitted a front end yet.</p>{{end}}
+</section>
+
 <p>Visitors see one front end from the rotation at random per visit. A prompted front end serves its <em>active</em> revision; <code>builtin/site</code> is always the fallback.</p>
 
 <section>
@@ -34,6 +57,25 @@
   </table>
   {{else}}<p class="b-muted">None yet.</p>{{end}}
 </section>
+
+{{if .Visitors}}
+<section>
+  <details>
+    <summary><h2 class="b-inline">Visitor front ends ({{len .Visitors}})</h2></summary>
+    <p class="b-muted">Made by visitors on <a href="/build">/build</a>. Drafts are private to their makers; only approved ones reach the rotation.</p>
+    <table class="b-table">
+      <tr><th>Front end</th><th>Revisions</th><th>Active</th><th>In rotation</th><th></th></tr>
+      {{range .Visitors}}<tr>
+        <td><a href="{{.Href}}">{{.Title}}</a><br><code>{{.ID}}</code></td>
+        <td>{{.Revisions}}</td>
+        <td>{{with .Active}}r{{.Number}}{{else}}<span class="b-muted">none</span>{{end}}</td>
+        <td>{{if .InRotation}}yes{{else}}no{{end}}</td>
+        <td>{{template "rotation-toggle" .}}</td>
+      </tr>{{end}}
+    </table>
+  </details>
+</section>
+{{end}}
 
 <section>
   <h2>Built-in front ends</h2>

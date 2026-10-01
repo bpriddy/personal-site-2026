@@ -17,7 +17,12 @@
   <div id="transcript">
     <header class="site-header">
       <a class="brand" href="/">Ben Priddy</a>
-      <nav><a href="/experiments/">Experiments</a></nav>
+      <nav>
+        <a href="/experiments/">Experiments</a>
+        {{/* the public builder (docs/frontend-protocol.md, v1.2 "Entry point");
+             frontend-host.js also draws a fixed button over front ends */}}
+        <a class="make-own-link" href="/build">Make your own version of this site</a>
+      </nav>
     </header>
     <main>{{block "main" .}}{{end}}</main>
   </div>

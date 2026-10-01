@@ -22,7 +22,7 @@
   // appears without a flash of the HTML page first.
   var REVEAL_AFTER_MS = 1500;
   var SLUG_RE = /^[a-z0-9][a-z0-9-]*(\/[a-z0-9][a-z0-9-]*)*$/;
-  var RESERVED = { admin: true, api: true, "static": true, health: true };
+  var RESERVED = { admin: true, api: true, "static": true, health: true, build: true };
 
   var root = document.documentElement;
   var iframe = null; // the current front end's iframe
@@ -34,6 +34,7 @@
   var navSeq = 0;
   var revealed = false; // the transcript is showing while a front end loads
   var currentServe = ""; // the servable ref (/api/frontend "serve"), if any
+  var draft = false; // View live: the visitor's own draft, never reported to the observer
 
   // ── observer reports (docs/frontend-protocol.md, "Observer ingestion") ──
   var OBSERVE_URL = "/api/observe";
@@ -51,6 +52,7 @@
   // observe sends one report to the observer, fire-and-forget. It never
   // throws and never affects the front end or the page.
   function observe(r) {
+    if (draft) return; // a visitor's private draft isn't part of the site
     try {
       var body = {
         kind: r.kind,
@@ -153,6 +155,10 @@
         if (!fe || typeof fe.url !== "string" || typeof fe.ref !== "string") throw new Error("api/frontend: bad response");
         currentRef = fe.ref;
         currentServe = typeof fe.serve === "string" ? fe.serve : "";
+        if (fe.draft === true && typeof fe.exit === "string" && /^\/build\/[a-z0-9][a-z0-9-]*\/live$/.test(fe.exit)) {
+          draft = true;
+          showDraftBanner(fe.exit);
+        }
         var f = document.createElement("iframe");
         f.id = "frontend";
         f.setAttribute("sandbox", "allow-scripts");
@@ -277,6 +283,61 @@
     if (!navigate(currentRoute(), false)) location.reload();
   });
 
+  // ── parent-drawn controls (docs/frontend-protocol.md, v1.2) ──
+  // They sit above the front-end iframe, so every front end gets them.
+
+  // "Make your own version of this site": a small fixed button to /build.
+  function drawMakeOwn() {
+    var a = document.createElement("a");
+    a.id = "make-own";
+    a.className = "make-own";
+    a.href = "/build";
+    var long = document.createElement("span");
+    long.className = "make-own-long";
+    long.textContent = "Make your own version of this site";
+    var short = document.createElement("span");
+    short.className = "make-own-short";
+    short.textContent = "Make your own version";
+    a.append(long, short);
+    document.body.appendChild(a);
+  }
+
+  // View live: "You're viewing your front end; only you can see this · Exit".
+  function showDraftBanner(exit) {
+    if (document.getElementById("draft-banner")) return;
+    var bar = document.createElement("div");
+    bar.id = "draft-banner";
+    bar.className = "draft-banner";
+    bar.setAttribute("role", "status");
+    var text = document.createElement("span");
+    text.textContent = "You're viewing your front end; only you can see this";
+    var sep = document.createElement("span");
+    sep.setAttribute("aria-hidden", "true");
+    sep.textContent = " · ";
+    var back = document.createElement("a");
+    back.href = exit.replace(/\/live$/, "");
+    back.textContent = "Keep building";
+    var sep2 = sep.cloneNode(true);
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = "Exit";
+    btn.addEventListener("click", function () {
+      btn.disabled = true;
+      fetch(exit, {
+        method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "on=0"
+      }).catch(function () { /* reload anyway */ }).then(function () { location.reload(); });
+    });
+    bar.append(text, sep, back, sep2, btn);
+    document.body.appendChild(bar);
+    root.classList.add("fe-draft");
+    // the front end starts below the banner, so the banner never covers it
+    function fit() { root.style.setProperty("--draft-h", bar.offsetHeight + "px"); }
+    fit();
+    window.addEventListener("resize", fit);
+  }
+
+  drawMakeOwn();
   setTimeout(reveal, REVEAL_AFTER_MS);
   load(false);
 })();
