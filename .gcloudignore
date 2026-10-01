@@ -3,10 +3,10 @@
 .claude/
 **/target/
 **/dist/
-build/
-bin/
-e2e/
-docs/
-infra/
+/build/
+/bin/
+/e2e/
+/docs/
+/infra/
 **/node_modules/
 **/.DS_Store
