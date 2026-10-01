@@ -97,6 +97,18 @@ func (s *Server) adminExperimentSave(w http.ResponseWriter, r *http.Request) {
 func (s *Server) adminFrontendRotation(w http.ResponseWriter, r *http.Request) {
 	ref := r.FormValue("ref")
 	in := r.FormValue("in_rotation") == "1"
+	if b := s.builderStore(); in && b != nil {
+		// a prompted front end needs an active revision to be served
+		if f, err := b.BuilderFrontend(r.Context(), ref); err == nil && f.Kind == store.KindPrompted {
+			if err := s.ensureActiveRevision(r.Context(), b, f); errors.Is(err, errNoRevisions) {
+				http.Error(w, ref+" has no versions yet, so there is nothing to show", http.StatusConflict)
+				return
+			} else if err != nil {
+				s.fail(w, "activate latest", err)
+				return
+			}
+		}
+	}
 	err := s.store.SetFrontendInRotation(r.Context(), ref, in)
 	if errors.Is(err, store.ErrNotFound) {
 		http.NotFound(w, r)

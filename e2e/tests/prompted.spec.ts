@@ -32,11 +32,12 @@ test("an imported revision is published, served to visitors and previewed", asyn
   expect(rev.number).toBe(1);
   expect(rev.ref).toBe(`rev/${rev.id}`);
 
-  // not servable until published: the rotation toggle refuses it
+  // adding an unpublished front end to the rotation publishes its latest
+  // version (the rotation skips front ends without an active version)
   res = await request.post(`${MAIN}/admin/builder/rotation`, {
     headers: adminAuth, form: { id, in_rotation: "1" }, maxRedirects: 0,
   });
-  expect(res.status()).toBe(409);
+  expect(res.status()).toBe(303);
 
   // publish: make it active, add it to the rotation
   res = await request.post(`${MAIN}/admin/builder/fe/${slug}/activate`, {

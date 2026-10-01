@@ -295,9 +295,14 @@ func (s *Server) builderRotation(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, "builder: frontend", err)
 		return
 	}
-	if in && f.Kind == store.KindPrompted && f.ActiveRevision == "" {
-		http.Error(w, "make a revision active before adding "+id+" to the rotation", http.StatusConflict)
-		return
+	if in && f.Kind == store.KindPrompted {
+		if err := s.ensureActiveRevision(r.Context(), b, f); errors.Is(err, errNoRevisions) {
+			http.Error(w, id+" has no versions yet, so there is nothing to show", http.StatusConflict)
+			return
+		} else if err != nil {
+			s.fail(w, "builder: activate latest", err)
+			return
+		}
 	}
 	if err := s.store.SetFrontendInRotation(r.Context(), id, in); err != nil {
 		s.fail(w, "builder: rotation", err)
@@ -758,4 +763,29 @@ func (e *eventStream) keepAlive(every time.Duration) (stop func()) {
 func urlQuery(s string) string {
 	r := strings.NewReplacer("%", "%25", "&", "%26", "+", "%2B", " ", "+", "#", "%23", "?", "%3F", "=", "%3D", "/", "%2F")
 	return r.Replace(s)
+}
+
+var errNoRevisions = errors.New("front end has no revisions")
+
+// ensureActiveRevision makes the latest revision of a prompted front end
+// active if none is, so adding it to the rotation always means "show it":
+// the rotation skips front ends without an active revision.
+func (s *Server) ensureActiveRevision(ctx context.Context, b store.Builder, f store.FrontendInfo) error {
+	if f.ActiveRevision != "" {
+		return nil
+	}
+	revs, err := b.Revisions(ctx, f.ID)
+	if err != nil {
+		return err
+	}
+	if len(revs) == 0 {
+		return errNoRevisions
+	}
+	latest := revs[0]
+	for _, r := range revs[1:] {
+		if r.Number > latest.Number {
+			latest = r
+		}
+	}
+	return b.SetActiveRevision(ctx, f.ID, latest.ID)
 }

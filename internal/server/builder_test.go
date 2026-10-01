@@ -180,9 +180,12 @@ func TestBuilderChatRevisionsPublishAndRollback(t *testing.T) {
 		t.Fatal("parent revision modified")
 	}
 
-	// no active revision yet: can't join the rotation, isn't served
-	if rec := e.form("/admin/builder/rotation", url.Values{"id": {"fe/dark"}, "in_rotation": {"1"}}); rec.Code != http.StatusConflict {
+	// no active revision yet: adding it to the rotation publishes the latest
+	if rec := e.form("/admin/builder/rotation", url.Values{"id": {"fe/dark"}, "in_rotation": {"1"}}); rec.Code != 303 {
 		t.Fatalf("rotation without active: %d", rec.Code)
+	}
+	if f, _ := e.st.BuilderFrontend(context.Background(), "fe/dark"); f.ActiveRevision != r2.ID {
+		t.Fatalf("adding to the rotation should activate the latest revision; active = %q", f.ActiveRevision)
 	}
 
 	// publish r2, add to rotation: visitors can get it, served as rev/<r2>
@@ -381,5 +384,68 @@ func TestBuilderPromptFirstCreate(t *testing.T) {
 	rec = e.form("/admin/builder/new", url.Values{"prompt": {"!!! ???"}})
 	if loc := rec.Header().Get("Location"); !strings.HasPrefix(loc, "/admin/builder/fe/untitled#start=") {
 		t.Fatalf("symbol-only create = %q", loc)
+	}
+}
+
+// Both rotation toggles (the builder page and the content dashboard) publish
+// the latest revision of a prompted front end that has none active, and refuse
+// a front end with no revisions at all.
+func TestRotationToggleActivatesLatest(t *testing.T) {
+	e := newBuilderServer(t, true)
+	ctx := context.Background()
+	for _, slug := range []string{"one", "two", "empty"} {
+		e.form("/admin/builder/new", url.Values{"slug": {slug}})
+	}
+	build := func(slug, prompt, parent string) {
+		t.Helper()
+		e.model.Responses = []string{
+			builder.ToolUse("1", "write_file", map[string]any{"path": "index.html", "content": fixtureIndex}),
+			builder.ToolUse("2", "finish", map[string]any{"summary": prompt}),
+			builder.ToolUse("3", "finish", map[string]any{"summary": prompt}),
+		}
+		if eventOf(e.chat(t, slug, prompt, parent), "revision") == nil {
+			t.Fatalf("no revision for %s", slug)
+		}
+	}
+	build("one", "first", "")
+	build("two", "first", "")
+	r1, _ := e.st.Revisions(ctx, "fe/two")
+	build("two", "second", r1[0].ID)
+	revs, _ := e.st.Revisions(ctx, "fe/two") // newest first
+
+	if rec := e.form("/admin/builder/rotation", url.Values{"id": {"fe/one"}, "in_rotation": {"1"}}); rec.Code != 303 {
+		t.Fatalf("builder toggle: %d", rec.Code)
+	}
+	if rec := e.form("/admin/frontends", url.Values{"ref": {"fe/two"}, "in_rotation": {"1"}}); rec.Code != 303 {
+		t.Fatalf("dashboard toggle: %d", rec.Code)
+	}
+	if f, _ := e.st.BuilderFrontend(ctx, "fe/two"); f.ActiveRevision != revs[0].ID || !f.InRotation {
+		t.Fatalf("dashboard toggle should publish the latest (%s): %+v", revs[0].ID, f)
+	}
+	if f, _ := e.st.BuilderFrontend(ctx, "fe/one"); f.ActiveRevision == "" || !f.InRotation {
+		t.Fatalf("builder toggle should publish: %+v", f)
+	}
+	// visitors can now be served both
+	served := map[string]bool{}
+	for i := 0; i < 8; i++ { // the rotation also holds the built-ins
+		e.s.intn = func(n int) int { return i % n }
+		var resp frontendResponse
+		json.NewDecoder(get(e.s, "/api/frontend").Body).Decode(&resp)
+		served[resp.Ref] = true
+	}
+	if !served["fe/one"] || !served["fe/two"] {
+		t.Fatalf("served = %v", served)
+	}
+	// nothing to show: refused by both toggles, and not added
+	for _, rec := range []*httptest.ResponseRecorder{
+		e.form("/admin/builder/rotation", url.Values{"id": {"fe/empty"}, "in_rotation": {"1"}}),
+		e.form("/admin/frontends", url.Values{"ref": {"fe/empty"}, "in_rotation": {"1"}}),
+	} {
+		if rec.Code != http.StatusConflict {
+			t.Fatalf("empty front end toggle: %d", rec.Code)
+		}
+	}
+	if f, _ := e.st.BuilderFrontend(ctx, "fe/empty"); f.InRotation {
+		t.Fatal("empty front end must not join the rotation")
 	}
 }
