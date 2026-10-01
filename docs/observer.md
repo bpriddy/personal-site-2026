@@ -9,7 +9,7 @@ Status (2026-09-30):
 - **Still to come:**
   - observer patches to prompted front ends (as revisions with author
     `observer`);
-  - the public builder.
+  - (the public builder shipped 2026-10-01: `/build`, see frontend-protocol.md v1.2).
 
 Two requirements from Ben:
 

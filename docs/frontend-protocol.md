@@ -385,3 +385,31 @@ The public shell draws a **"Make your own version of this site"** link:
   it appears over every front end.
 
 Both go to `/build`.
+
+## v1.2 as built (notes)
+
+- **Limits:** `0` turns a limit off. Days are UTC.
+- **Extra limit:** creating front ends is capped at 10 per IP per 10 minutes
+  (in memory, per instance).
+- **Messages:**
+  - one run at a time: "One thing at a time…";
+  - hourly cap: "Slow down a little…";
+  - per-IP daily cap: "That's plenty of building for one day…";
+  - site-wide daily cap: "The builder is resting for today…";
+  - model or API failure: "The builder is unavailable right now…";
+  - refusal: "Claude couldn't make that one…".
+- **Reserved names:** `build` is a reserved route segment, and the slugs `new`
+  and `preview` are reserved for visitors.
+- **Admin routes:** `/admin/builder/pending.json` fills the `#builder-dot`
+  badge on the Builder tab; `/admin/builder/submissions/{id}/approve|reject`
+  handle review.
+- **Submissions:** submitting the same revision again changes nothing. A newer
+  revision replaces a pending submission. An approved revision stays active
+  until a newer one is approved.
+- **Observer:** visitor drafts don't report to it.
+- **Dev only:** `BUILDER_DEMO_MODEL=1` (with `APP_ENV=dev`) swaps in an offline
+  canned model; `e2e/run.sh` uses it.
+- **Not yet built:**
+  - purging drafts after 30 days;
+  - a draft that falls back to the default front end still shows the "your
+    front end" banner.
