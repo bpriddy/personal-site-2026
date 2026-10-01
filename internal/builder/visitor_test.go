@@ -35,7 +35,7 @@ func TestVisitorRequestsAreMarked(t *testing.T) {
 	}
 	req := m.Requests[0]
 	// the cached system prompt is unchanged; the note is a separate block
-	if len(req.System) != 2 || req.System[0].Text != SystemPrompt || req.System[1].Text != VisitorNote {
+	if len(req.System) != 3 || req.System[0].Text != SystemPrompt || req.System[1].Text != QualityBrief || req.System[2].Text != VisitorNote {
 		t.Fatalf("system blocks = %d", len(req.System))
 	}
 	first, _ := json.Marshal(req.Messages[0])

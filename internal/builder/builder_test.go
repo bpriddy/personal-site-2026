@@ -108,8 +108,12 @@ func TestRunNewFrontEnd(t *testing.T) {
 	if len(req.Betas) != 1 || req.Betas[0] != anthropic.AnthropicBetaServerSideFallback2026_07_01 {
 		t.Errorf("betas = %v", req.Betas)
 	}
-	if len(req.System) != 1 || req.System[0].Text != SystemPrompt {
-		t.Error("system prompt")
+	// every run: the system prompt, then the quality bar (cache breakpoint on it)
+	if len(req.System) != 2 || req.System[0].Text != SystemPrompt || req.System[1].Text != QualityBrief {
+		t.Error("system prompt + quality bar")
+	}
+	if req.System[1].CacheControl.Type == "" {
+		t.Error("cache breakpoint should sit on the quality bar (end of the static prefix)")
 	}
 	first := string(mustJSON(t, req.Messages[0]))
 	for _, want := range []string{"make it dark", "new front end", "Ben Priddy"} {

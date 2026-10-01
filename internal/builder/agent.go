@@ -117,10 +117,12 @@ func (b *Builder) Run(ctx context.Context, req Request, emit func(Event)) (*Resu
 	params := anthropic.BetaMessageNewParams{
 		Model:     anthropic.Model(b.cfg.Model),
 		MaxTokens: b.cfg.MaxTokens,
-		System: []anthropic.BetaTextBlockParam{{
-			Text:         SystemPrompt,
-			CacheControl: anthropic.NewBetaCacheControlEphemeralParam(),
-		}},
+		// the quality bar rides on every run, after the system prompt; the
+		// cache breakpoint sits on it so both static blocks are cached
+		System: []anthropic.BetaTextBlockParam{
+			{Text: SystemPrompt},
+			{Text: QualityBrief, CacheControl: anthropic.NewBetaCacheControlEphemeralParam()},
+		},
 		Tools:        toolDefs(),
 		OutputConfig: anthropic.BetaOutputConfigParam{Effort: b.cfg.Effort},
 		Thinking: anthropic.BetaThinkingConfigParamUnion{OfAdaptive: &anthropic.BetaThinkingConfigAdaptiveParam{

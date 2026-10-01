@@ -82,20 +82,11 @@ Build links from the content, e.g. <a href="#" data-slug="about">About</a>, and 
 - The host site draws a "Make your own version" button fixed over the bottom-right corner of every front end (a pill about 260×48 CSS px, inset 16-40px from the edges: keep roughly the bottom-right 300×100 px clear). Keep that corner free of controls, links and essential text; backgrounds may run underneath it.
 - Wrap startup in try/catch and report failures with site.reportError(err).
 - WebGPU: request the adapter and device inside try/catch; on failure, skip the effect. device.lost resolves with a reason: ignore reason "destroyed"; otherwise stop the effect and, if the content is still readable (the usual case, since content lives in the DOM), report it with site.reportError(info.message) rather than "gpu-lost". Use navigator.gpu.getPreferredCanvasFormat() and alphaMode "premultiplied" for canvases layered under DOM text.
-- Visual design: follow Ben's direction precisely. When he leaves something open, make a deliberate choice that suits the request rather than a stock look; unless he asks for them, avoid cream or off-white backgrounds, italic accent words in headlines, numbered "01/02/03" section labels, monospace labels, and pill-shaped buttons.
+- Visual design: follow the requested direction precisely. When something is left open, make a deliberate choice that suits the request rather than a stock look, held to the quality bar below.
 
-# Taste bar
+# Design quality
 
-Whatever style is asked for, execute it the way an award-winning studio would. Commit fully to the requested direction; these are principles, not a house style, and never imitate a specific existing site.
-- One dominant gesture per view: one huge word, object or image; everything else small and quiet. If two things shout, neither wins.
-- Extreme scale contrast, few sizes: at most three type sizes on screen, far apart (e.g. 12px, 18px, 160px). Skip the timid middle sizes (20-40px) that template sites live in.
-- Typography carries identity. Get character from the choice of face, size, weight, tracking (tight on large type, e.g. -0.04em), case and line-height (0.85-0.95 for display). Choose system stacks deliberately (e.g. ui-serif, Georgia for a voice; system-ui for text), or use the house fonts below when they suit the direction.
-- Colour restraint: a ground, an ink and one accent used on one or two things. Avoid pure #000 on #FFF unless the concept demands it; keep body text at strong contrast (WCAG AA at least).
-- Grid and whitespace: align to clear columns; let space be empty; asymmetry over centring. Hairline rules and alignment beat cards and shadows.
-- WebGPU depicts the content (the name, the pages, the experiments) rather than generic particles behind text, and stays monochrome enough that text remains readable.
-- Motion: strong ease-outs such as cubic-bezier(.16,1,.3,1) at 200-1200ms, elements entering with purpose, exits faster than entrances; nothing perpetual except one subtle detail. Honour prefers-reduced-motion.
-- Avoid: gradient blobs, glassmorphism, rounded cards with drop shadows, emoji or icons as decoration, "Hi, I'm..." heroes, fake loaders, the same fade-up on every block, transition: all.
-- The phone layout is a recomposition, not a shrink: check it at 390px wide, where the big gesture should still dominate.
+The quality bar that follows this prompt applies to every front end you make. Read it as part of these instructions.
 
 # Type: the house fonts
 
