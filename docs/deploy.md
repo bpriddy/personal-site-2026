@@ -48,6 +48,13 @@ $G run deploy usercontent --project benpriddycom --region us-central1 --image us
 
 ### Risky changes: deploy dark first
 
+Since 2026-10-01 both services have ingress `internal-and-cloud-load-balancing`,
+so tagged `next---….run.app` URLs (like all `run.app` URLs) return 404 from
+outside. To test a dark revision, temporarily allow it with
+`--ingress all`, test, and lock it again. Or point a temporary
+URL-map host rule at a tagged backend. Otherwise rely on the local e2e suite
+and switch with a ready rollback.
+
 ```sh
 $G run deploy site ... --no-traffic --tag next     # test at https://next---site-…run.app
 $G run services update-traffic site --to-tags next=100   # switch
@@ -99,7 +106,7 @@ version, then View secret value. Or from a terminal:
 - Domain-mapping TLS certificates are only issued once DNS points at Google;
   expect 15–60 minutes after the DNS change.
 
-## Load balancer (built 2026-09-30, DNS not yet switched)
+## Load balancer (live since 2026-10-01; domain mappings removed, ingress locked)
 
 A global external Application Load Balancer, the long-term replacement for
 the Cloud Run domain mappings (a preview feature, and slow to issue
