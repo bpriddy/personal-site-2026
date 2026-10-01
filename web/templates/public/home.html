@@ -1,6 +1,7 @@
 {{define "title"}}{{.Page.Title}}{{end}}
 {{define "main"}}
 <section class="hero">
+  <p class="kicker">This site is imagined by its visitors</p>
   <h1 class="name">{{range nameLines .Page.Title}}<span class="line"><span>{{.}}</span></span> {{end}}</h1>
   <p class="cue" aria-hidden="true">( Scroll )</p>
 </section>

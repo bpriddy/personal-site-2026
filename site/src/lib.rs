@@ -212,6 +212,8 @@ fn placeholder() -> Loaded {
 // ── the page: DOM ────────────────────────────────────────────────────────────
 
 const ROLE: &str = "Creative technology / AI";
+/// The line above the name (Ben's words).
+const KICKER: &str = "This site is imagined by its visitors";
 
 /// `tag.class` with optional text.
 fn el(doc: &Document, tag: &str, class: &str, text: Option<&str>) -> Result<Element, JsValue> {
@@ -343,7 +345,7 @@ fn build_footer(doc: &Document, data: &SiteData) -> Result<Element, JsValue> {
     let footer = el(doc, "footer", "site-footer", None)?;
     let year = js_sys::Date::new_0().get_full_year();
     add(&footer, &el(doc, "p", "", Some(&format!("\u{a9} {year} {}", home_title(data))))?)?;
-    add(&footer, &el(doc, "p", "", Some("This site is rebuilt by its visitors"))?)?;
+    add(&footer, &el(doc, "p", "", Some(KICKER))?)?;
     Ok(footer)
 }
 
@@ -379,6 +381,7 @@ fn render_route(doc: &Document, main: &Element, data: &SiteData, route: &str) ->
     if route.is_empty() {
         let home = data.pages.iter().find(|p| p.slug.is_empty());
         let hero = el(doc, "section", "hero", None)?;
+        add(&hero, &el(doc, "p", "kicker", Some(KICKER))?)?;
         let name = el(doc, "h1", "name", None)?;
         for line in name_lines(&home_title(data)) {
             let l = el(doc, "span", "line", None)?;

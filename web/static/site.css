@@ -58,6 +58,13 @@ body.public::after {
    the corner button (frontend-host.js) takes its place */
 .has-cta .make-own-link { display: none; }
 
+/* the line above the name: secondary, in the text face */
+.kicker {
+  grid-column: 1 / -1; align-self: end; margin: 0 0 var(--s-5);
+  font-family: var(--font-text); font-weight: 400; font-size: var(--t-lede);
+  line-height: 1.15; letter-spacing: -.015em; color: var(--fg);
+}
+
 /* the one gesture: the name, bottom-left of the first viewport */
 .hero {
   min-height: 100vh; min-height: 100svh; align-items: end; align-content: end;
@@ -149,6 +156,7 @@ body.public::after {
 .site-header > :nth-child(3) { animation-delay: 160ms; }
 .name .line > span { animation: rise-in var(--d-5) var(--ease-out) backwards; animation-delay: 120ms; }
 .name .line + .line > span { animation-delay: 200ms; }
+.kicker { animation: rise-in var(--d-5) var(--ease-out) backwards; animation-delay: 40ms; }
 .cue { animation: fade-in var(--d-4) var(--ease-out) 750ms backwards; }
 .display { animation: fade-in var(--d-4) var(--ease-out) backwards; }
 
