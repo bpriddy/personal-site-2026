@@ -213,7 +213,7 @@ fn placeholder() -> Loaded {
 
 const ROLE: &str = "Creative technology / AI";
 /// The line above the name (Ben's words).
-const KICKER: &str = "This site is imagined by its visitors";
+const KICKER: &str = "This site is re-imagined by its visitors";
 
 /// `tag.class` with optional text.
 fn el(doc: &Document, tag: &str, class: &str, text: Option<&str>) -> Result<Element, JsValue> {

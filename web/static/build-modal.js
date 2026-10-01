@@ -90,7 +90,7 @@
 
   var body = el("div", "bm-body");
   var intro = el("div", "bm-intro");
-  var lede = el("p", "bm-lede", "This site is imagined by its visitors. Describe yours.");
+  var lede = el("p", "bm-lede", "This site is re-imagined by its visitors. Describe yours.");
   var desc = el("p", "bm-desc", "Say how Ben's site should look and feel. Claude builds it in a minute or two, with Ben's real pages inside, and it appears right here on the site. Only you can see it until you send it to Ben.");
   desc.id = "bm-desc";
   var starters = el("div", "bm-starters");
