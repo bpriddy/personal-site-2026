@@ -2,7 +2,8 @@
 {{define "main"}}
 <link rel="stylesheet" href="/static/builder.css">
 <script src="/static/builder-preview.js" defer></script>
-{{if not .Builtin}}<script src="/static/builder.js" defer></script>{{end}}
+{{if not .Builtin}}<script src="/static/builder-stream.js" defer></script>
+<script src="/static/builder.js" defer></script>{{end}}
 <div class="builder builder-wide">
 <p><a href="/admin/builder/">← Builder</a></p>
 <header class="b-head">

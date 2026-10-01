@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -34,7 +33,9 @@ func (e *builderEnv) visitor(n int, ip string) *visitor {
 
 func (v *visitor) do(method, target string, body io.Reader, hdr ...string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, target, body)
-	req.AddCookie(&http.Cookie{Name: sidCookie, Value: v.sid})
+	if v.sid != "" {
+		req.AddCookie(&http.Cookie{Name: sidCookie, Value: v.sid})
+	}
 	for k, val := range v.cookies {
 		req.AddCookie(&http.Cookie{Name: k, Value: val})
 	}
@@ -60,24 +61,33 @@ func (v *visitor) do(method, target string, body io.Reader, hdr ...string) *http
 	return rec
 }
 
-func (v *visitor) form(target string, vals url.Values) *httptest.ResponseRecorder {
-	return v.do("POST", target, strings.NewReader(vals.Encode()), "Content-Type", "application/x-www-form-urlencoded")
+// post sends v as JSON.
+func (v *visitor) post(target string, body any) *httptest.ResponseRecorder {
+	b, _ := json.Marshal(body)
+	return v.do("POST", target, strings.NewReader(string(b)), "Content-Type", "application/json")
+}
+
+// apiError is a refusal's friendly message.
+func apiError(rec *httptest.ResponseRecorder) string {
+	var e struct{ Error string }
+	json.Unmarshal(rec.Body.Bytes(), &e)
+	return e.Error
 }
 
 // create makes a front end from a prompt and returns its slug.
 func (v *visitor) create(t *testing.T, prompt string) string {
 	t.Helper()
-	rec := v.form("/build/new", url.Values{"prompt": {prompt}})
-	loc := rec.Header().Get("Location")
-	if rec.Code != 303 || !strings.HasPrefix(loc, "/build/") || !strings.Contains(loc, "#start=") {
-		t.Fatalf("new: %d %q", rec.Code, loc)
+	rec := v.post("/build/api/new", map[string]string{"prompt": prompt})
+	var out struct{ ID, Slug, Title string }
+	json.Unmarshal(rec.Body.Bytes(), &out)
+	if rec.Code != 201 || out.ID != "fe/"+out.Slug || out.Slug == "" {
+		t.Fatalf("new: %d %s", rec.Code, rec.Body)
 	}
-	return strings.TrimPrefix(strings.SplitN(loc, "#", 2)[0], "/build/")
+	return out.Slug
 }
 
 func (v *visitor) chatRaw(slug, prompt, parent string) *httptest.ResponseRecorder {
-	body, _ := json.Marshal(map[string]string{"prompt": prompt, "parent": parent})
-	return v.do("POST", "/build/"+slug+"/chat", strings.NewReader(string(body)), "Content-Type", "application/json")
+	return v.post("/build/api/fe/"+slug+"/chat", map[string]string{"prompt": prompt, "parent": parent})
 }
 
 // chat runs a chat turn with the scripted model making a valid revision.
@@ -94,6 +104,25 @@ func (v *visitor) chat(t *testing.T, slug, prompt, parent string) *builder.Event
 		t.Fatalf("no revision: %+v", evs)
 	}
 	return rev
+}
+
+// live shows a revision on the site ("" = the newest).
+func (v *visitor) live(slug, rev string) *httptest.ResponseRecorder {
+	return v.post("/build/api/fe/"+slug+"/live", map[string]string{"rev": rev})
+}
+
+// state is GET /build/api/frontends.
+func (v *visitor) state(t *testing.T) buildState {
+	t.Helper()
+	rec := v.do("GET", "/build/api/frontends", nil)
+	if rec.Code != 200 || rec.Header().Get("Cache-Control") != "no-store" || rec.Header().Get("Content-Type") != "application/json" {
+		t.Fatalf("frontends: %d %v", rec.Code, rec.Header())
+	}
+	var st buildState
+	if err := json.Unmarshal(rec.Body.Bytes(), &st); err != nil {
+		t.Fatal(err)
+	}
+	return st
 }
 
 func (e *builderEnv) script() {
@@ -113,8 +142,8 @@ func TestPublicBuilderFlow(t *testing.T) {
 	ctx := context.Background()
 	a := e.visitor(1, "198.51.100.1")
 
-	// /build: a session cookie, the public CSP, no front-end host
-	req := httptest.NewRequest("GET", "/build", nil)
+	// the list: a session cookie, JSON, nothing yet
+	req := httptest.NewRequest("GET", "/build/api/frontends", nil)
 	rec := httptest.NewRecorder()
 	e.s.ServeHTTP(rec, req)
 	var sid *http.Cookie
@@ -125,16 +154,22 @@ func TestPublicBuilderFlow(t *testing.T) {
 	}
 	if rec.Code != 200 || sid == nil || !sidPattern.MatchString(sid.Value) || !sid.HttpOnly || sid.SameSite != http.SameSiteLaxMode ||
 		sid.MaxAge != 30*24*3600 || sid.Path != "/" || sid.Secure {
-		t.Fatalf("/build: %d, sid %+v", rec.Code, sid)
+		t.Fatalf("/build/api/frontends: %d, sid %+v", rec.Code, sid)
 	}
-	body := rec.Body.String()
-	if rec.Header().Get("Content-Security-Policy") != e.s.publicCSP || strings.Contains(body, "frontend-host.js") ||
-		!strings.Contains(body, `action="/build/new"`) || strings.Contains(body, "<script>") || strings.Contains(body, "style=") {
-		t.Fatalf("/build page: CSP %q\n%s", rec.Header().Get("Content-Security-Policy"), body)
+	if st := a.state(t); !st.Enabled || st.Notice != "" || st.MaxPrompt != 4000 || st.Live != nil || len(st.Frontends) != 0 {
+		t.Fatalf("empty state = %+v", st)
 	}
-	// plain page views get no session cookie
-	if rec := get(e.s, "/"); len(rec.Result().Cookies()) != 0 {
-		t.Fatalf("/ set cookies: %v", rec.Result().Cookies())
+	if body := a.do("GET", "/build/api/frontends", nil).Body.String(); !strings.Contains(body, `"frontends":[]`) || !strings.Contains(body, `"live":null`) {
+		t.Fatalf("empty state JSON: %s", body)
+	}
+	// plain page views get no session cookie, and the shell carries the modal
+	home := get(e.s, "/")
+	if len(home.Result().Cookies()) != 0 {
+		t.Fatalf("/ set cookies: %v", home.Result().Cookies())
+	}
+	if b := home.Body.String(); !strings.Contains(b, `src="/static/build-modal.js"`) || !strings.Contains(b, `src="/static/builder-stream.js"`) ||
+		!strings.Contains(b, `href="/static/build-modal.css"`) || !strings.Contains(b, `class="make-own-link" href="/?build=1"`) || strings.Contains(b, "<script>") {
+		t.Fatalf("shell lacks the modal:\n%s", b)
 	}
 
 	// create → chat → revision
@@ -142,8 +177,9 @@ func TestPublicBuilderFlow(t *testing.T) {
 	if slug != "a-calm-green-page" {
 		t.Fatalf("slug = %q", slug)
 	}
-	if rec := a.do("GET", "/build/"+slug, nil); rec.Code != 200 || !strings.Contains(rec.Body.String(), `data-action="/build/`+slug+`/chat"`) {
-		t.Fatalf("owner page: %d", rec.Code)
+	if st := a.state(t); len(st.Frontends) != 1 || st.Frontends[0].Title != "A calm green page" || len(st.Frontends[0].Revisions) != 0 ||
+		st.Frontends[0].Status.Key != "draft" {
+		t.Fatalf("state after create = %+v", st)
 	}
 	rev := a.chat(t, slug, "A calm green page", "")
 	r1, err := e.st.Revision(ctx, rev.Revision)
@@ -157,51 +193,76 @@ func TestPublicBuilderFlow(t *testing.T) {
 	if len(runs) != 1 || runs[0].Status != store.RunDone {
 		t.Fatalf("runs = %+v", runs)
 	}
-	page := a.do("GET", "/build/"+slug, nil).Body.String()
-	if !strings.Contains(page, `data-ref="rev/`+r1.ID+`"`) || !strings.Contains(page, `data-preview-url="/build/preview"`) || !strings.Contains(page, "Draft") {
-		t.Fatalf("page after r1:\n%s", page)
-	}
 
-	// preview URL for the owner
-	rec = a.do("GET", "/build/preview?ref=rev/"+r1.ID, nil)
-	var pv struct{ Ref, URL string }
-	json.NewDecoder(rec.Body).Decode(&pv)
-	if rec.Code != 200 || pv.Ref != "rev/"+r1.ID || !strings.HasPrefix(pv.URL, "http://127.0.0.1:8081/t/") {
-		t.Fatalf("preview: %d %+v", rec.Code, pv)
+	// View live names the revision: fe_live = "<front end>:<revision>"
+	rec = a.live(slug, r1.ID)
+	var lv buildLive
+	json.Unmarshal(rec.Body.Bytes(), &lv)
+	if rec.Code != 200 || lv != (buildLive{Frontend: "fe/" + slug, Slug: slug, Revision: r1.ID, Number: 1}) || a.cookies[liveCookie] != "fe/"+slug+":"+r1.ID {
+		t.Fatalf("live on: %d %s %v", rec.Code, rec.Body, a.cookies)
 	}
-
-	// View live: fe_live, then /api/frontend serves the draft's latest revision
-	rec = a.form("/build/"+slug+"/live", url.Values{"on": {"1"}})
-	if rec.Code != 303 || rec.Header().Get("Location") != "/" || a.cookies[liveCookie] != "fe/"+slug {
-		t.Fatalf("live on: %d %q %v", rec.Code, rec.Header().Get("Location"), a.cookies)
-	}
+	// a reprompt makes r2; the site keeps showing r1 until the visitor picks r2
 	rev2 := a.chat(t, slug, "greener", r1.ID)
 	fe := decodeFrontend(t, a.do("GET", "/api/frontend", nil))
-	if fe.Ref != "fe/"+slug || fe.Serve != "rev/"+rev2.Revision || !fe.Draft || fe.Exit != "/build/"+slug+"/live" {
+	if fe.Ref != "fe/"+slug || fe.Serve != "rev/"+r1.ID || !fe.Draft || fe.Exit != "/build/api/exit" || fe.Revision != r1.ID || fe.Number != 1 || fe.Title != "A calm green page" {
 		t.Fatalf("draft = %+v", fe)
+	}
+	if rec := a.live(slug, rev2.Revision); rec.Code != 200 {
+		t.Fatalf("live r2: %d", rec.Code)
+	}
+	if fe := decodeFrontend(t, a.do("GET", "/api/frontend", nil)); fe.Serve != "rev/"+rev2.Revision || fe.Number != 2 {
+		t.Fatalf("draft r2 = %+v", fe)
+	}
+	// and back to r1
+	a.live(slug, r1.ID)
+	if fe := decodeFrontend(t, a.do("GET", "/api/frontend", nil)); fe.Serve != "rev/"+r1.ID {
+		t.Fatalf("back to r1 = %+v", fe)
+	}
+	// "" = the newest
+	a.live(slug, "")
+	if fe := decodeFrontend(t, a.do("GET", "/api/frontend", nil)); fe.Serve != "rev/"+rev2.Revision {
+		t.Fatalf("newest = %+v", fe)
 	}
 	if fb := decodeFrontend(t, a.do("GET", "/api/frontend?fallback=1", nil)); fb.Draft || fb.Ref != frontend.DefaultRef {
 		t.Fatalf("fallback = %+v", fb)
 	}
-	if !strings.Contains(a.do("GET", "/build/"+slug, nil).Body.String(), "View it live on the site") {
-		t.Fatal("no View live button")
+
+	// the list: both revisions newest first, with prompts; what's live
+	st := a.state(t)
+	if len(st.Frontends) != 1 || st.Live == nil || st.Live.Revision != rev2.Revision || st.Live.Number != 2 || st.Live.Slug != slug {
+		t.Fatalf("state = %+v", st)
 	}
+	f := st.Frontends[0]
+	if f.ID != "fe/"+slug || f.Slug != slug || f.Running || len(f.Revisions) != 2 ||
+		f.Revisions[0].ID != rev2.Revision || f.Revisions[0].Number != 2 || f.Revisions[0].ParentNumber != 1 || f.Revisions[0].Prompt != "greener" ||
+		f.Revisions[1].ID != r1.ID || f.Revisions[1].Prompt != "A calm green page" || f.Revisions[1].Summary != "A page." {
+		t.Fatalf("frontend row = %+v", f)
+	}
+
 	// exit
-	rec = a.form("/build/"+slug+"/live", url.Values{"on": {"0"}})
-	if rec.Code != 303 || rec.Header().Get("Location") != "/build/"+slug || a.cookies[liveCookie] != "" {
-		t.Fatalf("live off: %d %v", rec.Code, a.cookies)
+	rec = a.do("POST", "/build/api/exit", nil)
+	if rec.Code != 204 || a.cookies[liveCookie] != "" {
+		t.Fatalf("exit: %d %v", rec.Code, a.cookies)
 	}
 	if fe := decodeFrontend(t, a.do("GET", "/api/frontend", nil)); fe.Draft {
 		t.Fatalf("still a draft after exit: %+v", fe)
 	}
+	if st := a.state(t); st.Live != nil {
+		t.Fatalf("live after exit = %+v", st.Live)
+	}
 
 	// submit r1 → pending, shown to the visitor and on the admin badge
-	rec = a.form("/build/"+slug+"/submit", url.Values{"rev": {r1.ID}})
-	if rec.Code != 303 || !strings.Contains(rec.Header().Get("Location"), "msg=submitted") {
-		t.Fatalf("submit: %d %q", rec.Code, rec.Header().Get("Location"))
+	rec = a.post("/build/api/fe/"+slug+"/submit", map[string]string{"rev": r1.ID})
+	var sub struct {
+		Status  visitorStatus
+		Message string
 	}
-	if page := a.do("GET", "/build/"+slug+"?rev="+r1.ID, nil).Body.String(); !strings.Contains(page, "Waiting for review") || !strings.Contains(page, "is with Ben") {
-		t.Fatalf("pending page:\n%s", page)
+	json.Unmarshal(rec.Body.Bytes(), &sub)
+	if rec.Code != 200 || sub.Status.Key != "pending" || sub.Status.Rev != r1.ID || sub.Status.RevN != 1 || sub.Message != buildMessage(msgSubmitted, e.s.limits) {
+		t.Fatalf("submit: %d %s", rec.Code, rec.Body)
+	}
+	if st := a.state(t); st.Frontends[0].Status.Label != "Waiting for review" {
+		t.Fatalf("status = %+v", st.Frontends[0].Status)
 	}
 	rec = adminDo(e, "GET", "/admin/builder/pending.json")
 	if rec.Code != 200 || strings.TrimSpace(rec.Body.String()) != `{"pending":1}` {
@@ -211,7 +272,8 @@ func TestPublicBuilderFlow(t *testing.T) {
 	if !strings.Contains(adminPage, "A calm green page") || !strings.Contains(adminPage, "/approve") || !strings.Contains(adminPage, "Visitor front ends") {
 		t.Fatalf("admin page lacks the submission:\n%s", adminPage)
 	}
-	if rec := adminDo(e, "GET", "/admin/builder/fe/"+slug+"?rev="+r1.ID); rec.Code != 200 || !strings.Contains(rec.Body.String(), "Made by a visitor") {
+	if rec := adminDo(e, "GET", "/admin/builder/fe/"+slug+"?rev="+r1.ID); rec.Code != 200 || !strings.Contains(rec.Body.String(), "Made by a visitor") ||
+		!strings.Contains(rec.Body.String(), "/static/builder-stream.js") {
 		t.Fatalf("admin preview page: %d", rec.Code)
 	}
 
@@ -231,19 +293,44 @@ func TestPublicBuilderFlow(t *testing.T) {
 	if pick.Ref != "fe/"+slug || pick.Serve != "rev/"+r1.ID || pick.Draft {
 		t.Fatalf("approved pick = %+v", pick)
 	}
-	if page := a.do("GET", "/build/"+slug+"?rev="+r1.ID, nil).Body.String(); !strings.Contains(page, "Approved") {
-		t.Fatal("visitor doesn't see the approval")
+	if st := a.state(t); st.Frontends[0].Status.Key != "approved" || st.Frontends[0].Status.Label != "Approved" {
+		t.Fatalf("visitor doesn't see the approval: %+v", st.Frontends[0].Status)
 	}
 	if rec := adminDo(e, "GET", "/admin/builder/pending.json"); strings.TrimSpace(rec.Body.String()) != `{"pending":0}` {
 		t.Fatalf("pending after approve: %s", rec.Body)
 	}
-	// the index lists it with its status
-	if idx := a.do("GET", "/build", nil).Body.String(); !strings.Contains(idx, `href="/build/`+slug+`"`) || !strings.Contains(idx, "Approved") {
-		t.Fatalf("index:\n%s", idx)
-	}
 }
 
 func itoa64(n int64) string { b, _ := json.Marshal(n); return string(b) }
+
+func TestPublicBuilderRedirects(t *testing.T) {
+	e := newBuilderServer(t, true)
+	a := e.visitor(1, "198.51.100.1")
+	slug := a.create(t, "Mine")
+	// the old pages open the modal on the site, for anyone: no ownership leaks
+	for _, who := range []*visitor{a, e.visitor(2, "198.51.100.2")} {
+		for _, p := range []string{"/build", "/build/", "/build/" + slug, "/build/nope", "/build?msg=ip-day"} {
+			rec := who.do("GET", p, nil)
+			if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/?build=1" {
+				t.Errorf("%s: %d %q", p, rec.Code, rec.Header().Get("Location"))
+			}
+		}
+	}
+	// the old POST routes are gone
+	for _, p := range []string{"/build/new", "/build/" + slug + "/chat", "/build/" + slug + "/live", "/build/" + slug + "/submit"} {
+		if rec := a.post(p, map[string]string{}); rec.Code != http.StatusMethodNotAllowed && rec.Code != http.StatusNotFound {
+			t.Errorf("POST %s: %d", p, rec.Code)
+		}
+	}
+	// so is the visitor preview
+	if rec := a.do("GET", "/build/preview?ref=builtin/site", nil); rec.Code != http.StatusFound {
+		t.Errorf("/build/preview: %d", rec.Code)
+	}
+	// the home page with ?build=1 is just the home page (the modal opens client-side)
+	if rec := get(e.s, "/?build=1"); rec.Code != 200 {
+		t.Fatalf("/?build=1: %d", rec.Code)
+	}
+}
 
 func TestPublicBuilderOwnershipIsolation(t *testing.T) {
 	e := newBuilderServer(t, true)
@@ -257,49 +344,42 @@ func TestPublicBuilderOwnershipIsolation(t *testing.T) {
 	nobody := &visitor{e: e, sid: "", ip: "198.51.100.3", cookies: map[string]string{}}
 	for _, who := range []*visitor{b, nobody} {
 		for _, c := range []struct {
-			method, target string
-			form           url.Values
+			target string
+			body   map[string]string
 		}{
-			{"GET", "/build/" + slug, nil},
-			{"GET", "/build/preview?ref=rev/" + rev.Revision, nil},
-			{"POST", "/build/" + slug + "/live", url.Values{"on": {"1"}}},
-			{"POST", "/build/" + slug + "/submit", url.Values{"rev": {rev.Revision}}},
-			{"GET", "/build/bens", nil},
-			{"GET", "/build/preview?ref=rev/" + bensRev.ID, nil},
-			{"GET", "/build/preview?ref=builtin/site", nil},
-			{"POST", "/build/bens/live", url.Values{"on": {"1"}}},
-			{"POST", "/build/bens/submit", url.Values{"rev": {bensRev.ID}}},
-			{"GET", "/build/nope", nil},
+			{"/build/api/fe/" + slug + "/live", map[string]string{"rev": rev.Revision}},
+			{"/build/api/fe/" + slug + "/live", map[string]string{"rev": ""}},
+			{"/build/api/fe/" + slug + "/submit", map[string]string{"rev": rev.Revision}},
+			{"/build/api/fe/" + slug + "/chat", map[string]string{"prompt": "take it over"}},
+			{"/build/api/fe/bens/live", map[string]string{"rev": bensRev.ID}},
+			{"/build/api/fe/bens/submit", map[string]string{"rev": bensRev.ID}},
+			{"/build/api/fe/bens/chat", map[string]string{"prompt": "take it over"}},
+			{"/build/api/fe/nope/live", map[string]string{"rev": ""}},
+			{"/build/api/fe/Bad_Slug/live", map[string]string{"rev": ""}},
 		} {
-			var rec *httptest.ResponseRecorder
-			if c.method == "GET" {
-				rec = who.do("GET", c.target, nil)
-			} else {
-				rec = who.form(c.target, c.form)
-			}
+			rec := who.post(c.target, c.body)
 			if rec.Code != 404 {
-				t.Errorf("%q: %s %s = %d, want 404", who.sid, c.method, c.target, rec.Code)
+				t.Errorf("%q: POST %s = %d, want 404", who.sid, c.target, rec.Code)
 			}
 			if strings.Contains(rec.Body.String(), "Secret garden") {
-				t.Errorf("%s %s leaks the title", c.method, c.target)
+				t.Errorf("POST %s leaks the title", c.target)
 			}
 		}
-		if rec := who.chatRaw(slug, "take it over", ""); rec.Code != 404 {
-			t.Errorf("chat on another's front end: %d", rec.Code)
-		}
-		if rec := who.chatRaw("bens", "take it over", ""); rec.Code != 404 {
-			t.Errorf("chat on Ben's front end: %d", rec.Code)
-		}
-		if idx := who.do("GET", "/build", nil).Body.String(); strings.Contains(idx, "Secret garden") {
+		if body := who.do("GET", "/build/api/frontends", nil).Body.String(); strings.Contains(body, "Secret garden") || strings.Contains(body, rev.Revision) {
 			t.Error("another session lists the front end")
 		}
 		// a forged fe_live is ignored and cleared
-		who.cookies[liveCookie] = "fe/" + slug
-		if fe := decodeFrontend(t, who.do("GET", "/api/frontend", nil)); fe.Draft || fe.Ref == "fe/"+slug {
-			t.Fatalf("non-owner fe_live served the draft: %+v", fe)
+		for _, forged := range []string{"fe/" + slug + ":" + rev.Revision, "fe/" + slug} {
+			who.cookies[liveCookie] = forged
+			if fe := decodeFrontend(t, who.do("GET", "/api/frontend", nil)); fe.Draft || fe.Ref == "fe/"+slug {
+				t.Fatalf("non-owner fe_live %q served the draft: %+v", forged, fe)
+			}
+			if _, ok := who.cookies[liveCookie]; ok {
+				t.Errorf("non-owner fe_live %q not cleared", forged)
+			}
 		}
-		if _, ok := who.cookies[liveCookie]; ok {
-			t.Error("non-owner fe_live not cleared")
+		if st := who.state(t); st.Live != nil {
+			t.Errorf("non-owner live = %+v", st.Live)
 		}
 	}
 	// nothing was submitted or changed by the attempts
@@ -309,54 +389,102 @@ func TestPublicBuilderOwnershipIsolation(t *testing.T) {
 	if revs, _ := e.st.Revisions(ctx, "fe/"+slug); len(revs) != 1 {
 		t.Fatalf("revisions = %d", len(revs))
 	}
-	// the owner's other session-less requests: the owner still has it
-	if rec := a.do("GET", "/build/"+slug, nil); rec.Code != 200 {
-		t.Fatalf("owner lost access: %d", rec.Code)
+	if st := a.state(t); len(st.Frontends) != 1 || st.Frontends[0].Title != "Secret garden" {
+		t.Fatalf("owner lost access: %+v", st)
 	}
-	// can't submit a revision of another front end through one's own
+	// can't submit or show a revision of another front end through one's own
 	other := a.create(t, "Second one")
-	if rec := a.form("/build/"+other+"/submit", url.Values{"rev": {rev.Revision}}); rec.Code != 404 {
-		t.Fatalf("submit foreign revision: %d", rec.Code)
-	}
-	if rec := a.form("/build/"+other+"/submit", url.Values{"rev": {bensRev.ID}}); rec.Code != 404 {
-		t.Fatalf("submit Ben's revision: %d", rec.Code)
+	for _, r := range []string{rev.Revision, bensRev.ID, "zzzzzzzzzz"} {
+		if rec := a.post("/build/api/fe/"+other+"/submit", map[string]string{"rev": r}); rec.Code != 404 {
+			t.Errorf("submit foreign revision %s: %d", r, rec.Code)
+		}
+		if rec := a.live(other, r); rec.Code != 404 || a.cookies[liveCookie] != "" {
+			t.Errorf("live foreign revision %s: %d %v", r, rec.Code, a.cookies)
+		}
 	}
 }
 
 func TestPublicBuilderFeLive(t *testing.T) {
 	e := newBuilderServer(t, true)
+	ctx := context.Background()
 	a := e.visitor(1, "198.51.100.1")
 	slug := a.create(t, "Empty for now")
-	// no revision yet: View live refuses, and a fe_live cookie is cleared
-	if rec := a.form("/build/"+slug+"/live", url.Values{"on": {"1"}}); rec.Code != 303 || !strings.Contains(rec.Header().Get("Location"), "msg=no-revision") {
-		t.Fatalf("live without revision: %d %q", rec.Code, rec.Header().Get("Location"))
+	// no revision yet: View live refuses, kindly
+	if rec := a.live(slug, ""); rec.Code != 409 || apiError(rec) != buildMessage(msgNoRevision, e.s.limits) || a.cookies[liveCookie] != "" {
+		t.Fatalf("live without revision: %d %s", rec.Code, rec.Body)
 	}
-	for _, v := range []string{"fe/" + slug, "builtin/site", "garbage", "fe/nope"} {
+	r1 := a.chat(t, slug, "now something", "")
+	r2 := a.chat(t, slug, "and more", r1.Revision)
+	other := a.create(t, "Other one")
+	r3 := a.chat(t, other, "other", "")
+	e.st.CreatePromptedFrontend(ctx, "fe/bens", "Ben's")
+	bensRev, _ := e.st.AddRevision(ctx, store.Revision{ID: "bbbbbbbb1", FrontendID: "fe/bens", Author: "ben"})
+
+	// owner + a revision of that front end: served exactly
+	for _, c := range []struct{ cookie, serve string }{
+		{"fe/" + slug + ":" + r1.Revision, r1.Revision},
+		{"fe/" + slug + ":" + r2.Revision, r2.Revision},
+		{"fe/" + other + ":" + r3.Revision, r3.Revision},
+		{"fe/" + slug, r2.Revision}, // legacy value: the newest
+	} {
+		a.cookies[liveCookie] = c.cookie
+		fe := decodeFrontend(t, a.do("GET", "/api/frontend", nil))
+		if !fe.Draft || fe.Serve != "rev/"+c.serve || fe.Revision != c.serve {
+			t.Errorf("fe_live=%q: %+v", c.cookie, fe)
+		}
+		if a.cookies[liveCookie] != c.cookie {
+			t.Errorf("fe_live=%q changed to %q", c.cookie, a.cookies[liveCookie])
+		}
+	}
+	// anything else is ignored and cleared: a revision of another front end
+	// (the visitor's own, or Ben's), a missing revision, other front ends,
+	// garbage
+	for _, v := range []string{
+		"fe/" + slug + ":" + r3.Revision, "fe/" + other + ":" + r1.Revision, "fe/" + slug + ":" + bensRev.ID,
+		"fe/" + slug + ":zzzzzzzzzz", "fe/" + slug + ":BAD!", "fe/" + slug + ":", "fe/bens:" + bensRev.ID, "fe/bens",
+		"builtin/site", "builtin/site:" + r1.Revision, "garbage", "fe/nope", ":" + r1.Revision, "",
+	} {
 		a.cookies[liveCookie] = v
 		fe := decodeFrontend(t, a.do("GET", "/api/frontend", nil))
-		if fe.Draft {
+		if fe.Draft || fe.Revision != "" {
 			t.Errorf("fe_live=%q served a draft: %+v", v, fe)
 		}
 		if _, ok := a.cookies[liveCookie]; ok {
 			t.Errorf("fe_live=%q not cleared", v)
 		}
 	}
-	// with a revision, the owner gets it; without the sid, nobody does
-	rev := a.chat(t, slug, "now something", "")
-	a.cookies[liveCookie] = "fe/" + slug
-	if fe := decodeFrontend(t, a.do("GET", "/api/frontend", nil)); !fe.Draft || fe.Serve != "rev/"+rev.Revision {
-		t.Fatalf("owner draft = %+v", fe)
-	}
-	rec := get(e.s, "/api/frontend", &http.Cookie{Name: liveCookie, Value: "fe/" + slug})
+	// without the sid, nobody gets it
+	rec := get(e.s, "/api/frontend", &http.Cookie{Name: liveCookie, Value: "fe/" + slug + ":" + r1.Revision})
 	if fe := decodeFrontend(t, rec); fe.Draft {
 		t.Fatalf("no sid got the draft: %+v", fe)
 	}
-	// the live cookie is HttpOnly, Lax, a session cookie
-	rec = a.form("/build/"+slug+"/live", url.Values{"on": {"1"}})
+	// the live cookie is HttpOnly, Lax, a session cookie; exit clears it the same way
+	rec = a.live(slug, r1.Revision)
+	found := false
 	for _, c := range rec.Result().Cookies() {
-		if c.Name == liveCookie && (!c.HttpOnly || c.SameSite != http.SameSiteLaxMode || c.MaxAge != 0 || c.Path != "/") {
-			t.Fatalf("fe_live cookie = %+v", c)
+		if c.Name == liveCookie {
+			found = true
+			if !c.HttpOnly || c.SameSite != http.SameSiteLaxMode || c.MaxAge != 0 || c.Path != "/" || c.Value != "fe/"+slug+":"+r1.Revision {
+				t.Fatalf("fe_live cookie = %+v", c)
+			}
 		}
+	}
+	if !found {
+		t.Fatal("no fe_live cookie")
+	}
+	rec = a.do("POST", "/build/api/exit", nil)
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == liveCookie && (c.MaxAge >= 0 || !c.HttpOnly || c.Path != "/") {
+			t.Fatalf("exit cookie = %+v", c)
+		}
+	}
+	// exit needs no session and is always allowed (it only clears a cookie)
+	if rec := get(e.s, "/build/api/exit"); rec.Code == 204 {
+		t.Fatal("GET exit")
+	}
+	// bad live bodies are a 404, not an error page
+	if rec := a.do("POST", "/build/api/fe/"+slug+"/live", strings.NewReader("{"), "Content-Type", "application/json"); rec.Code != 404 {
+		t.Fatalf("bad body: %d", rec.Code)
 	}
 }
 
@@ -372,18 +500,24 @@ func TestPublicBuilderLimits(t *testing.T) {
 			t.Fatalf("got %d %q, want %d %q", rec.Code, rec.Body, status, msg(key))
 		}
 	}
+	refusedJSON := func(rec *httptest.ResponseRecorder, status int, key string) {
+		t.Helper()
+		if rec.Code != status || apiError(rec) != msg(key) || rec.Header().Get("Content-Type") != "application/json" {
+			t.Fatalf("got %d %s, want %d %q", rec.Code, rec.Body, status, msg(key))
+		}
+	}
 
 	a := e.visitor(1, "198.51.100.1")
 	slug := a.create(t, "one")
+	if st := a.state(t); st.MaxPrompt != 50 {
+		t.Fatalf("maxPrompt = %d", st.MaxPrompt)
+	}
 	// prompt length (characters, not bytes)
 	refused(a.chatRaw(slug, strings.Repeat("é", 51), ""), 400, msgTooLong)
 	a.chat(t, slug, strings.Repeat("é", 50), "")
-	if rec := a.form("/build/new", url.Values{"prompt": {strings.Repeat("x", 51)}}); rec.Header().Get("Location") != "/build?msg="+msgTooLong {
-		t.Fatalf("new too long: %q", rec.Header().Get("Location"))
-	}
-	if rec := a.form("/build/new", url.Values{"prompt": {"  "}}); rec.Header().Get("Location") != "/build?msg="+msgEmpty {
-		t.Fatalf("new empty: %q", rec.Header().Get("Location"))
-	}
+	refusedJSON(a.post("/build/api/new", map[string]string{"prompt": strings.Repeat("x", 51)}), 400, msgTooLong)
+	refusedJSON(a.post("/build/api/new", map[string]string{"prompt": "  "}), 400, msgEmpty)
+	refusedJSON(a.do("POST", "/build/api/new", strings.NewReader("prompt=x"), "Content-Type", "application/x-www-form-urlencoded"), 400, msgEmpty)
 
 	// one at a time per session (a run in progress, e.g. on another instance)
 	ipReq := httptest.NewRequest("GET", "/", nil)
@@ -403,12 +537,10 @@ func TestPublicBuilderLimits(t *testing.T) {
 	slug2 := a2.create(t, "two")
 	a2.chat(t, slug2, "x", "")
 	refused(a2.chatRaw(slug2, "y", ""), 429, store.LimitIPDay)
-	// /build/new says so up front, and /build shows it
-	if rec := a2.form("/build/new", url.Values{"prompt": {"more"}}); rec.Header().Get("Location") != "/build?msg="+store.LimitIPDay {
-		t.Fatalf("new at IP limit: %q", rec.Header().Get("Location"))
-	}
-	if page := a2.do("GET", "/build?msg="+store.LimitIPDay, nil).Body.String(); !strings.Contains(page, "plenty of building") {
-		t.Fatal("/build doesn't show the IP limit")
+	// creating says so up front, and so does the list
+	refusedJSON(a2.post("/build/api/new", map[string]string{"prompt": "more"}), 429, store.LimitIPDay)
+	if st := a2.state(t); !strings.Contains(st.Notice, "plenty of building") || !st.Enabled {
+		t.Fatalf("list doesn't show the IP limit: %+v", st)
 	}
 
 	// 4 per day globally, across sessions and IPs
@@ -416,17 +548,15 @@ func TestPublicBuilderLimits(t *testing.T) {
 	slugB := b.create(t, "b")
 	b.chat(t, slugB, "x", "")
 	c := e.visitor(4, "198.51.100.3")
-	if rec := c.form("/build/new", url.Values{"prompt": {"c"}}); rec.Header().Get("Location") != "/build?msg="+store.LimitGlobalDay {
-		t.Fatalf("new at global limit: %q", rec.Header().Get("Location"))
-	}
-	if page := c.do("GET", "/build", nil).Body.String(); !strings.Contains(page, "resting for today") {
-		t.Fatal("/build doesn't say the builder is resting")
+	refusedJSON(c.post("/build/api/new", map[string]string{"prompt": "c"}), 429, store.LimitGlobalDay)
+	if st := c.state(t); !strings.Contains(st.Notice, "resting for today") {
+		t.Fatalf("list doesn't say the builder is resting: %+v", st)
 	}
 	e.st.CreateVisitorFrontend(ctx, "fe/c", "C", hashSID(c.sid))
 	refused(c.chatRaw("c", "x", ""), 429, store.LimitGlobalDay)
 
 	// Ben is exempt
-	e.form("/admin/builder/new", url.Values{"slug": {"bens"}})
+	e.form("/admin/builder/new", map[string][]string{"slug": {"bens"}})
 	e.script()
 	if rev := eventOf(e.chat(t, "bens", "anything", ""), "revision"); rev == nil {
 		t.Fatal("admin chat limited")
@@ -441,9 +571,7 @@ func TestPublicBuilderLimits(t *testing.T) {
 	d := e.visitor(5, "198.51.100.9")
 	d.create(t, "first")
 	d.create(t, "second")
-	if rec := d.form("/build/new", url.Values{"prompt": {"third"}}); rec.Header().Get("Location") != "/build?msg="+msgSlowNew {
-		t.Fatalf("third new: %q", rec.Header().Get("Location"))
-	}
+	refusedJSON(d.post("/build/api/new", map[string]string{"prompt": "third"}), 429, msgSlowNew)
 }
 
 func TestPublicBuilderModelFailureIsFriendly(t *testing.T) {
@@ -466,19 +594,19 @@ func TestPublicBuilderModelFailureIsFriendly(t *testing.T) {
 func TestPublicBuilderDisabledWithoutKey(t *testing.T) {
 	e := newBuilderServer(t, false)
 	a := e.visitor(1, "198.51.100.1")
-	page := a.do("GET", "/build", nil)
-	if page.Code != 200 || !strings.Contains(page.Body.String(), "taking a break") || strings.Contains(page.Body.String(), `action="/build/new"`) {
-		t.Fatalf("/build disabled: %d", page.Code)
+	if st := a.state(t); st.Enabled || !strings.Contains(st.Notice, "taking a break") {
+		t.Fatalf("disabled state = %+v", st)
 	}
-	if rec := a.form("/build/new", url.Values{"prompt": {"x"}}); rec.Header().Get("Location") != "/build?msg="+msgDisabled {
-		t.Fatalf("new while disabled: %q", rec.Header().Get("Location"))
+	if rec := a.post("/build/api/new", map[string]string{"prompt": "x"}); rec.Code != 503 || !strings.Contains(apiError(rec), "taking a break") {
+		t.Fatalf("new while disabled: %d %s", rec.Code, rec.Body)
 	}
 	e.st.CreateVisitorFrontend(context.Background(), "fe/x", "X", hashSID(a.sid))
 	if rec := a.chatRaw("x", "x", ""); rec.Code != 503 || !strings.Contains(rec.Body.String(), "taking a break") {
 		t.Fatalf("chat while disabled: %d %s", rec.Code, rec.Body)
 	}
-	if rec := a.do("GET", "/build/x", nil); rec.Code != 200 || !strings.Contains(rec.Body.String(), "taking a break") {
-		t.Fatalf("page while disabled: %d", rec.Code)
+	// what's there is still listed
+	if st := a.state(t); len(st.Frontends) != 1 {
+		t.Fatalf("disabled list = %+v", st)
 	}
 }
 
@@ -486,16 +614,18 @@ func TestPublicBuilderGuards(t *testing.T) {
 	e := newBuilderServer(t, true)
 	ctx := context.Background()
 	a := e.visitor(1, "198.51.100.1")
+	slug := a.create(t, "x")
 	// cross-site POSTs are refused
-	for _, target := range []string{"/build/new", "/build/x/chat", "/build/x/live", "/build/x/submit"} {
-		if rec := a.do("POST", target, strings.NewReader("prompt=x"), "Sec-Fetch-Site", "cross-site",
-			"Content-Type", "application/x-www-form-urlencoded"); rec.Code != http.StatusForbidden {
+	for _, target := range []string{"/build/api/new", "/build/api/fe/" + slug + "/chat", "/build/api/fe/" + slug + "/live",
+		"/build/api/fe/" + slug + "/submit", "/build/api/exit"} {
+		if rec := a.do("POST", target, strings.NewReader(`{"prompt":"x"}`), "Sec-Fetch-Site", "cross-site",
+			"Content-Type", "application/json"); rec.Code != http.StatusForbidden {
 			t.Errorf("cross-site %s: %d", target, rec.Code)
 		}
 	}
 	// big bodies are cut off
-	if rec := a.form("/build/new", url.Values{"prompt": {strings.Repeat("x", 100<<10)}}); rec.Header().Get("Location") != "/build?msg="+msgTooLong {
-		t.Fatalf("huge new: %d %q", rec.Code, rec.Header().Get("Location"))
+	if rec := a.post("/build/api/new", map[string]string{"prompt": strings.Repeat("x", 100<<10)}); rec.Code != 400 || apiError(rec) != buildMessage(msgTooLong, e.s.limits) {
+		t.Fatalf("huge new: %d %s", rec.Code, rec.Body)
 	}
 	// slugs never collide with existing front ends, or with /build/<route>
 	e.st.CreatePromptedFrontend(ctx, "fe/dark", "Ben's dark")
@@ -505,23 +635,18 @@ func TestPublicBuilderGuards(t *testing.T) {
 	if f, _ := e.st.BuilderFrontend(ctx, "fe/dark"); f.Title != "Ben's dark" {
 		t.Fatal("existing front end changed")
 	}
-	if slug := a.create(t, "New"); slug != "new-2" {
-		t.Fatalf("reserved slug = %q", slug)
-	}
-	if slug := a.create(t, "Preview"); slug != "preview-2" {
-		t.Fatalf("reserved slug = %q", slug)
+	for _, w := range []string{"New", "Preview", "Api"} {
+		if slug := a.create(t, w); slug != strings.ToLower(w)+"-2" {
+			t.Fatalf("reserved slug = %q", slug)
+		}
 	}
 	if slug := a.create(t, "builtin site"); slug != "builtin-site" {
 		t.Fatalf("slug = %q", slug)
 	}
 	// a name given by the visitor
-	rec := a.form("/build/new", url.Values{"prompt": {"anything"}, "title": {"  Night   sky "}})
-	if loc := rec.Header().Get("Location"); !strings.HasPrefix(loc, "/build/night-sky#start=anything") {
-		t.Fatalf("named = %q", loc)
-	}
-	// /build/ redirects; unknown /build paths 404
-	if rec := a.do("GET", "/build/", nil); rec.Code != 301 {
-		t.Fatalf("/build/: %d", rec.Code)
+	rec := a.post("/build/api/new", map[string]string{"prompt": "anything", "title": "  Night   sky "})
+	if !strings.Contains(rec.Body.String(), `"slug":"night-sky"`) || !strings.Contains(rec.Body.String(), `"title":"Night sky"`) {
+		t.Fatalf("named = %s", rec.Body)
 	}
 }
 
@@ -534,7 +659,7 @@ func TestSessionCookieSecureInProd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rec := get(s, "/build")
+	rec := get(s, "/build/api/frontends")
 	for _, c := range rec.Result().Cookies() {
 		if c.Name == sidCookie && c.Secure {
 			return
