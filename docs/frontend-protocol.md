@@ -300,3 +300,88 @@ Design: [observer.md](observer.md). Everything below is additive to v1.
 - `0003_observer.sql`: detections and generated fields.
 
 Migrations are append-only; never renumber them.
+
+---
+
+# v1.2 additions (2026-10-01): the public builder
+
+Any visitor can prompt a front end from the front page. Rules from
+[frontends.md](frontends.md):
+
+- no sign-up;
+- drafts are visible only in the creating browser;
+- submitting sends a front end to Ben's review;
+- approved front ends join the rotation.
+
+The admin builder stays as Ben's tool and uses the same engine.
+
+## Identity
+
+- **The `sid` cookie** holds a random 128-bit id. It's `HttpOnly`, `Secure` in
+  prod, `SameSite=Lax`, `Path=/`, with a 30-day `Max-Age`, refreshed on use.
+- The server stores only `sha256(sid)`.
+- A front end created by a visitor has an **owner session**. Only that session
+  can open its builder page, chat, preview, view it live, or submit it.
+  Others get a 404, not a 403, so ids don't leak.
+
+## Public routes (main site; POSTs behind CrossOriginProtection)
+
+| Route | |
+|---|---|
+| `GET /build` | the public builder: prompt box and your front ends (this session) |
+| `POST /build/new` | `prompt` (≤ 4000 chars), optional `title` → 303 `/build/<slug>#start=<prompt>` (name and slug derived as in the admin) |
+| `GET /build/<slug>` | owner-only: chat, sandboxed preview, revision history, View live, Submit |
+| `POST /build/<slug>/chat` | owner-only; same SSE stream format as the admin chat |
+| `GET /build/preview?ref=rev/<id>` | owner-only → `{url}` |
+| `POST /build/<slug>/live` | `on=1\|0`, owner-only. Sets or clears the `fe_live` cookie (`HttpOnly`, session cookie) naming the front-end id. |
+| `POST /build/<slug>/submit` | `rev=<id>`, owner-only. Marks that revision submitted for review. |
+
+Visitor-made front ends are `fe/<slug>` like Ben's. Their slugs share one
+namespace.
+
+## View live
+
+`/api/frontend` checks `fe_live` first:
+
+- If it names a front end owned by this session that has a revision, it serves
+  that front end's latest revision. The response adds `"draft": true` and
+  `"exit": "/build/<slug>/live"`.
+- Otherwise the `fe_live` cookie is ignored and cleared.
+
+`frontend-host.js` shows a small parent-page banner when `draft` is true:
+"You're viewing your front end; only you can see this · Exit".
+
+## Review
+
+- Admin `/admin/builder/` gains a **Submissions** section, with a count on the
+  nav dot. Each submission offers Preview, **Approve** and **Reject**.
+  - **Approve** makes that revision active and adds the front end to the
+    rotation.
+  - **Reject** keeps the front end private.
+- Visitors see their submission's status on `/build/<slug>`.
+
+## Limits (env-configurable)
+
+| Limit | Default |
+|---|---|
+| Concurrent runs per session | 1 |
+| `BUILD_RUNS_PER_SESSION_HOUR` | 6 |
+| `BUILD_RUNS_PER_IP_DAY` | 30 |
+| `BUILD_RUNS_GLOBAL_DAY` | 25 (counted in the database, so it holds across instances) |
+| `BUILD_MAX_PROMPT` | 4000 chars |
+
+- When a limit is hit, the page shows a clear message, e.g. "The builder is
+  resting for today; try again tomorrow." Never an error page.
+- A model or API failure (including Anthropic's spend limit) shows "The builder
+  is unavailable right now."
+- Ben's admin builder is exempt from these limits.
+
+## Entry point
+
+The public shell draws a **"Make your own version of this site"** link:
+
+- in the transcript header, so it works without WebGPU or JavaScript;
+- as a small fixed button above the front-end iframe, drawn by the parent, so
+  it appears over every front end.
+
+Both go to `/build`.
