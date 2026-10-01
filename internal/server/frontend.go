@@ -21,8 +21,11 @@ type frontendResponse struct {
 	Serve string `json:"serve"` // the servable ref the token carries
 	URL   string `json:"url"`
 	// View live (v1.2): the visitor's own draft, shown only to them
-	Draft bool   `json:"draft,omitempty"`
-	Exit  string `json:"exit,omitempty"` // POST on=0 here to stop viewing it
+	Draft    bool   `json:"draft,omitempty"`
+	Exit     string `json:"exit,omitempty"`     // POST here to stop viewing it
+	Revision string `json:"revision,omitempty"` // the draft's revision id
+	Number   int    `json:"number,omitempty"`   // and its number
+	Title    string `json:"title,omitempty"`    // the draft's title (visitor text)
 }
 
 // apiFrontend tells the parent page which front end to load and hands it a
@@ -53,30 +56,24 @@ func (s *Server) apiFrontend(w http.ResponseWriter, r *http.Request) {
 }
 
 // liveDraft serves View live: if the fe_live cookie names a front end the
-// request's session owns and that has a revision, it returns that front end's
-// latest revision as a draft. Any other fe_live cookie is cleared.
+// request's session owns and one of its revisions ("<front-end id>:<revision
+// id>"; see liveSelection), it returns that revision as a draft. Any other
+// fe_live cookie is cleared.
 func (s *Server) liveDraft(w http.ResponseWriter, r *http.Request) (frontendResponse, bool) {
-	c, err := r.Cookie(liveCookie)
-	if err != nil {
+	f, rv, err := s.liveSelection(r)
+	switch {
+	case errors.Is(err, errNoLive):
 		return frontendResponse{}, false
+	case errors.Is(err, store.ErrNotFound):
+		s.clearLive(w)
+		return frontendResponse{}, false
+	case err != nil:
+		s.log.Error("api/frontend: live draft", "err", err)
+		return frontendResponse{}, false // keep the cookie: maybe it works next time
 	}
-	if v := s.visitorStore(); v != nil && frontend.IsPrompted(c.Value) {
-		f, err := v.OwnedFrontend(r.Context(), c.Value, readSession(r))
-		if err == nil {
-			revs, err := s.builderStore().Revisions(r.Context(), f.ID)
-			if err == nil && len(revs) > 0 {
-				serve := frontend.RevRef(revs[0].ID)
-				return frontendResponse{Ref: f.ID, Serve: serve, URL: s.signedIndexURL(serve),
-					Draft: true, Exit: "/build/" + strings.TrimPrefix(f.ID, "fe/") + "/live"}, true
-			}
-		}
-		if err != nil && !errors.Is(err, store.ErrNotFound) {
-			s.log.Error("api/frontend: live draft", "err", err)
-			return frontendResponse{}, false // keep the cookie: maybe it works next time
-		}
-	}
-	s.clearLive(w)
-	return frontendResponse{}, false
+	serve := frontend.RevRef(rv.ID)
+	return frontendResponse{Ref: f.ID, Serve: serve, URL: s.signedIndexURL(serve),
+		Draft: true, Exit: buildExitPath, Revision: rv.ID, Number: rv.Number, Title: f.Title}, true
 }
 
 // signedIndexURL mints a fresh user-content URL for a servable ref's index.

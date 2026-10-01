@@ -123,7 +123,6 @@ func (s *Server) routes() {
 var layouts = map[string]string{
 	"public": "templates/public/shell.html",
 	"admin":  "templates/admin/base.html",
-	"build":  "templates/build/layout.html", // the public builder (no front-end host)
 }
 
 // parseTemplates builds one template set per page: its layout + that page.

@@ -6,8 +6,12 @@
   <title>{{block "title" .}}Ben Priddy{{end}}</title>
   <meta name="description" content="{{block "description" .}}Ben Priddy{{end}}">
   <link rel="stylesheet" href="/static/site.css">
+  <link rel="stylesheet" href="/static/build-modal.css">
   {{/* loads the visitor's front end in a sandboxed iframe (docs/frontend-protocol.md) */}}
   <script src="/static/frontend-host.js" defer></script>
+  {{/* the public builder: a modal over the site (v1.2); the stream is shared with the admin */}}
+  <script src="/static/builder-stream.js" defer></script>
+  <script src="/static/build-modal.js" defer></script>
 </head>
 <body class="public">
   {{/* transcript: the CMS content as semantic HTML. Visually hidden while a
@@ -19,9 +23,10 @@
       <a class="brand" href="/">Ben Priddy</a>
       <nav>
         <a href="/experiments/">Experiments</a>
-        {{/* the public builder (docs/frontend-protocol.md, v1.2 "Entry point");
-             frontend-host.js also draws a fixed button over front ends */}}
-        <a class="make-own-link" href="/build">Make your own version of this site</a>
+        {{/* the public builder (docs/frontend-protocol.md, v1.2 "Entry point"):
+             opens the builder modal (build-modal.js); frontend-host.js also
+             draws a fixed button over front ends */}}
+        <a class="make-own-link" href="/?build=1">Make your own version of this site</a>
       </nav>
     </header>
     <main>{{block "main" .}}{{end}}</main>

@@ -1,5 +1,5 @@
-// builder-preview.js: the builder preview host, shared by the admin builder
-// and the public one (/build). It embeds one servable ref
+// builder-preview.js: the admin builder's preview host. (Visitors have no
+// preview: their builder shows drafts on the live site.) It embeds one servable ref
 // (a revision "rev/<id>" or a built-in) in the same sandboxed iframe the
 // public site uses and speaks the host protocol with it
 // (docs/frontend-protocol.md), but instead of falling back it reports what
@@ -8,10 +8,7 @@
 // Content gaps are also forwarded to the observer (POST /api/observe), like
 // the public parent page does.
 //
-// #preview attributes: data-ref (required), data-frontend, data-preview-url
-// (where to mint the iframe URL; default the admin's), data-observe="0" (don't
-// forward gaps: visitor drafts aren't on the site), data-friendly="1" (plain
-// words on the state line, for visitors).
+// #preview attributes: data-ref (required), data-frontend.
 (function () {
   "use strict";
 
@@ -23,15 +20,7 @@
   var stateEl = document.getElementById("preview-state");
   var routeEl = document.getElementById("preview-route");
   var READY_TIMEOUT_MS = 10000;
-  var previewURL = box.getAttribute("data-preview-url") || "/admin/builder/preview";
-  var observeGaps = box.getAttribute("data-observe") !== "0";
-  var friendly = box.getAttribute("data-friendly") === "1";
-  var FRIENDLY = {
-    loading: "Loading…",
-    ready: "Ready",
-    timeout: "It didn't start in time. Try Reload, or ask Claude to fix it.",
-    error: "Something went wrong while it started. Ask Claude to fix it."
-  };
+  var previewURL = "/admin/builder/preview";
 
   var iframe = null;
   var route = "";
@@ -43,7 +32,7 @@
 
   function setState(s, text) {
     box.setAttribute("data-state", s);
-    if (stateEl) stateEl.textContent = (friendly && FRIENDLY[s]) || text || s;
+    if (stateEl) stateEl.textContent = text || s;
   }
 
   function log(kind, text) {
@@ -112,7 +101,6 @@
   }
 
   function observeGap(m) {
-    if (!observeGaps) return;
     try {
       var got = typeof m.got === "string" ? m.got : "missing";
       var body = {
