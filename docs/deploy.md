@@ -46,6 +46,18 @@ $G run deploy usercontent --project benpriddycom --region us-central1 --image us
   and Cloud SQL settings.
 - Migrations run automatically when `site` starts (under an advisory lock).
 
+### Risky changes: deploy dark first
+
+```sh
+$G run deploy site ... --no-traffic --tag next     # test at https://next---site-…run.app
+$G run services update-traffic site --to-tags next=100   # switch
+$G run services update-traffic site --to-latest --remove-tags next   # unpin afterwards!
+```
+
+Routing to a tag *pins* traffic to that revision, so later normal deploys
+won't take traffic until you run `--to-latest`. Roll back with
+`update-traffic site --to-revisions <previous-revision>=100`.
+
 ## Service settings (for recreating from scratch)
 
 ```sh
