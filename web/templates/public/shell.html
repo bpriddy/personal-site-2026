@@ -35,15 +35,15 @@
         {{range .Nav}}<a href="{{.Href}}"{{if .Current}} aria-current="page"{{end}}><span class="idx">{{.Index}}</span> {{.Label}}</a>
         {{end}}
         {{/* the public builder (docs/frontend-protocol.md, v1.2 "Entry point"):
-             opens the builder modal (build-modal.js); frontend-host.js also
-             draws a fixed button over front ends */}}
+             opens the builder modal (build-modal.js); with JS, frontend-host.js
+             draws the site bar instead (v1.5) */}}
         <a class="make-own-link" href="/?build=1">Re-imagine this site</a>
       </nav>
     </header>
     <main>{{block "main" .}}{{end}}</main>
     <footer class="site-footer">
       <p>&copy; {{.Year}} Ben Priddy</p>
-      <p>This site is re-imagined by its visitors</p>
+      <p class="concept">This site is re-imagined by its visitors</p>
     </footer>
   </div>
 </body>

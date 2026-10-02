@@ -188,6 +188,7 @@
             choices: typeof fe.choices === "number" ? fe.choices : 0
           };
           updateShuffle();
+          setBarTheme(""); // each front end picks its own (site.theme); until then, the system's
           if (draft) showDraftBanner(fe.exit, typeof fe.title === "string" ? fe.title : "", currentInfo.number);
           else hideDraftBanner();
         }
@@ -279,6 +280,9 @@
       case "site:navigate":
         navigate(m.slug, true);
         break;
+      case "site:theme":
+        if (m.theme === "light" || m.theme === "dark") setBarTheme(m.theme);
+        break;
       case "site:open":
         openExternal(m.url);
         break;
@@ -344,13 +348,23 @@
     if (!navigate(currentRoute(), false)) location.reload();
   });
 
-  // ── parent-drawn controls (docs/frontend-protocol.md, v1.2) ──
-  // They sit above the front-end iframe, so every front end gets them.
+  // ── the site bar (docs/frontend-protocol.md, v1.5) ──
+  // A thin bar across the top of every page, owned by the site, not the front
+  // end: the concept line, shuffle and Re-imagine. Its style never changes;
+  // only its theme does (site.theme), so it sits well with the front end
+  // below. The front end starts under it (--bar-h).
+  var bar = null;
+  function setBarTheme(t) {
+    if (!bar) return;
+    if (t) bar.setAttribute("data-theme", t); else bar.removeAttribute("data-theme");
+  }
+  function fitBar() {
+    if (bar) root.style.setProperty("--bar-h", bar.offsetHeight + "px");
+  }
 
-  // "Make your own version of this site": a small fixed button that opens the
-  // builder modal (build-modal.js). Styled in site.css (docs/design-pov.md,
-  // 5.4): an accent dot, the label (twice, for the hover roll; shorter on
-  // phones), and the keyboard shortcut, which works on the parent page.
+  // Re-imagine: opens the builder modal (build-modal.js). Styled in site.css
+  // (docs/design-pov.md, 5.4): an accent dot, the label (twice, for the hover
+  // roll), and the keyboard shortcut, which works on the parent page.
   var MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
   function span(cls, text) {
     var e = document.createElement("span");
@@ -373,19 +387,25 @@
     roll.setAttribute("aria-hidden", "true");
     [0, 1].forEach(function () {
       var line = span("make-own-line");
-      line.append(span("make-own-long", "Re-imagine this site"), span("make-own-short", "Re-imagine"));
+      line.append(span("make-own-long", "Re-imagine it"), span("make-own-short", "Re-imagine it"));
       roll.append(line);
     });
     var kbd = span("make-own-kbd", MAC ? "\u2318K" : "Ctrl K");
     kbd.setAttribute("aria-hidden", "true");
     a.append(dot, roll, kbd);
-    // the corner: shuffle + Re-imagine, side by side, over every front end
-    var corner = document.createElement("div");
-    corner.id = "corner-controls";
-    corner.className = "corner-controls";
-    corner.append(drawShuffle(), a);
-    document.body.appendChild(corner);
-    root.classList.add("has-cta");
+    bar = document.createElement("div");
+    bar.id = "site-bar";
+    bar.className = "site-bar";
+    var concept = document.createElement("p");
+    concept.className = "site-bar-line";
+    concept.textContent = "This site is re-imagined by its visitors";
+    var actions = span("site-bar-actions");
+    actions.append(drawShuffle(), a);
+    bar.append(concept, actions);
+    document.body.insertBefore(bar, document.body.firstChild);
+    root.classList.add("has-cta", "has-bar");
+    fitBar();
+    window.addEventListener("resize", fitBar);
     // Cmd/Ctrl+K opens the builder from anywhere on the parent page
     document.addEventListener("keydown", function (e) {
       if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && (e.key === "k" || e.key === "K")) {

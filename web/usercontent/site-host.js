@@ -303,6 +303,14 @@
       post({ type: "site:ready" });
     },
 
+    // theme (v1.5): "light" or "dark", the theme of the site bar the parent
+    // draws above the front end, so it sits well with this design. Call it any
+    // time (per route is fine); until it's called the bar follows the system.
+    theme: function (t) {
+      if (t !== "light" && t !== "dark") throw new TypeError('site.theme: "light" or "dark"');
+      post({ type: "site:theme", theme: t });
+    },
+
     // get: a dotted path ("pages.0.title") or an array of keys into
     // site.content; fallback when any step is missing, null or not an object.
     get: function (path, fallback) {

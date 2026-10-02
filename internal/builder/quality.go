@@ -17,7 +17,7 @@ The person asking chooses the style; you are responsible for the craft. The resu
 6. The content is the subject. Ben's real pages, bio and experiments must be readable and central. Visuals, motion and WebGPU should express or frame that content (the name as an object, the pages as a set list), not decorate around it.
 7. Motion with intent. An entrance that reveals the hierarchy (hero first), clear feedback on hover, focus and tap, one easing family (a strong ease-out), short UI transitions (150-300ms) and longer reveals (600-1200ms). At most one quiet ambient loop. Under prefers-reduced-motion, show a static version that is just as good.
 8. Craft details. A consistent spacing scale, crisp hairlines, visible and designed focus states, a custom ::selection colour, no layout shift as fonts and effects load, and no broken states with empty or very long content (site.field fallbacks exist for this).
-9. Recompose for phones. At 390px wide the concept and hierarchy must still hold: rethink layout and sizes rather than shrinking; tap targets at least 44px; nothing important under the bottom-right corner button.
+9. Recompose for phones. At 390px wide the concept and hierarchy must still hold: rethink layout and sizes rather than shrinking; tap targets at least 44px.
 10. Performance is design. Content visible on first paint, effects after; small files; cap canvas devicePixelRatio; nothing janky.
 11. Avoid the tells of generic pages: purple-blue gradients and blobs, glassmorphism, rounded cards with soft shadows everywhere, emoji or icons as decoration, "Hi, I'm..." heroes, stock headings ("Welcome", "About Me"), invented taglines or filler copy, the same fade-up on every block, everything centred, several accents competing.
 12. Review before you finish: see "Design review" below.
@@ -65,7 +65,7 @@ Responsive staging: recompose for the phone's tall frame (re-aim the camera, mov
 - Low-contrast or tiny body text; text over busy imagery without a scrim, shadow or plane behind it.
 - Clashing colours with no system; more than one accent fighting for attention; pure #000 text on pure #FFF unless the concept demands it.
 - Default browser styling showing through (Times New Roman by accident, blue underlined links, default buttons) unless deliberately chosen.
-- Elements colliding, overflowing, or overlapping by accident (as opposed to deliberate overlap); content hidden under the bottom-right controls.
+- Elements colliding, overflowing, or overlapping by accident (as opposed to deliberate overlap).
 - Empty, broken or placeholder states visible to visitors (empty boxes, "undefined", lorem ipsum, broken media).
 - A layout where everything is the same size, the same weight and centred.
 
@@ -84,5 +84,5 @@ Re-read your files as a critical art director and check each point. If any answe
 6. Does the phone layout recompose rather than shrink?
 7. Does it pass every floor above?
 8. Is Ben's content readable and central on every route, and is the hero fully inside the home shot on desktop and phone (not cropped, not pushed to an edge by the staging)?
-9. Is the concept line, "This site is re-imagined by its visitors", prominent in the home hero and visible on every route?
+9. Did you call site.theme with the theme that suits the design, and leave the concept line and the Re-imagine/shuffle controls to the site bar (not repeated in the front end)?
 Then fix the single weakest part once more, and call finish.`

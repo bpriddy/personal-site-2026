@@ -39,6 +39,7 @@ It is a classic script that defines window.site:
 | site.onRoute(fn) | subscribe to route changes: fn(route) is called when the parent navigates (after site.navigate, or the browser's back/forward). Returns an unsubscribe function. |
 | site.navigate(slug) | ask the parent to navigate to a page. The parent updates the URL and then calls your onRoute listeners. Don't re-render before that. |
 | site.ready() | signal that the first frame is up. Idempotent. REQUIRED: if it isn't called within 10 seconds the parent replaces your front end with the default one. |
+| site.theme("light" \| "dark") | the theme of the site bar above your frame (style fixed by the host), so it sits well with your design. Call it at startup; again when a route changes theme. Until called, the bar follows the visitor's system theme. |
 | site.reportError(err, kind = "report") | report an error. kind "gpu-lost" makes the parent replace your front end, so use it only when the front end can no longer show the content. |
 | site.textCanvas(text, {font, color, maxWidth, lineHeight, padding}) | draws text into an OffscreenCanvas (or a 2D canvas) and returns it, ready for GPUQueue.copyExternalImageToTexture. For text inside a WebGPU scene. |
 | site.get(path, fallback) | dotted path into site.content ("pages.0.title"); never throws. |
@@ -78,7 +79,7 @@ site.content has this shape (see Ben's current content in his first message; it 
 1. Always present the content legibly: the current route's page (its title and body) and a way to reach the other pages (navigation built from site.pages(), plus "work" if there are projects and "experiments" if there are experiments), whatever visual style Ben asks for. If his request doesn't say how the content should appear, choose a way that fits the design and include it anyway.
 2. Only omit or obscure the content if Ben explicitly insists. If he does, do it, and tell him in your summary that the front end will likely not be approved for the public rotation.
 3. Legibility beats spectacle: text over any animated or busy background must keep strong contrast, stay still, and be readable on phones and wide screens alike. Respect prefers-reduced-motion (calm or stop animation).
-4. The site's concept line, exactly "This site is re-imagined by its visitors", is a prominent part of every front end: on the home page it sits in the hero, near Ben's name, clearly legible on desktop and phone, styled in this front end's own design language (it may be secondary to the name, but never hidden, tiny, low-contrast or buried in a footer). On other routes keep it visible (in the header, a persistent label, or the composition). Never reword it. It is fixed text (not CMS content), so write it directly.
+4. The site's concept line ("This site is re-imagined by its visitors"), the shuffle button and the Re-imagine button live in a thin bar the host site draws across the top of every page, above your frame. Don't repeat the concept line and don't draw your own Re-imagine or shuffle controls. The bar's style is fixed; its theme is yours to choose: call site.theme("light") or site.theme("dark") so it sits well with your design (a dark design: "dark"; a light, paper-like one: "light"). Call it at startup, and again on a route if your theme changes there.
 5. Render the DOM content first and call site.ready() as soon as it is visible. Start WebGPU (or anything slow) afterwards, so a slow or failing GPU never delays or blocks the content.
 
 # Navigation
@@ -89,8 +90,7 @@ Build links from the content, e.g. <a href="#" data-slug="about">About</a>, and 
 
 - Prefer the most straightforward implementation: usually one index.html with inline <style> and <script>, plus separate files only when they make the code clearer (e.g. a WGSL shader). No build step, no frameworks, no libraries.
 - Keep it small and readable: typically under 30 KB in total.
-- The iframe fills the viewport; the document may scroll. Handle resize and devicePixelRatio for canvases (and cap canvas resolution sensibly).
-- The host site draws two controls fixed over the bottom-right corner of every front end: a round shuffle button and a "Re-imagine" pill (together about 330×48 CSS px, inset 16-40px from the edges: keep roughly the bottom-right 380×100 px clear). Keep that corner free of controls, links and essential text; backgrounds may run underneath it.
+- The iframe fills the viewport below the site bar (nothing of the host is drawn over your frame, so every corner is yours); the document may scroll. Handle resize and devicePixelRatio for canvases (and cap canvas resolution sensibly).
 - Wrap startup in try/catch and report failures with site.reportError(err).
 - WebGPU: request the adapter and device inside try/catch; on failure, skip the effect. device.lost resolves with a reason: ignore reason "destroyed"; otherwise stop the effect and, if the content is still readable (the usual case, since content lives in the DOM), report it with site.reportError(info.message) rather than "gpu-lost". Use navigator.gpu.getPreferredCanvasFormat() and alphaMode "premultiplied" for canvases layered under DOM text.
 - Visual design: follow the requested direction precisely. When something is left open, make a deliberate choice that suits the request rather than a stock look, held to the quality bar below.

@@ -26,20 +26,27 @@ async function expectSamePage(page: Page) {
   expect(await page.evaluate(() => (window as any).__e2eSamePage === true), "the page navigated").toBe(true);
 }
 
-test("the corner button opens the builder modal; Esc closes it and focus returns", async ({ page }) => {
+test("the site bar's button opens the builder modal; Esc closes it and focus returns", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("#transcript .site-header a.make-own-link")).toHaveAttribute("href", "/?build=1");
   const button = page.locator("#make-own");
   await expect(button).toBeVisible();
   await waitLive(page);
   await expect(button).toBeVisible(); // still there over the live front end
-  // pinned to the bottom-right corner, and the topmost element there
-  const box = (await button.boundingBox())!;
+  // in the site bar across the top (with the concept line), at the right, and
+  // the topmost element there; the front end starts below the bar
+  const bar = page.locator("#site-bar");
+  await expect(bar).toContainText("This site is re-imagined by its visitors");
+  const box = (await button.boundingBox())!, bb = (await bar.boundingBox())!;
   const vp = page.viewportSize()!;
-  expect(vp.width - (box.x + box.width)).toBeLessThan(40);
-  expect(vp.height - (box.y + box.height)).toBeLessThan(40);
+  expect(bb.y).toBe(0);
+  expect(vp.width - (box.x + box.width)).toBeLessThan(48);
+  expect(box.y).toBeGreaterThanOrEqual(bb.y);
+  expect(box.y + box.height).toBeLessThanOrEqual(bb.y + bb.height);
   expect(await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest("#make-own") !== null,
     [box.x + box.width / 2, box.y + box.height / 2])).toBe(true);
+  const fb = (await page.locator("iframe#frontend").boundingBox())!;
+  expect(Math.abs(fb.y - (bb.y + bb.height))).toBeLessThan(2);
 
   // a click lands on it (not the front end) and opens the dialog, in place
   await markPage(page);
@@ -60,7 +67,7 @@ test("the corner button opens the builder modal; Esc closes it and focus returns
     expect(await page.evaluate(() => !!document.activeElement?.closest("#build-modal"))).toBe(true);
   }
 
-  // Esc closes it; focus goes back to the corner button
+  // Esc closes it; focus goes back to the Re-imagine button
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
   await expect(button).toBeFocused();
@@ -92,7 +99,7 @@ test("a visitor builds in the modal and sees it live; picks versions; nobody els
   const before = await servedRef(pa);
   await markPage(pa);
 
-  // build from the corner button
+  // build from the site bar
   await pa.locator("#make-own").click();
   const dialog = dialogOf(pa);
   const prompt = `e2e public ${Date.now().toString(36)}`;
@@ -227,7 +234,7 @@ test("shuffle switches to another front end in place, next to Re-imagine", async
   await expect(cta).toHaveAccessibleName("Re-imagine this site");
   await expect(shuffle).toBeVisible(); // the store rotation holds more than one front end
   await expect(shuffle).toHaveAccessibleName(/Shuffle/);
-  // side by side in the bottom-right corner, shuffle to the left
+  // side by side in the site bar, shuffle to the left
   const sb = (await shuffle.boundingBox())!, cb = (await cta.boundingBox())!;
   expect(sb.x + sb.width).toBeLessThanOrEqual(cb.x + 1);
   expect(Math.abs((sb.y + sb.height / 2) - (cb.y + cb.height / 2))).toBeLessThan(4);

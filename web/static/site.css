@@ -398,7 +398,8 @@ body.public::after {
 .fe-loading body, .fe-live body { overflow: hidden; }
 #frontend {
   position: fixed; inset: 0; z-index: var(--z-frontend);
-  width: 100vw; height: 100vh; height: 100dvh;
+  top: var(--bar-h, 0px);
+  width: 100vw; height: calc(100vh - var(--bar-h, 0px)); height: calc(100dvh - var(--bar-h, 0px));
   border: 0; margin: 0; padding: 0; display: block; background: transparent;
   visibility: hidden; opacity: 0; /* not display:none: the front end lays out at full size while loading */
   transform-origin: left center;
@@ -406,23 +407,47 @@ body.public::after {
 }
 .fe-live #frontend { visibility: visible; opacity: 1; }
 
-/* ── "Make your own version" (docs/design-pov.md, 5.4) ────────────────────
-   Drawn by frontend-host.js over every front end, pinned bottom-right. */
-.corner-controls {
-  position: fixed; z-index: var(--z-cta);
-  right: max(min(var(--m), 32px), env(safe-area-inset-right)); bottom: max(min(var(--m), 32px), env(safe-area-inset-bottom));
-  display: flex; align-items: center; gap: var(--s-2);
+/* ── the site bar (docs/frontend-protocol.md, v1.5; design-pov.md, 5.4) ────
+   Drawn by frontend-host.js across the top of every page: the concept line,
+   shuffle and Re-imagine. The site owns it, so its style never changes with
+   the front end; only its theme does (site.theme sets data-theme; without it
+   the bar follows the system). The front end starts below it (--bar-h). */
+.site-bar {
+  position: fixed; z-index: var(--z-cta); top: 0; left: 0; right: 0;
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s-4);
+  min-height: calc(44px + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) max(var(--m), env(safe-area-inset-right)) 0 max(var(--m), env(safe-area-inset-left));
+  background: var(--bg); color: var(--fg); border-bottom: 1px solid var(--rule);
+  transition: background-color var(--d-3) var(--ease-out), color var(--d-3) var(--ease-out), border-color var(--d-3) var(--ease-out);
+}
+.site-bar[data-theme="dark"] {
+  --bg: #0F0F0D; --bg-raised: #171714; --fg: #ECE8DF; --fg-2: #A8A398;
+  --rule: rgb(236 232 223 / .14); --rule-strong: rgb(236 232 223 / .32); --accent: #FF5B1F;
+}
+.site-bar[data-theme="light"] {
+  --bg: #F1EEE7; --bg-raised: #E8E4DB; --fg: #151513; --fg-2: #55524B;
+  --rule: rgb(21 21 19 / .14); --rule-strong: rgb(21 21 19 / .4); --accent: #D9400B;
+}
+.site-bar-line {
+  margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: italic 400 17px/1.2 var(--font-display); letter-spacing: -.005em;
+}
+.site-bar-actions { flex: none; display: flex; align-items: center; gap: var(--s-2); }
+.has-bar body { padding-top: var(--bar-h, 45px); } /* the transcript, when it's the site */
+.has-bar .site-footer .concept, .has-bar .kicker { display: none; } /* the bar says it */
+@media (max-width: 599px) {
+  .site-bar { gap: var(--s-3); }
+  .site-bar-line { font-size: 15px; }
 }
 .shuffle-fe {
   position: relative; flex: none; display: grid; place-items: center;
-  width: 44px; height: 44px; padding: 0; margin: 0;
+  width: 32px; height: 32px; padding: 0; margin: 0;
   border: 1px solid var(--rule-strong); border-radius: var(--r-pill);
   background: var(--bg-raised); color: var(--fg); cursor: pointer;
-  animation: cta-in var(--d-3) var(--ease-out) 1050ms backwards;
   transition: transform var(--d-1) var(--ease-quint), background-color var(--d-2) var(--ease-out), color var(--d-2) var(--ease-out);
 }
 .shuffle-fe[hidden] { display: none; }
-.shuffle-fe svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.shuffle-fe svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 /* hover only where there's a pointer that hovers: on touch it would stick */
 @media (hover: hover) { .shuffle-fe:hover { background: var(--fg); color: var(--bg); } }
 .shuffle-fe:focus-visible { background: var(--fg); color: var(--bg); }
@@ -431,31 +456,15 @@ body.public::after {
 .shuffle-fe.is-spinning svg { animation: shuffle-turn 900ms var(--ease-out); }
 @keyframes shuffle-turn { from { transform: rotate(-180deg) scale(.8); opacity: .4; } }
 @media (prefers-reduced-motion: reduce) { .shuffle-fe.is-spinning svg { animation: none; } }
-@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-  .shuffle-fe {
-    background: color-mix(in oklab, var(--bg) 72%, transparent);
-    -webkit-backdrop-filter: blur(14px) saturate(1.2); backdrop-filter: blur(14px) saturate(1.2);
-  }
-  .shuffle-fe:focus-visible { background: var(--fg); }
-  @media (hover: hover) { .shuffle-fe:hover { background: var(--fg); } }
-}
 .make-own {
   position: relative;
   display: inline-flex; align-items: center; gap: var(--s-3);
-  height: 44px; padding: 0 18px 0 14px; margin: 0;
+  height: 32px; padding: 0 14px 0 12px; margin: 0;
   border: 1px solid var(--rule-strong); border-radius: var(--r-pill); overflow: hidden; isolation: isolate;
   background: var(--bg-raised); color: var(--fg); cursor: pointer;
   font: 500 var(--t-ui)/1 var(--font-text); font-stretch: 90%; letter-spacing: .005em; white-space: nowrap;
-  animation: cta-in var(--d-3) var(--ease-out) 1150ms backwards;
   transition: transform var(--d-1) var(--ease-quint), color var(--d-3) var(--ease-out);
 }
-@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-  .make-own {
-    background: color-mix(in oklab, var(--bg) 72%, transparent);
-    -webkit-backdrop-filter: blur(14px) saturate(1.2); backdrop-filter: blur(14px) saturate(1.2);
-  }
-}
-@keyframes cta-in { from { opacity: 0; transform: translateY(8px); } }
 /* the fill wipes in from the left on hover and focus */
 .make-own::before {
   content: ""; position: absolute; inset: 0; z-index: -1; background: var(--fg);
@@ -483,8 +492,10 @@ body.public::after {
 .make-own:active { transform: scale(.97); }
 .make-own:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 @media (hover: none), (pointer: coarse) { .make-own-kbd { display: none; } }
-@media (max-width: 599px), (pointer: coarse) {
-  .make-own { height: 48px; }
+@media (pointer: coarse) {
+  .site-bar { min-height: calc(50px + env(safe-area-inset-top)); }
+  .make-own { height: 38px; }
+  .shuffle-fe { width: 38px; height: 38px; }
 }
 @media (max-width: 599px) {
   .make-own-long { display: none; }
@@ -499,10 +510,10 @@ body.public::after {
    Drawn by frontend-host.js while the visitor views their own draft. The
    front end starts below it (--draft-h), so it never covers anything. */
 .draft-banner {
-  position: fixed; z-index: var(--z-banner); top: 0; left: 0; right: 0;
+  position: fixed; z-index: var(--z-banner); top: var(--bar-h, 0px); left: 0; right: 0;
   display: flex; align-items: center; gap: var(--s-5);
-  min-height: calc(32px + env(safe-area-inset-top));
-  padding: env(safe-area-inset-top) max(var(--m), env(safe-area-inset-right)) 0 max(var(--m), env(safe-area-inset-left));
+  min-height: 32px;
+  padding: 0 max(var(--m), env(safe-area-inset-right)) 0 max(var(--m), env(safe-area-inset-left));
   background: var(--bg); color: var(--fg);
   border-bottom: 2px solid var(--accent);
   font-family: var(--font-mono); font-size: var(--t-meta); line-height: 1.3; letter-spacing: .06em;
@@ -531,8 +542,8 @@ body.public::after {
 .draft-banner button:disabled { color: var(--fg-2); cursor: default; }
 .draft-banner-short { display: none; }
 .fe-draft #frontend {
-  top: var(--draft-h, 34px);
-  height: calc(100vh - var(--draft-h, 34px)); height: calc(100dvh - var(--draft-h, 34px));
+  top: calc(var(--bar-h, 0px) + var(--draft-h, 34px));
+  height: calc(100vh - var(--bar-h, 0px) - var(--draft-h, 34px)); height: calc(100dvh - var(--bar-h, 0px) - var(--draft-h, 34px));
 }
 @media (max-width: 767px) {
   .draft-banner-which { display: none; }

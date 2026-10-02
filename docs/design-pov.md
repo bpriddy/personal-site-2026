@@ -330,6 +330,12 @@ enhancement layered on top. Specifics:
 - Not found: `--t-display` "Not found." with a mono `← HOME` link. Nothing else.
 
 ### 5.4 "Make your own version" button (fixed bottom-right)
+
+> Since v1.5 the button, labelled "Re-imagine it", lives at the right of the
+> site bar across the top of every page, next to shuffle, with the concept
+> line at the left (docs/frontend-protocol.md, v1.5). It is 32px high (38px on
+> touch) on the bar's solid ground; the dot, the fill wipe and the label roll
+> below still apply. The position, size, backdrop and phone notes are history.
 - Position: `right: max(var(--m), env(safe-area-inset-right))`, `bottom: max(var(--m), env(safe-area-inset-bottom))`, `z: --z-cta`.
 - Shape: a pill 44px high (48px on touch) with padding `0 18px 0 14px` and a 1px `--rule-strong` border. Background `color-mix(in oklab, var(--bg) 72%, transparent)` with `backdrop-filter: blur(14px) saturate(1.2)` (falling back to solid `--bg-raised`).
 - Content: an 8px **accent dot**, then the label in Instrument Sans `--t-ui`: "Make your own version". After a gap, a mono `⌘K` hint (desktop only, `--fg-3`).

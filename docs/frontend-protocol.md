@@ -618,8 +618,8 @@ lets it through.
 
 ## v1.4 additions: shuffle and Re-imagine
 
-- **Corner controls:** the parent draws `#corner-controls` bottom-right, over
-  every front end. It holds a round **shuffle** button (`#shuffle-fe`) and the
+- **Corner controls** (replaced by the site bar in v1.5): the parent drew
+  `#corner-controls` bottom-right, over every front end. It holds a round **shuffle** button (`#shuffle-fe`) and the
   **Re-imagine** pill (`#make-own`, formerly "Make your own version").
 - **`/api/frontend`** returns `choices`, the number of front ends in the
   rotation. Shuffle shows only when `choices > 1`, or while viewing a draft.
@@ -629,3 +629,26 @@ lets it through.
   `siteHost.shuffle()`.
 - **Approval** of a submission never makes an older revision active than the
   one already active. The front end joins the rotation either way.
+
+# v1.5 (2026-10-02): the site bar
+
+The site's creative conceit sits in one place the site owns, instead of
+inside every front end.
+
+- **Site bar:** the parent draws `#site-bar`, a thin bar (44px; 50px on touch
+  screens; plus the top safe area) across the top of every page. It holds the
+  concept line, "This site is re-imagined by its visitors", and on the right
+  the shuffle button (`#shuffle-fe`) and Re-imagine (`#make-own`, "Re-imagine
+  it"). Its style is fixed by the site and never changes with the front end.
+- **The front end starts below it:** the iframe's top is `--bar-h` (measured
+  by `frontend-host.js`), and nothing of the parent is drawn over the frame,
+  so front ends no longer keep a corner clear. The draft tape sits under the
+  bar, and the frame under both. Without JS (the transcript), there's no bar,
+  and the transcript's own header link and footer line say it instead.
+- **Theme:** `site.theme("light" | "dark")` (host API) posts
+  `{type: "site:theme", theme}`; the parent sets `data-theme` on the bar, which
+  swaps only its colours. A new front end resets it; until a front end calls
+  it, the bar follows the system theme (as the built-in site does).
+- **Builder rule:** front ends don't repeat the concept line or draw their own
+  Re-imagine or shuffle controls; they call `site.theme` to match the bar to
+  their design (`internal/builder/prompt.go`, `quality.go`).
