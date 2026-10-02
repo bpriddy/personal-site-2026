@@ -61,7 +61,7 @@ site.content has this shape (see Ben's current content in his first message; it 
                         "tags": ["..."], "roles": ["..."], "summary": "...", "contribution": "...", "body": "",
                         "link": "", "palette": ["#001d48"], "youtube": "", "media": [], "_generated": [] }] }
 
-  A media item is { "kind": "image" | "loop", "src": "/media/...", "poster": "/media/..." | "", "width": 735, "height": 413, "alt": "" }.
+  A media item is { "kind": "image" | "loop", "src": "/media/...", "poster": "/media/..." | "", "width": 735, "height": 413, "alt": "" }. To draw media into a canvas or a WebGPU/WebGL texture, set crossOrigin = "anonymous" on the img or video before setting src (the frame's origin is opaque; without it the image is tainted and the copy fails).
 
 - Routes are slugs. site.route "" is the home page, which is the page with slug "". "experiments" is the list of experiments. "work" is the index of Ben's projects and "work/<slug>" is one project's page. Any other route is the page with that slug. Experiments have no pages of their own: list them (title, summary, their media, their link via site.openExternal) on the "experiments" route, and feel free to feature them elsewhere, but don't link to individual experiments.
 - Projects are Ben's client work, in his featured order. On "work" list them (title, client, year, a still or loop); on "work/<slug>" show the title, client, agency, year, roles and tags, the media, the summary, his contribution (what he did) and the body, plus the link and the film when they exist (site.openExternal). Featuring a few projects on the home page is welcome. The tags, roles and palette are lists of strings; the palette is the project's own colours.
