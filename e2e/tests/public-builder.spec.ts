@@ -58,6 +58,10 @@ test("the site bar's button opens the builder modal; Esc closes it and focus ret
   await expect(page.locator("#bm-prompt")).toBeFocused();
   await expect(dialog.getByRole("button", { name: "Build" })).toBeVisible();
   await expect(dialog.getByRole("heading", { name: "Your creations" })).toBeVisible();
+  // the prompt comes first; your creations sit below it, folded until opened
+  await expect(dialog.locator(".bm-mine")).not.toHaveAttribute("open", /.*/);
+  const [promptY, mineY] = await Promise.all([page.locator("#bm-prompt"), dialog.locator(".bm-mine")].map(async (l) => (await l.boundingBox())!.y));
+  expect(promptY).toBeLessThan(mineY);
   // no preview iframe in the modal: the site is the preview
   await expect(dialog.locator("iframe")).toHaveCount(0);
 
@@ -144,6 +148,9 @@ test("a visitor builds in the modal and sees it live; picks versions; nobody els
   await waitLive(pa);
 
   // pick version 1 again: the site switches back
+  // open "Your creations" (folded by default) to pick a version
+  await dialog.locator(".bm-mine-sum").click();
+  await expect(dialog.locator(".bm-mine")).toHaveAttribute("open", /.*/);
   await card.locator(`.bm-rev[data-rev="${r1}"]`).click();
   await expect(card.locator(`.bm-rev[data-rev="${r1}"]`)).toHaveAttribute("aria-pressed", "true");
   await expect(card.locator(`.bm-rev[data-rev="${r2}"]`)).toHaveAttribute("aria-pressed", "false");
@@ -167,6 +174,7 @@ test("a visitor builds in the modal and sees it live; picks versions; nobody els
   }
   await pb.goto(`${MAIN}/build/${slug}`); // an old link: just opens their own (empty) builder
   await expect(dialogOf(pb)).toBeVisible();
+  await dialogOf(pb).locator(".bm-mine-sum").click(); // "Your creations" is folded until opened
   await expect(dialogOf(pb).locator(".bm-empty")).toBeVisible();
   await expect(dialogOf(pb)).not.toContainText(prompt);
   await waitLive(pb);

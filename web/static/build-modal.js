@@ -90,8 +90,7 @@
 
   var body = el("div", "bm-body");
   var intro = el("div", "bm-intro");
-  var lede = el("p", "bm-lede", "This site is re-imagined by its visitors. Describe yours.");
-  var desc = el("p", "bm-desc", "Say how Ben's site should look and feel. Claude builds it in a minute or two, with Ben's real pages inside, and it appears right here on the site. Only you can see it until you send it to Ben.");
+  var desc = el("p", "bm-desc", "Claude builds it in a minute or two, with Ben's real pages inside, and it appears right here on the site. Only you can see it until you send it to Ben.");
   desc.id = "bm-desc";
   var starters = el("div", "bm-starters");
   starters.setAttribute("role", "group");
@@ -107,7 +106,7 @@
       ta.setSelectionRange(ta.value.length, ta.value.length);
     }));
   });
-  intro.append(lede, desc, starters);
+  intro.append(starters, desc);
   var notice = el("p", "bm-notice");
   notice.setAttribute("role", "status");
   notice.hidden = true;
@@ -162,19 +161,23 @@
   notes.append(notesSum, pThinking, pText);
   progress.append(pStatus, pSteps, notes);
 
-  var mine = el("section", "bm-mine");
-  mine.setAttribute("aria-labelledby", "bm-mine-h");
+  // your creations: below everything else, folded away behind its title until opened
+  var mine = el("details", "bm-mine");
+  var mineSum = el("summary", "bm-mine-sum");
   var mineH = el("h3", "bm-h3", "Your creations");
   mineH.id = "bm-mine-h";
+  var mineCount = el("span", "bm-mine-count");
+  mineSum.append(mineH, mineCount);
   var empty = el("p", "bm-empty", "Nothing yet. What you build appears here, with every version, so you can go back to any of them.");
   var list = el("ul", "bm-list");
-  mine.append(mineH, empty, list);
-
   var foot = el("p", "bm-foot", "There's no account: your creations live in this browser, so clearing your cookies loses them.");
-  body.append(intro, notice, liveBox, progress, mine, foot);
+  mine.append(mineSum, empty, list, foot);
+
+  // the prompt comes first: it's what this dialog is for
   var composer = el("div", "bm-composer");
   composer.append(form);
-  dialog.append(runLine, grab, head, body, composer);
+  body.append(notice, liveBox, composer, intro, progress, mine);
+  dialog.append(runLine, grab, head, body);
   wrap.append(backdrop, dialog);
 
   // minimized while a build streams
@@ -307,6 +310,7 @@
       hint.textContent = "";
       newBtn.hidden = false;
     }
+    form.classList.toggle("bm-form-change", mode.kind !== "new"); // a longer label, set smaller
     var off = !!busy;
     ta.disabled = buildBtn.disabled = newBtn.disabled = off;
     composer.classList.toggle("bm-composer-off", !enabled);
@@ -420,6 +424,7 @@
       (again && !again.disabled ? again : dialog).focus();
     }
     empty.hidden = items.length > 0;
+    mineCount.textContent = items.length ? two(items.length) : "";
   }
 
   // ── actions ──
