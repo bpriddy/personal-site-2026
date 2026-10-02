@@ -164,6 +164,24 @@ func visitorConformance(t *testing.T, newStore func(t *testing.T) visitorStore) 
 		}
 	})
 
+	t.Run("approving an old submission never rolls back", func(t *testing.T) {
+		st := newStore(t)
+		must(t, st.CreateVisitorFrontend(ctx, "fe/u", "Old sub", a))
+		u1, err := st.AddRevision(ctx, Revision{ID: "uuuuuuuu1", FrontendID: "fe/u", Author: "visitor"})
+		must(t, err)
+		old, err := st.Submit(ctx, "fe/u", u1.ID)
+		must(t, err)
+		u2, err := st.AddRevision(ctx, Revision{ID: "uuuuuuuu2", FrontendID: "fe/u", ParentID: u1.ID, Author: "observer"})
+		must(t, err)
+		must(t, st.SetActiveRevision(ctx, "fe/u", u2.ID))
+		if _, err := st.ReviewSubmission(ctx, old.ID, true); err != nil {
+			t.Fatal(err)
+		}
+		if f, _ := st.BuilderFrontend(ctx, "fe/u"); f.ActiveRevision != u2.ID || !f.InRotation {
+			t.Fatalf("approving v1 after v2 went live moved the front end back: %+v", f)
+		}
+	})
+
 	t.Run("submissions", func(t *testing.T) {
 		st := newStore(t)
 		must(t, st.CreateVisitorFrontend(ctx, "fe/s", "Sub", a))

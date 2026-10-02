@@ -24,7 +24,7 @@
 }
 
 html.bm-open, html.bm-open body { overflow: hidden; }
-html.bm-minimized .make-own { display: none; }
+html.bm-minimized .make-own, html.bm-minimized .shuffle-fe { display: none; }
 /* the site steps back a touch while the Studio is open */
 html.bm-open #frontend { transform: scale(.985); }
 

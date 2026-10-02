@@ -230,7 +230,14 @@ func (p *Postgres) ReviewSubmission(ctx context.Context, id int64, approve bool)
 		if approve {
 			next = SubmissionApproved
 			tag, err := tx.Exec(ctx, `
-				UPDATE frontends SET active_revision = $2, in_rotation = true, updated_at = now()
+				UPDATE frontends f SET
+				    -- approving never moves a front end back to an older version
+				    active_revision = CASE
+				        WHEN f.active_revision IS NULL
+				          OR (SELECT number FROM frontend_revisions WHERE id = f.active_revision)
+				           < (SELECT number FROM frontend_revisions WHERE id = $2)
+				        THEN $2 ELSE f.active_revision END,
+				    in_rotation = true, updated_at = now()
 				WHERE ref = $1 AND EXISTS (SELECT 1 FROM frontend_revisions WHERE id = $2 AND frontend_id = $1)`, fe, rev)
 			if err != nil {
 				return err

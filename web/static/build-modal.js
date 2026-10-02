@@ -73,7 +73,7 @@
   grab.setAttribute("aria-hidden", "true");
 
   var head = el("div", "bm-head");
-  var title = el("h2", "bm-title", "Make your own version");
+  var title = el("h2", "bm-title", "Re-imagine this site");
   title.id = "bm-title";
   var headMeta = el("span", "bm-head-meta");
   var runState = el("span", "bm-state", "Idle");

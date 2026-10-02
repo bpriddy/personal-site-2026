@@ -408,9 +408,36 @@ body.public::after {
 
 /* ── "Make your own version" (docs/design-pov.md, 5.4) ────────────────────
    Drawn by frontend-host.js over every front end, pinned bottom-right. */
-.make-own {
+.corner-controls {
   position: fixed; z-index: var(--z-cta);
   right: max(min(var(--m), 32px), env(safe-area-inset-right)); bottom: max(min(var(--m), 32px), env(safe-area-inset-bottom));
+  display: flex; align-items: center; gap: var(--s-2);
+}
+.shuffle-fe {
+  position: relative; flex: none; display: grid; place-items: center;
+  width: 44px; height: 44px; padding: 0; margin: 0;
+  border: 1px solid var(--rule-strong); border-radius: var(--r-pill);
+  background: var(--bg-raised); color: var(--fg); cursor: pointer;
+  animation: cta-in var(--d-3) var(--ease-out) 1050ms backwards;
+  transition: transform var(--d-1) var(--ease-quint), background-color var(--d-2) var(--ease-out), color var(--d-2) var(--ease-out);
+}
+.shuffle-fe[hidden] { display: none; }
+.shuffle-fe svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.shuffle-fe:hover, .shuffle-fe:focus-visible { background: var(--fg); color: var(--bg); }
+.shuffle-fe:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.shuffle-fe:active { transform: scale(.94); }
+.shuffle-fe.is-spinning svg { animation: shuffle-turn 900ms var(--ease-out); }
+@keyframes shuffle-turn { from { transform: rotate(-180deg) scale(.8); opacity: .4; } }
+@media (prefers-reduced-motion: reduce) { .shuffle-fe.is-spinning svg { animation: none; } }
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .shuffle-fe {
+    background: color-mix(in oklab, var(--bg) 72%, transparent);
+    -webkit-backdrop-filter: blur(14px) saturate(1.2); backdrop-filter: blur(14px) saturate(1.2);
+  }
+  .shuffle-fe:hover, .shuffle-fe:focus-visible { background: var(--fg); }
+}
+.make-own {
+  position: relative;
   display: inline-flex; align-items: center; gap: var(--s-3);
   height: 44px; padding: 0 18px 0 14px; margin: 0;
   border: 1px solid var(--rule-strong); border-radius: var(--r-pill); overflow: hidden; isolation: isolate;

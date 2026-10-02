@@ -615,3 +615,17 @@ lets it through.
 
 - `0005_projects.sql`: the `projects` table; `experiments.link`,
   `experiments.media`.
+
+## v1.4 additions: shuffle and Re-imagine
+
+- **Corner controls:** the parent draws `#corner-controls` bottom-right, over
+  every front end. It holds a round **shuffle** button (`#shuffle-fe`) and the
+  **Re-imagine** pill (`#make-own`, formerly "Make your own version").
+- **`/api/frontend`** returns `choices`, the number of front ends in the
+  rotation. Shuffle shows only when `choices > 1`, or while viewing a draft.
+- **Shuffle** exits a draft if one is showing, then reloads the iframe with
+  `?shuffle=1`, which picks a different front end. There's no page navigation,
+  and the new pick lasts for the visit. It's also exposed as
+  `siteHost.shuffle()`.
+- **Approval** of a submission never makes an older revision active than the
+  one already active. The front end joins the rotation either way.

@@ -240,7 +240,10 @@ func (m *Memory) ReviewSubmission(_ context.Context, id int64, approve bool) (Su
 			return Submission{}, ErrNotFound
 		}
 		m.builder.init()
-		m.builder.active[s.FrontendID] = s.RevisionID
+		// approving never moves a front end back to an older version
+		if cur, ok := m.builder.revs[m.builder.active[s.FrontendID]]; !ok || cur.Number < m.builder.revs[s.RevisionID].Number {
+			m.builder.active[s.FrontendID] = s.RevisionID
+		}
 		f.InRotation, f.UpdatedAt = true, now
 		m.frontends[s.FrontendID] = f
 		s.Status = SubmissionApproved

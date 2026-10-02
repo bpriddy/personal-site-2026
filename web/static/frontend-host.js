@@ -54,7 +54,7 @@
   var revealed = false; // the transcript is showing while a front end loads
   var currentServe = ""; // the servable ref (/api/frontend "serve"), if any
   var draft = false; // View live: the visitor's own draft, never reported to the observer
-  var currentInfo = { ref: "", serve: "", draft: false, revision: "", number: 0 };
+  var currentInfo = { ref: "", serve: "", draft: false, revision: "", number: 0, choices: 0 };
   var revealTimer = 0;
 
   // ── observer reports (docs/frontend-protocol.md, "Observer ingestion") ──
@@ -184,8 +184,10 @@
           currentInfo = {
             ref: currentRef, serve: currentServe, draft: draft,
             revision: draft && typeof fe.revision === "string" ? fe.revision : "",
-            number: draft && typeof fe.number === "number" ? fe.number : 0
+            number: draft && typeof fe.number === "number" ? fe.number : 0,
+            choices: typeof fe.choices === "number" ? fe.choices : 0
           };
+          updateShuffle();
           if (draft) showDraftBanner(fe.exit, typeof fe.title === "string" ? fe.title : "", currentInfo.number);
           else hideDraftBanner();
         }
@@ -362,7 +364,7 @@
     a.id = "make-own";
     a.className = "make-own";
     a.setAttribute("aria-haspopup", "dialog");
-    a.setAttribute("aria-label", "Make your own version of this site");
+    a.setAttribute("aria-label", "Re-imagine this site");
     a.setAttribute("aria-keyshortcuts", MAC ? "Meta+K" : "Control+K");
     a.addEventListener("click", function () { openBuilder(a); });
     var dot = span("make-own-dot");
@@ -371,13 +373,18 @@
     roll.setAttribute("aria-hidden", "true");
     [0, 1].forEach(function () {
       var line = span("make-own-line");
-      line.append(span("make-own-long", "Make your own version"), span("make-own-short", "Make your own"));
+      line.append(span("make-own-long", "Re-imagine this site"), span("make-own-short", "Re-imagine"));
       roll.append(line);
     });
     var kbd = span("make-own-kbd", MAC ? "\u2318K" : "Ctrl K");
     kbd.setAttribute("aria-hidden", "true");
     a.append(dot, roll, kbd);
-    document.body.appendChild(a);
+    // the corner: shuffle + Re-imagine, side by side, over every front end
+    var corner = document.createElement("div");
+    corner.id = "corner-controls";
+    corner.className = "corner-controls";
+    corner.append(drawShuffle(), a);
+    document.body.appendChild(corner);
     root.classList.add("has-cta");
     // Cmd/Ctrl+K opens the builder from anywhere on the parent page
     document.addEventListener("keydown", function (e) {
@@ -386,6 +393,57 @@
         e.preventDefault();
         openBuilder(a);
       }
+    });
+  }
+
+  // Shuffle: a different front end from the rotation, switched in place.
+  // From a draft it first leaves the draft (only the visitor sees it).
+  var shuffleBtn = null;
+  function drawShuffle() {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.id = "shuffle-fe";
+    b.className = "shuffle-fe";
+    b.hidden = true; // until /api/frontend says there's more than one to show
+    b.setAttribute("aria-label", "Shuffle: show another version of this site");
+    b.title = "Show another version of this site";
+    var NS = "http://www.w3.org/2000/svg";
+    var svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    // two crossing paths with arrowheads: the classic shuffle glyph
+    ["M3 7h3.5c2 0 3.2 1 4.3 2.6l2.4 4.8c1.1 1.6 2.3 2.6 4.3 2.6H21", "M3 17h3.5c1.3 0 2.3-.4 3.1-1.2",
+     "M14.4 8.2c.8-.8 1.8-1.2 3.1-1.2H21", "M18 4l3 3-3 3", "M18 14l3 3-3 3"].forEach(function (d) {
+      var path = document.createElementNS(NS, "path");
+      path.setAttribute("d", d);
+      svg.appendChild(path);
+    });
+    b.appendChild(svg);
+    b.addEventListener("click", shuffleFrontend);
+    shuffleBtn = b;
+    return b;
+  }
+
+  function updateShuffle() {
+    if (shuffleBtn) shuffleBtn.hidden = !(currentInfo.choices > 1 || currentInfo.draft);
+  }
+
+  var shuffling = false;
+  function shuffleFrontend() {
+    if (shuffling) return;
+    shuffling = true;
+    if (shuffleBtn) shuffleBtn.classList.add("is-spinning");
+    var done = function () {
+      shuffling = false;
+      if (shuffleBtn) shuffleBtn.classList.remove("is-spinning");
+    };
+    var leave = currentInfo.draft ? fetch((banner && banner.getAttribute("data-exit")) || "/build/api/exit",
+      { method: "POST", credentials: "same-origin" }).catch(function () {}) : Promise.resolve();
+    leave.then(function () {
+      shuffle = true; // load() sends ?shuffle=1 once
+      reloadFrontend();
+      setTimeout(done, 900);
     });
   }
 
@@ -466,10 +524,10 @@
   }
 
   function copyInfo() {
-    return { ref: currentInfo.ref, serve: currentInfo.serve, draft: currentInfo.draft, revision: currentInfo.revision, number: currentInfo.number };
+    return { ref: currentInfo.ref, serve: currentInfo.serve, draft: currentInfo.draft, revision: currentInfo.revision, number: currentInfo.number, choices: currentInfo.choices };
   }
 
-  window.siteHost = { reload: reloadFrontend, exitDraft: exitDraft, current: copyInfo };
+  window.siteHost = { reload: reloadFrontend, exitDraft: exitDraft, current: copyInfo, shuffle: shuffleFrontend };
 
   drawMakeOwn();
   revealTimer = setTimeout(reveal, REVEAL_AFTER_MS);

@@ -26,6 +26,9 @@ type frontendResponse struct {
 	Revision string `json:"revision,omitempty"` // the draft's revision id
 	Number   int    `json:"number,omitempty"`   // and its number
 	Title    string `json:"title,omitempty"`    // the draft's title (visitor text)
+	// Choices is how many front ends the rotation holds (v1.4): the parent
+	// shows its shuffle control only when there is something to shuffle to.
+	Choices int `json:"choices"`
 }
 
 // apiFrontend tells the parent page which front end to load and hands it a
@@ -37,11 +40,13 @@ func (s *Server) apiFrontend(w http.ResponseWriter, r *http.Request) {
 
 	id, serve := frontend.DefaultRef, frontend.DefaultRef
 	var resp frontendResponse
+	choices := 0
 	if r.URL.Query().Get("fallback") != "1" { // fallback leaves the visit's pick (and fe_live) alone
+		rot := s.currentRotation(r.Context())
+		choices = len(rot.ids)
 		if draft, ok := s.liveDraft(w, r); ok {
 			resp = draft
 		} else {
-			rot := s.currentRotation(r.Context())
 			id = s.visitPick(w, r, rot.ids)
 			serve = rot.serve[id]
 		}
@@ -49,6 +54,7 @@ func (s *Server) apiFrontend(w http.ResponseWriter, r *http.Request) {
 	if resp.Ref == "" {
 		resp = frontendResponse{Ref: id, Serve: serve, URL: s.signedIndexURL(serve)}
 	}
+	resp.Choices = choices
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		s.log.Error("api/frontend", "err", err)

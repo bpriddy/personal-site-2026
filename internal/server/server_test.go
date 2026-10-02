@@ -370,3 +370,13 @@ func TestShufflePicksADifferentFrontEnd(t *testing.T) {
 		t.Fatalf("shuffle kept %q", c.Ref)
 	}
 }
+
+func TestAPIFrontendReportsChoices(t *testing.T) {
+	s := newTestServer(t) // default store rotation: builtin/site + builtin/particle-stream
+	if got := decodeFrontend(t, get(s, "/api/frontend")).Choices; got != 2 {
+		t.Fatalf("choices = %d, want 2", got)
+	}
+	if got := decodeFrontend(t, get(s, "/api/frontend?fallback=1")).Choices; got != 0 {
+		t.Fatalf("fallback choices = %d, want 0 (not used)", got)
+	}
+}

@@ -10,7 +10,7 @@ import type { Page } from "@playwright/test";
 
 test.skip(ROTATION.length > 0, "needs the rotation from the store (run.sh phase prompted)");
 
-const dialogOf = (page: Page) => page.getByRole("dialog", { name: "Make your own version" });
+const dialogOf = (page: Page) => page.getByRole("dialog", { name: "Re-imagine this site" });
 
 /** The servable ref the front-end iframe's token carries. */
 async function servedRef(page: Page): Promise<string> {
@@ -217,4 +217,31 @@ test("a visitor builds in the modal and sees it live; picks versions; nobody els
   expect(await servedRef(pc)).toBe(`rev/${r2}`);
   await expect(pc.locator("#draft-banner")).toHaveCount(0);
   await c.close();
+});
+
+test("shuffle switches to another front end in place, next to Re-imagine", async ({ page }) => {
+  await page.goto("/");
+  await waitLive(page);
+  const shuffle = page.locator("#shuffle-fe");
+  const cta = page.locator("#make-own");
+  await expect(cta).toHaveAccessibleName("Re-imagine this site");
+  await expect(shuffle).toBeVisible(); // the store rotation holds more than one front end
+  await expect(shuffle).toHaveAccessibleName(/Shuffle/);
+  // side by side in the bottom-right corner, shuffle to the left
+  const sb = (await shuffle.boundingBox())!, cb = (await cta.boundingBox())!;
+  expect(sb.x + sb.width).toBeLessThanOrEqual(cb.x + 1);
+  expect(Math.abs((sb.y + sb.height / 2) - (cb.y + cb.height / 2))).toBeLessThan(4);
+
+  const refOf = async () => decodeToken(tokenFromURL((await page.locator("iframe#frontend").getAttribute("src"))!)).r;
+  const before = await refOf();
+  const url = page.url();
+  await shuffle.click();
+  await expect.poll(refOf, { timeout: 15_000 }).not.toBe(before);
+  await waitLive(page);
+  expect(page.url()).toBe(url); // no navigation: the iframe was swapped in place
+  // the pick sticks for the visit
+  const after = await refOf();
+  await page.reload();
+  await waitLive(page);
+  expect(await refOf()).toBe(after);
 });
