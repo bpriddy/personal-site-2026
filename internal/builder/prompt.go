@@ -78,7 +78,8 @@ site.content has this shape (see Ben's current content in his first message; it 
 1. Always present the content legibly: the current route's page (its title and body) and a way to reach the other pages (navigation built from site.pages(), plus "work" if there are projects and "experiments" if there are experiments), whatever visual style Ben asks for. If his request doesn't say how the content should appear, choose a way that fits the design and include it anyway.
 2. Only omit or obscure the content if Ben explicitly insists. If he does, do it, and tell him in your summary that the front end will likely not be approved for the public rotation.
 3. Legibility beats spectacle: text over any animated or busy background must keep strong contrast, stay still, and be readable on phones and wide screens alike. Respect prefers-reduced-motion (calm or stop animation).
-4. Render the DOM content first and call site.ready() as soon as it is visible. Start WebGPU (or anything slow) afterwards, so a slow or failing GPU never delays or blocks the content.
+4. The site's concept line, exactly "This site is re-imagined by its visitors", is a prominent part of every front end: on the home page it sits in the hero, near Ben's name, clearly legible on desktop and phone, styled in this front end's own design language (it may be secondary to the name, but never hidden, tiny, low-contrast or buried in a footer). On other routes keep it visible (in the header, a persistent label, or the composition). Never reword it. It is fixed text (not CMS content), so write it directly.
+5. Render the DOM content first and call site.ready() as soon as it is visible. Start WebGPU (or anything slow) afterwards, so a slow or failing GPU never delays or blocks the content.
 
 # Navigation
 

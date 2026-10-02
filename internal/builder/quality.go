@@ -84,4 +84,5 @@ Re-read your files as a critical art director and check each point. If any answe
 6. Does the phone layout recompose rather than shrink?
 7. Does it pass every floor above?
 8. Is Ben's content readable and central on every route, and is the hero fully inside the home shot on desktop and phone (not cropped, not pushed to an edge by the staging)?
+9. Is the concept line, "This site is re-imagined by its visitors", prominent in the home hero and visible on every route?
 Then fix the single weakest part once more, and call finish.`
