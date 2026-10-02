@@ -663,8 +663,10 @@ inside every front end.
   on screen (headings, paragraphs, list items, media, links, canvases: the
   outermost of each, top to bottom, up to 48) fade out and drift up with a
   short stagger (~0.3-0.5s) while the parent fetches the page; on
-  `site:route` the host calls the `onRoute` listeners, waits two frames for
-  the render, and the new content fades in and settles (~0.5-0.8s). Back and
+  `site:route` the host veils the document, calls the `onRoute` listeners,
+  waits for the render to settle (two quiet frames, 250ms at most), then
+  starts the new content's fade-in and lifts the veil in the same frame, so
+  nothing of the new page shows before it animates (~0.5-0.7s). Back and
   forward run the same exit on `site:route`. Under reduced motion it's a
   quick fade. If the navigation doesn't happen (same page, refused slug), the
   content comes back after 1.5s.

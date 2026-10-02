@@ -332,19 +332,43 @@
     exiting = ex;
     return ex.done;
   }
-  function enter(old) {
-    // after the front end has rendered (give it two frames), bring the new content in
+  // veil hides the whole document from the end of the exit until the incoming
+  // content's own animations have started, so nothing of the new page shows
+  // at full opacity first (the front end renders while it's veiled)
+  function veil() {
+    try { return document.documentElement.animate([{ opacity: 0 }, { opacity: 0 }], { duration: 60000, fill: "forwards" }); } catch (e) { return null; }
+  }
+  // settled resolves once the DOM has stopped changing for two frames (the
+  // front end's render, sync or a little async), or after 250ms at most
+  function settled() {
+    return new Promise(function (resolve) {
+      var quiet = 0, t0 = Date.now(), mo = null;
+      try { mo = new MutationObserver(function () { quiet = 0; }); mo.observe(document.body, { childList: true, subtree: true, characterData: true }); } catch (e) { /* no observer */ }
+      var check = function () {
+        if (++quiet >= 2 || Date.now() - t0 > 250) { if (mo) mo.disconnect(); resolve(); }
+        else (window.requestAnimationFrame || setTimeout)(check, 16);
+      };
+      (window.requestAnimationFrame || setTimeout)(check, 16);
+    });
+  }
+  function enter(old, cover) {
+    // once the front end has rendered, bring the new content in
     var go = function () {
       (old || []).forEach(function (a) { try { a.cancel(); } catch (e) { /* gone */ } });
-      if (!canAnimate()) return;
+      if (!canAnimate()) { if (cover) cover.cancel(); return; }
       var still = calm(), els = visibleBlocks();
-      var step = still ? 0 : Math.min(30, 260 / Math.max(1, els.length));
+      var step = still ? 0 : Math.min(30, 200 / Math.max(1, els.length));
       els.forEach(function (el, i) {
         play(el, 0, 1, still ? 0 : 14, 0, { duration: still ? 160 : 520, delay: i * step, easing: "cubic-bezier(.16,1,.3,1)", fill: "backwards" });
       });
+      // lift the veil in the same frame; anything that isn't a content block
+      // (a background, a bare div of text) fades in with it
+      if (cover) {
+        try { document.documentElement.animate([{ opacity: 0 }, { opacity: 1 }], { duration: still ? 120 : 240, easing: "ease-out" }); } catch (e) { /* fine */ }
+        cover.cancel();
+      }
     };
-    if (window.requestAnimationFrame) requestAnimationFrame(function () { requestAnimationFrame(go); });
-    else setTimeout(go, 32);
+    settled().then(go);
   }
   // routeTo: a route change from the parent (after site.navigate, or back/forward)
   function routeTo(route) {
@@ -356,8 +380,9 @@
     ex.done.then(function () {
       clearTimeout(ex.timer);
       if (exiting === ex) exiting = null;
+      var cover = veil(); // before the render: the new page never shows un-animated
       setRoute(ex.route);
-      enter(ex.anims);
+      enter(ex.anims, cover);
     });
   }
 
