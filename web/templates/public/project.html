@@ -1,0 +1,72 @@
+{{define "title"}}{{.Project.Title}} · Ben Priddy{{end}}
+{{define "description"}}{{.Project.Title}}{{with .Project.Client}} for {{.}}{{end}}{{with .Project.Year}} ({{.}}){{end}}: a project by Ben Priddy.{{end}}
+{{define "main"}}{{with .Project}}
+<article class="project" aria-labelledby="project-h">
+  <section class="page-head project-head">
+    <h1 class="display" id="project-h">{{.Title}}</h1>
+    <p class="label">( {{.Index}} / {{two $.Count}} )</p>
+  </section>
+
+  <dl class="project-meta">
+    {{with .Client}}<div class="pm-client"><dt>Client</dt><dd>{{.}}</dd></div>{{end}}
+    {{with .Agency}}<div class="pm-agency"><dt>Agency</dt><dd>{{.}}</dd></div>{{end}}
+    {{with .Year}}<div class="pm-year"><dt>Year</dt><dd>{{.}}</dd></div>{{end}}
+    {{with .Roles}}<div class="pm-roles"><dt>Role</dt><dd>{{join .}}</dd></div>{{end}}
+    {{with .Tags}}<div class="pm-tags"><dt>Tags</dt><dd>{{join .}}</dd></div>{{end}}
+    {{with .Palette}}<div class="pm-palette"><dt>Palette</dt><dd><svg class="swatches" viewBox="0 0 {{mul (len .) 3}} 2" width="{{mul (len .) 18}}" height="12" role="img" aria-label="{{join .}}">{{range $i, $c := .}}<rect x="{{mul $i 3}}" width="2" height="2" fill="{{$c}}"/>{{end}}</svg></dd></div>{{end}}
+  </dl>
+
+  {{with .Hero}}<figure class="project-hero">
+    <img src="{{.Src}}" width="{{.Width}}" height="{{.Height}}" alt="{{or .Alt $.Project.Title}}" decoding="async" fetchpriority="high">
+  </figure>{{end}}
+
+  {{with paragraphs .Summary}}<section class="project-text" aria-label="Brief">
+    <h2 class="label">( Brief )</h2>
+    <div class="project-prose">{{range .}}<p>{{.}}</p>{{end}}</div>
+  </section>{{end}}
+  {{with paragraphs .Contribution}}<section class="project-text" aria-label="Role">
+    <h2 class="label">( Role )</h2>
+    <div class="project-prose project-prose-2">{{range .}}<p>{{.}}</p>{{end}}</div>
+  </section>{{end}}
+  {{with paragraphs .Body}}<section class="project-text" aria-label="Notes">
+    <h2 class="label">( Notes )</h2>
+    <div class="project-prose project-prose-2">{{range .}}<p>{{.}}</p>{{end}}</div>
+  </section>{{end}}
+
+  {{if or .Link .Watch}}<p class="project-links">
+    {{with .Link}}<a href="{{.}}" target="_blank" rel="noopener noreferrer">( Visit the work )</a>{{end}}
+    {{with .Watch}}<a href="{{.}}" target="_blank" rel="noopener noreferrer">( Watch on YouTube )</a>{{end}}
+  </p>{{end}}
+
+  {{if .Loops}}<section class="project-media" aria-label="Loops">
+    <h2 class="label">( Loops <span aria-hidden="true">&mdash;</span> {{two (len .Loops)}} )</h2>
+    <div class="project-loops">
+      {{range $i, $m := .Loops}}<figure class="loop loop-{{shape $m}}">
+        <video src="{{$m.Src}}"{{with $m.Poster}} poster="{{.}}"{{end}} width="{{$m.Width}}" height="{{$m.Height}}" muted loop playsinline preload="none" data-loop aria-label="{{or $m.Alt (printf "%s, loop %d" $.Project.Title (inc $i))}}"></video>
+      </figure>
+      {{end}}
+      {{range .Images}}<figure class="loop loop-{{shape .}}">
+        <img src="{{.Src}}" width="{{.Width}}" height="{{.Height}}" alt="{{or .Alt $.Project.Title}}" loading="lazy" decoding="async">
+      </figure>
+      {{end}}
+    </div>
+  </section>{{end}}
+
+  {{with .Embed}}<section class="project-media project-film" aria-label="Film">
+    <h2 class="label">( Film )</h2>
+    {{/* a facade: YouTube's player loads only when asked for (media.js swaps
+         in the youtube-nocookie iframe); without JavaScript it's a link */}}
+    <div class="film" data-embed="{{.}}" data-title="{{$.Project.Title}}: the film (YouTube)">
+      <a class="film-play" href="{{$.Project.Watch}}" target="_blank" rel="noopener noreferrer">
+        {{with $.Project.Hero}}<img src="{{.Src}}" width="{{.Width}}" height="{{.Height}}" alt="" loading="lazy" decoding="async">{{end}}
+        <span class="film-label">( Play the film )</span>
+      </a>
+    </div>
+  </section>{{end}}
+</article>
+{{with $.Next}}<nav class="project-next" aria-label="More work">
+  <p class="label">( Next )</p>
+  <a class="next-title" href="{{.Href}}">{{.Title}}</a>
+  <a class="label all-work" href="/work/">( All work )</a>
+</nav>{{end}}
+{{end}}{{end}}

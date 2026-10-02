@@ -1,0 +1,39 @@
+{{define "title"}}{{if .New}}New project{{else}}Edit project{{end}} · Admin{{end}}
+{{define "main"}}
+<p><a href="/admin/#projects">← Admin</a></p>
+<h1>{{if .New}}New project{{else}}{{.Project.Title}}{{end}} <code>{{.Project.Slug}}</code></h1>
+{{if .Error}}<p class="notice problem" role="alert">{{.Error}}</p>{{end}}
+{{if and (not .New) .Project.Published}}<p><a href="/work/{{.Project.Slug}}">View /work/{{.Project.Slug}}</a></p>{{end}}
+<form method="post" action="/admin/projects/{{.Project.Slug}}" class="stack">
+  <label>Title <input name="title" value="{{.Project.Title}}" required></label>
+  <div class="cols">
+    <label>Client <input name="client" value="{{.Project.Client}}"></label>
+    <label>Agency <input name="agency" value="{{.Project.Agency}}"></label>
+    <label>Year <input name="year" value="{{.Project.Year}}" inputmode="numeric"></label>
+  </div>
+  <label>Roles (comma-separated) <input name="roles" value="{{join .Project.Roles}}"></label>
+  <label>Tags (comma-separated) <input name="tags" value="{{join .Project.Tags}}"></label>
+  <label>Summary <textarea name="summary" rows="6">{{.Project.Summary}}</textarea></label>
+  <label>Contribution (what you did) <textarea name="contribution" rows="4">{{.Project.Contribution}}</textarea></label>
+  <label>Body (paragraphs separated by a blank line) <textarea name="body" rows="8">{{.Project.Body}}</textarea></label>
+  <label>Link (the live work, https://…) <input name="link" type="url" value="{{.Project.Link}}"></label>
+  <label>YouTube video id <input name="youtube" value="{{.Project.YouTube}}" pattern="[A-Za-z0-9_-]{11}" placeholder="e6PKBbvRYV0"></label>
+  <label>Palette (comma-separated #rrggbb) <input name="palette" value="{{join .Project.Palette}}"></label>
+  {{with .Project.Palette}}<p class="swatches" aria-hidden="true">{{range .}}<span style="background:{{.}}"></span>{{end}}</p>{{end}}
+  <label>Order (lower first; drafts 100+) <input name="order" type="number" value="{{.Project.Order}}"></label>
+  <label class="check"><input type="checkbox" name="published" {{if .Project.Published}}checked{{end}}> Published</label>
+  <button class="b-primary">Save</button>
+</form>
+<section>
+  <h2>Media ({{len .Project.Media}})</h2>
+  <p class="muted">Read-only here: media comes from the import (files in the bucket under <code>media/</code>).</p>
+  {{if .Project.Media}}<ul class="media-grid">
+    {{range .Project.Media}}<li>
+      {{if eq .Kind "loop"}}<video src="{{.Src}}" poster="{{.Poster}}" muted loop playsinline preload="none" controls width="{{.Width}}" height="{{.Height}}"></video>
+      {{else}}<img src="{{.Src}}" alt="{{.Alt}}" loading="lazy" width="{{.Width}}" height="{{.Height}}">{{end}}
+      <code>{{.Kind}} · {{.Width}}×{{.Height}}</code>
+      <code class="muted">{{.Src}}</code>
+    </li>{{end}}
+  </ul>{{end}}
+</section>
+{{end}}

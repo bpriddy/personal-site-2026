@@ -42,6 +42,7 @@ type Options struct {
 	Now        func() time.Time // clock; nil means time.Now
 	Log        *slog.Logger     // nil means discard
 	Fonts      fs.FS            // served at /fonts/<file>; nil means web.Fonts
+	Media      http.Handler     // serves /media/<name> (internal/media); nil means 404
 }
 
 // Handler implements the user-content routes.
@@ -53,6 +54,7 @@ type Handler struct {
 	csp      string
 	siteHost []byte
 	fonts    fs.FS
+	media    http.Handler
 }
 
 func New(o Options) (*Handler, error) {
@@ -73,6 +75,7 @@ func New(o Options) (*Handler, error) {
 		csp:      csp(o.MainOrigin),
 		siteHost: []byte(strings.ReplaceAll(webuc.SiteHostJS, "__MAIN_ORIGIN__", o.MainOrigin)),
 		fonts:    o.Fonts,
+		media:    o.Media,
 	}
 	if h.fonts == nil {
 		h.fonts = web.Fonts
@@ -141,6 +144,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.serveFont(w, r, strings.TrimPrefix(p, "/fonts/"))
+	case strings.HasPrefix(p, "/media/") && h.media != nil:
+		// project and experiment media, for front ends (img-src/media-src 'self')
+		h.media.ServeHTTP(w, r)
 	case p == "/health":
 		if !allowMethod(w, r) {
 			return

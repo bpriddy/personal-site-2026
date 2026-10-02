@@ -86,9 +86,9 @@ func TestBuildShapeAndOrder(t *testing.T) {
 		t.Errorf("experiments %q, want %q (published only, by order then slug)", got, want)
 	}
 	// every declared field present and a string, _generated an empty list
-	for coll, items := range map[string][]Item{Pages: site.Pages, Experiments: site.Experiments} {
+	for coll, items := range map[string][]Item{Pages: site.Pages, Experiments: site.Experiments, Projects: site.Projects} {
 		for _, it := range items {
-			if len(it) != len(Declared[coll])+1 {
+			if len(it) != len(Declared[coll])+len(Lists[coll])+len(MediaFields[coll])+1 {
 				t.Errorf("%s/%v: unexpected keys %v", coll, it["slug"], it)
 			}
 			for _, f := range Declared[coll] {
@@ -112,7 +112,7 @@ func TestBuildShapeAndOrder(t *testing.T) {
 	}
 	var top map[string]json.RawMessage
 	_ = json.Unmarshal(b, &top)
-	if len(top) != 3 || top["contractVersion"] == nil || top["pages"] == nil || top["experiments"] == nil {
+	if len(top) != 4 || top["projects"] == nil || top["contractVersion"] == nil || top["pages"] == nil || top["experiments"] == nil {
 		t.Errorf("top-level keys: %s", b)
 	}
 	about := string(mustJSON(t, find(t, site.Pages, "about")))
@@ -136,7 +136,7 @@ func TestBuildEmptyCollections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := string(mustJSON(t, site)); got != `{"contractVersion":1,"pages":[],"experiments":[]}` {
+	if got := string(mustJSON(t, site)); got != `{"contractVersion":1,"pages":[],"experiments":[],"projects":[]}` {
 		t.Errorf("empty site: %s", got)
 	}
 }

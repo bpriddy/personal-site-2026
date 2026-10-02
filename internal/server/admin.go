@@ -25,8 +25,15 @@ func (s *Server) adminDashboard(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, "frontends", err)
 		return
 	}
+	var projects []content.Project
+	if ps := store.ProjectsOf(s.store); ps != nil {
+		if projects, err = ps.Projects(r.Context()); err != nil {
+			s.fail(w, "projects", err)
+			return
+		}
+	}
 	s.render(w, "admin/dashboard.html", http.StatusOK, map[string]any{
-		"Pages": pages, "Experiments": exps, "Frontends": fes,
+		"Pages": pages, "Experiments": exps, "Frontends": fes, "Projects": projects,
 		"RotationOverridden": s.rotationOverride != nil,
 	})
 }

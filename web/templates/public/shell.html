@@ -18,6 +18,8 @@
   {{/* the public builder: a modal over the site (v1.2); the stream is shared with the admin */}}
   <script src="/static/builder-stream.js" defer></script>
   <script src="/static/build-modal.js" defer></script>
+  {{/* plays the transcript's loops while they're on screen (v1.4) */}}
+  <script src="/static/media.js" defer></script>
 </head>
 <body class="public">
   {{/* transcript: the CMS content as semantic HTML. Visually hidden while a
@@ -48,10 +50,25 @@
 </html>{{end}}
 
 {{define "experiment-list"}}<ol class="index-list">
-  {{range $i, $e := .}}<li class="index-row">
+  {{range $i, $e := .}}<li class="index-row{{if firstLoop $e.Media}} has-media{{end}}">
     <span class="idx" aria-hidden="true">{{two (inc $i)}}</span>
-    <h3 class="index-title">{{$e.Title}}</h3>
+    <h3 class="index-title">{{with extLink $e.Link}}<a href="{{.}}" target="_blank" rel="noopener noreferrer">{{$e.Title}}</a>{{else}}{{$e.Title}}{{end}}</h3>
     {{with $e.Summary}}<p class="index-summary">{{.}}</p>{{end}}
+    {{with firstLoop $e.Media}}<span class="index-thumb" aria-hidden="true"><video src="{{.Src}}"{{with .Poster}} poster="{{.}}"{{end}} width="{{.Width}}" height="{{.Height}}" muted loop playsinline preload="none" data-loop tabindex="-1"></video></span>{{end}}
+  </li>{{end}}
+</ol>{{end}}
+
+{{/* the work index (/work, and the home page's selected work): numbered
+     hairline rows, each a link to /work/<slug>, with the first loop as a
+     strip that plays on hover (or while in view, on touch screens) */}}
+{{define "work-list"}}<ol class="index-list work-list">
+  {{range .}}<li class="work-row" data-hover-root>
+    <a class="work-link" href="{{.Href}}">
+      <span class="idx" aria-hidden="true">{{.Index}}</span>
+      <h3 class="work-title">{{.Title}}</h3>
+      {{with .Meta}}<span class="work-meta">{{.}}</span>{{end}}
+      {{with .Thumb}}<span class="work-thumb" aria-hidden="true">{{if eq .Kind "loop"}}<video src="{{.Src}}"{{with .Poster}} poster="{{.}}"{{end}} width="{{.Width}}" height="{{.Height}}" muted loop playsinline preload="none" data-loop="hover" tabindex="-1"></video>{{else}}<img src="{{.Src}}" width="{{.Width}}" height="{{.Height}}" alt="" loading="lazy" decoding="async">{{end}}</span>{{end}}
+    </a>
   </li>{{end}}
 </ol>{{end}}
 

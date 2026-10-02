@@ -9,15 +9,23 @@
 //! The design is "Instrument" (docs/design-pov.md): the content is real DOM
 //! text in the house fonts, set in the same composition as the transcript (a
 //! meta row, the name as the one big gesture, the bio, a numbered index of
-//! experiments), so it reads, selects and scales like a page and works
+//! experiments, Ben's work), so it reads, selects and scales like a page and works
 //! without WebGPU. `site.ready()` is called as soon as that DOM is up. Then,
 //! where WebGPU exists, a quiet dot field is drawn behind it: a fixed grid
 //! of fine dots that swell into a halftone echo of the name and lean toward
 //! the pointer. It depicts the subject (the name), stays monochrome, and goes
 //! still under prefers-reduced-motion.
 //!
+//! Routes: "" (home: the name, the bio, selected work, experiments), "work"
+//! (the index of projects), "work/<slug>" (a project), "experiments", and
+//! any page slug. Media (stills and loops) comes from the content's /media/
+//! paths on this origin; loops play muted while on screen, never under
+//! prefers-reduced-motion. Links that leave the site (a project's link, its
+//! YouTube film) go through `site.openExternal`, since the sandbox can't
+//! open tabs.
+//!
 //! Content is read only through the host API's contract accessors
-//! (`site.pages()`, `site.experiments()`, `site.field`), never by decoding the
+//! (`site.pages()`, `site.experiments()`, `site.projects()`, `site.field`), never by decoding the
 //! payload's shape, so missing, extra or mistyped fields render as empty and
 //! are reported to the observer instead of breaking the page.
 //!
@@ -39,6 +47,7 @@ use web_sys::{Document, Element, HtmlCanvasElement, Window};
 pub struct SiteData {
     pub pages: Vec<Page>,
     pub experiments: Vec<Experiment>,
+    pub projects: Vec<Project>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -55,6 +64,41 @@ pub struct Experiment {
     pub slug: String,
     pub title: String,
     pub summary: String,
+    pub link: String,
+    pub media: Vec<MediaItem>,
+}
+
+/// A project (client work), shown at the route "work/<slug>".
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(default)]
+pub struct Project {
+    pub slug: String,
+    pub title: String,
+    pub client: String,
+    pub agency: String,
+    pub year: String,
+    pub tags: Vec<String>,
+    pub roles: Vec<String>,
+    pub summary: String,
+    pub contribution: String,
+    pub body: String,
+    pub link: String,
+    pub palette: Vec<String>,
+    pub youtube: String,
+    pub media: Vec<MediaItem>,
+}
+
+/// One still ("image") or silent loop ("loop"); src and poster are /media/
+/// paths on this origin.
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(default)]
+pub struct MediaItem {
+    pub kind: String,
+    pub src: String,
+    pub poster: String,
+    pub width: u32,
+    pub height: u32,
+    pub alt: String,
 }
 
 /// What `site.loaded` resolves with.
@@ -162,9 +206,81 @@ fn read_content() -> SiteData {
                 slug: slug_of(e),
                 title: text_field(e, "title"),
                 summary: text_field(e, "summary"),
+                link: optional_text(e, "link"),
+                media: media_field(e, "media"),
+            })
+            .collect(),
+        projects: items("projects")
+            .iter()
+            .map(|p| Project {
+                slug: slug_of(p),
+                title: text_field(p, "title"),
+                client: optional_text(p, "client"),
+                agency: optional_text(p, "agency"),
+                year: optional_text(p, "year"),
+                tags: list_field(p, "tags"),
+                roles: list_field(p, "roles"),
+                summary: text_field(p, "summary"),
+                contribution: optional_text(p, "contribution"),
+                body: optional_text(p, "body"),
+                link: optional_text(p, "link"),
+                palette: list_field(p, "palette"),
+                youtube: optional_text(p, "youtube"),
+                media: media_field(p, "media"),
             })
             .collect(),
     }
+}
+
+/// `site.field(item, name, {expect, fallback, optional})`.
+fn field(item: &JsValue, name: &str, expect: &str, fallback: JsValue, optional: bool) -> Option<JsValue> {
+    let opts = js_sys::Object::new();
+    let _ = js_sys::Reflect::set(&opts, &"expect".into(), &expect.into());
+    let _ = js_sys::Reflect::set(&opts, &"fallback".into(), &fallback);
+    if optional {
+        let _ = js_sys::Reflect::set(&opts, &"optional".into(), &JsValue::TRUE);
+    }
+    host_call("field", &[item.clone(), name.into(), opts.into()])
+}
+
+/// A text field that may legitimately be empty (no link, no agency): read
+/// through `site.field` with `optional`, so an empty value isn't a gap.
+fn optional_text(item: &JsValue, name: &str) -> String {
+    field(item, name, "text", "".into(), true)
+        .and_then(|v| v.as_string())
+        .unwrap_or_default()
+}
+
+/// A list-of-text field (`expect: "list"`): its strings.
+fn list_field(item: &JsValue, name: &str) -> Vec<String> {
+    field(item, name, "list", js_sys::Array::new().into(), true)
+        .filter(js_sys::Array::is_array)
+        .map(|a| js_sys::Array::from(&a).iter().filter_map(|s| s.as_string()).filter(|s| !s.trim().is_empty()).collect())
+        .unwrap_or_default()
+}
+
+/// A media list (`expect: "list"`), already normalized by the host API to
+/// same-origin /media/ items.
+fn media_field(item: &JsValue, name: &str) -> Vec<MediaItem> {
+    let Some(list) = field(item, name, "list", js_sys::Array::new().into(), true).filter(js_sys::Array::is_array) else {
+        return vec![];
+    };
+    let get = |o: &JsValue, k: &str| js_sys::Reflect::get(o, &k.into()).ok();
+    let text = |o: &JsValue, k: &str| get(o, k).and_then(|v| v.as_string()).unwrap_or_default();
+    let num = |o: &JsValue, k: &str| get(o, k).and_then(|v| v.as_f64()).filter(|n| n.is_finite() && *n > 0.0).unwrap_or(0.0) as u32;
+    js_sys::Array::from(&list)
+        .iter()
+        .filter(JsValue::is_object)
+        .map(|m| MediaItem {
+            kind: text(&m, "kind"),
+            src: text(&m, "src"),
+            poster: text(&m, "poster"),
+            width: num(&m, "width"),
+            height: num(&m, "height"),
+            alt: text(&m, "alt"),
+        })
+        .filter(|m| m.src.starts_with("/media/") && (m.kind == "image" || m.kind == "loop"))
+        .collect()
 }
 
 /// An item's slug. Not read through `site.field`: "" is the home page's
@@ -203,6 +319,15 @@ fn placeholder() -> Loaded {
                 slug: "particle-stream".into(),
                 title: "Particle Stream".into(),
                 summary: "Words as rocks in a stream.".into(),
+                ..Default::default()
+            }],
+            projects: vec![Project {
+                slug: "placeholder".into(),
+                title: "A placeholder project".into(),
+                client: "Client".into(),
+                year: "2026".into(),
+                summary: "Projects arrive through window.site inside the site.".into(),
+                ..Default::default()
             }],
         },
         route: String::new(),
@@ -306,6 +431,9 @@ fn nav_items(data: &SiteData) -> Vec<(String, String)> {
         };
         out.push((p.slug.clone(), label));
     }
+    if !data.projects.is_empty() {
+        out.push(("work".into(), "Work".into()));
+    }
     if !data.experiments.is_empty() {
         out.push(("experiments".into(), "Experiments".into()));
     }
@@ -365,13 +493,250 @@ fn append_index(doc: &Document, parent: &Element, data: &SiteData) -> Result<(),
         idx.set_attribute("aria-hidden", "true")?;
         row.append_child(&idx)?;
         let title = if e.title.trim().is_empty() { e.slug.as_str() } else { e.title.trim() };
-        add(&row, &el(doc, "h3", "index-title", Some(title))?)?;
+        let h = el(doc, "h3", "index-title", None)?;
+        if e.link.is_empty() {
+            h.set_text_content(Some(title));
+        } else {
+            let a = ext_link(doc, &e.link, "")?;
+            a.set_text_content(Some(title));
+            h.append_child(&a)?;
+        }
+        row.append_child(&h)?;
         if !e.summary.trim().is_empty() {
             add(&row, &el(doc, "p", "index-summary", Some(e.summary.trim()))?)?;
+        }
+        if let Some(m) = e.media.iter().find(|m| m.kind == "loop") {
+            row.class_list().add_1("has-media")?;
+            let thumb = el(doc, "span", "index-thumb", None)?;
+            thumb.set_attribute("aria-hidden", "true")?;
+            add(&thumb, &media_el(doc, m, "", false)?)?;
+            row.append_child(&thumb)?;
         }
         list.append_child(&row)?;
     }
     parent.append_child(&list)?;
+    Ok(())
+}
+
+/// How many projects the home page features.
+const SELECTED_WORK: usize = 6;
+
+/// A link out of the site: the parent opens it (`site.openExternal`).
+fn ext_link(doc: &Document, url: &str, class: &str) -> Result<Element, JsValue> {
+    let a = el(doc, "a", class, None)?;
+    a.set_attribute("href", url)?;
+    a.set_attribute("data-external", url)?;
+    a.set_attribute("rel", "noopener noreferrer")?;
+    Ok(a)
+}
+
+/// A still (`<img>`) or a loop (`<video>`, muted, looping, inline, with its
+/// poster; played by the app's observer while on screen). width/height are
+/// set so nothing shifts as media loads; images below the fold load lazily.
+fn media_el(doc: &Document, m: &MediaItem, alt: &str, eager: bool) -> Result<Element, JsValue> {
+    let e: Element = if m.kind == "loop" {
+        let v = doc.create_element("video")?.dyn_into::<web_sys::HtmlVideoElement>()?;
+        v.set_muted(true); // browsers only start muted video by themselves
+        v.set_loop(true);
+        for a in ["muted", "loop", "playsinline", "data-loop"] {
+            v.set_attribute(a, "")?;
+        }
+        v.set_attribute("preload", "none")?;
+        if !m.poster.is_empty() {
+            v.set_poster(&m.poster);
+        }
+        v.set_src(&m.src);
+        if alt.is_empty() {
+            v.set_attribute("aria-hidden", "true")?;
+        } else {
+            v.set_attribute("aria-label", alt)?;
+        }
+        v.into()
+    } else {
+        let i = doc.create_element("img")?;
+        i.set_attribute("src", &m.src)?;
+        i.set_attribute("alt", if m.alt.is_empty() { alt } else { &m.alt })?;
+        i.set_attribute("decoding", "async")?;
+        if !eager {
+            i.set_attribute("loading", "lazy")?;
+        }
+        i
+    };
+    if m.width > 0 && m.height > 0 {
+        e.set_attribute("width", &m.width.to_string())?;
+        e.set_attribute("height", &m.height.to_string())?;
+    }
+    Ok(e)
+}
+
+/// "strip" (3:1 and wider), "wide" or "box": how a loop sits in the column.
+fn shape(m: &MediaItem) -> &'static str {
+    match (m.width, m.height) {
+        (w, h) if w == 0 || h == 0 => "wide",
+        (w, h) if w >= 3 * h => "strip",
+        (w, h) if 2 * w >= 3 * h => "wide",
+        _ => "box",
+    }
+}
+
+fn project_title(p: &Project) -> &str {
+    if p.title.trim().is_empty() { p.slug.as_str() } else { p.title.trim() }
+}
+
+/// "Samsung · 2020"
+fn project_meta(p: &Project) -> String {
+    [p.client.trim(), p.year.trim()].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" \u{b7} ")
+}
+
+/// The work index: numbered hairline rows, each a link to "work/<slug>",
+/// with the first loop (or the still) as a strip. At most `limit` rows.
+fn append_work(doc: &Document, parent: &Element, projects: &[Project], limit: usize) -> Result<(), JsValue> {
+    let list = el(doc, "ol", "index-list work-list", None)?;
+    for (i, p) in projects.iter().take(limit).enumerate() {
+        let row = el(doc, "li", "work-row", None)?;
+        row.set_attribute("style", &format!("--i:{i}"))?;
+        let a = route_link(doc, &format!("work/{}", p.slug), "work-link")?;
+        let idx = el(doc, "span", "idx", Some(&two(i + 1)))?;
+        idx.set_attribute("aria-hidden", "true")?;
+        a.append_child(&idx)?;
+        add(&a, &el(doc, "h3", "work-title", Some(project_title(p)))?)?;
+        let meta = project_meta(p);
+        if !meta.is_empty() {
+            add(&a, &el(doc, "span", "work-meta", Some(&meta))?)?;
+        }
+        let thumb = p.media.iter().find(|m| m.kind == "loop").or_else(|| p.media.iter().find(|m| m.kind == "image"));
+        if let Some(m) = thumb {
+            let t = el(doc, "span", "work-thumb", None)?;
+            t.set_attribute("aria-hidden", "true")?;
+            add(&t, &media_el(doc, m, "", false)?)?;
+            a.append_child(&t)?;
+        }
+        row.append_child(&a)?;
+        list.append_child(&row)?;
+    }
+    parent.append_child(&list)?;
+    Ok(())
+}
+
+/// One labelled text section ("( Brief )", ...) with paragraphs.
+fn text_section(doc: &Document, parent: &Element, label: &str, text: &str, quiet: bool) -> Result<(), JsValue> {
+    let paras = paragraphs(text);
+    if paras.is_empty() {
+        return Ok(());
+    }
+    let sec = el(doc, "section", "project-text", None)?;
+    add(&sec, &el(doc, "h2", "label", Some(label))?)?;
+    let prose = el(doc, "div", if quiet { "project-prose project-prose-2" } else { "project-prose" }, None)?;
+    for p in paras {
+        add(&prose, &el(doc, "p", "", Some(&p))?)?;
+    }
+    sec.append_child(&prose)?;
+    parent.append_child(&sec)?;
+    Ok(())
+}
+
+/// The project page (route "work/<slug>"): the same composition as the
+/// transcript's /work/<slug>.
+fn render_project(doc: &Document, main: &Element, data: &SiteData, i: usize) -> Result<(), JsValue> {
+    let p = &data.projects[i];
+    let title = project_title(p);
+    let art = el(doc, "article", "project", None)?;
+    let head = el(doc, "section", "page-head project-head", None)?;
+    add(&head, &el(doc, "h1", "display", Some(title))?)?;
+    add(&head, &el(doc, "p", "label", Some(&format!("( {} / {} )", two(i + 1), two(data.projects.len()))))?)?;
+    art.append_child(&head)?;
+
+    let dl = el(doc, "dl", "project-meta", None)?;
+    let tags = p.tags.join(", ");
+    let roles = p.roles.join(", ");
+    for (class, label, value) in [
+        ("pm-client", "Client", p.client.trim()),
+        ("pm-agency", "Agency", p.agency.trim()),
+        ("pm-year", "Year", p.year.trim()),
+        ("pm-roles", "Role", roles.as_str()),
+        ("pm-tags", "Tags", tags.as_str()),
+    ] {
+        if value.is_empty() {
+            continue;
+        }
+        let d = el(doc, "div", class, None)?;
+        add(&d, &el(doc, "dt", "", Some(label))?)?;
+        add(&d, &el(doc, "dd", "", Some(value))?)?;
+        dl.append_child(&d)?;
+    }
+    let colours: Vec<&String> = p.palette.iter().filter(|c| c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|h| h.is_ascii_hexdigit())).collect();
+    if !colours.is_empty() {
+        let d = el(doc, "div", "pm-palette", None)?;
+        add(&d, &el(doc, "dt", "", Some("Palette"))?)?;
+        let dd = el(doc, "dd", "swatches", None)?;
+        dd.set_attribute("aria-label", &p.palette.join(", "))?;
+        for c in colours {
+            let sw = el(doc, "span", "sw", None)?;
+            sw.set_attribute("style", &format!("background:{c}"))?;
+            dd.append_child(&sw)?;
+        }
+        d.append_child(&dd)?;
+        dl.append_child(&d)?;
+    }
+    art.append_child(&dl)?;
+
+    if let Some(hero) = p.media.iter().find(|m| m.kind == "image") {
+        let fig = el(doc, "figure", "project-hero", None)?;
+        add(&fig, &media_el(doc, hero, title, true)?)?;
+        art.append_child(&fig)?;
+    }
+    text_section(doc, &art, "( Brief )", &p.summary, false)?;
+    text_section(doc, &art, "( Role )", &p.contribution, true)?;
+    text_section(doc, &art, "( Notes )", &p.body, true)?;
+
+    let film = !p.youtube.is_empty();
+    if !p.link.is_empty() || film {
+        let links = el(doc, "p", "project-links", None)?;
+        if !p.link.is_empty() {
+            let a = ext_link(doc, &p.link, "")?;
+            a.set_text_content(Some("( Visit the work )"));
+            links.append_child(&a)?;
+        }
+        if film {
+            let a = ext_link(doc, &format!("https://www.youtube.com/watch?v={}", p.youtube), "")?;
+            a.set_text_content(Some("( Watch the film )"));
+            links.append_child(&a)?;
+        }
+        art.append_child(&links)?;
+    }
+
+    let rest: Vec<&MediaItem> = p.media.iter().filter(|m| m.kind == "loop")
+        .chain(p.media.iter().filter(|m| m.kind == "image").skip(1))
+        .collect();
+    if !rest.is_empty() {
+        let n = p.media.iter().filter(|m| m.kind == "loop").count();
+        let sec = el(doc, "section", "project-media", None)?;
+        let label = if n > 0 { format!("( Loops \u{2014} {} )", two(n)) } else { "( Images )".into() };
+        add(&sec, &el(doc, "h2", "label", Some(&label))?)?;
+        let wrap = el(doc, "div", "project-loops", None)?;
+        for (k, m) in rest.iter().enumerate() {
+            let fig = el(doc, "figure", &format!("loop loop-{}", shape(m)), None)?;
+            add(&fig, &media_el(doc, m, &format!("{title}, {} {}", if m.kind == "loop" { "loop" } else { "image" }, k + 1), false)?)?;
+            wrap.append_child(&fig)?;
+        }
+        sec.append_child(&wrap)?;
+        art.append_child(&sec)?;
+    }
+    main.append_child(&art)?;
+
+    if data.projects.len() > 1 {
+        let next = &data.projects[(i + 1) % data.projects.len()];
+        let nav = el(doc, "nav", "project-next", None)?;
+        nav.set_attribute("aria-label", "More work")?;
+        add(&nav, &el(doc, "p", "label", Some("( Next )"))?)?;
+        let a = route_link(doc, &format!("work/{}", next.slug), "next-title")?;
+        a.set_text_content(Some(project_title(next)));
+        nav.append_child(&a)?;
+        let all = route_link(doc, "work", "label all-work")?;
+        all.set_text_content(Some("( All work )"));
+        nav.append_child(&all)?;
+        main.append_child(&nav)?;
+    }
     Ok(())
 }
 
@@ -403,6 +768,18 @@ fn render_route(doc: &Document, main: &Element, data: &SiteData, route: &str) ->
             bio.append_child(&text)?;
             main.append_child(&bio)?;
         }
+        if !data.projects.is_empty() {
+            let idx = el(doc, "section", "index work-index", None)?;
+            let label = format!("( Selected work \u{2014} {} )", two(data.projects.len()));
+            add(&idx, &el(doc, "h2", "label", Some(&label))?)?;
+            append_work(doc, &idx, &data.projects, SELECTED_WORK)?;
+            let more = el(doc, "p", "index-more", None)?;
+            let all = route_link(doc, "work", "label")?;
+            all.set_text_content(Some("( All work )"));
+            more.append_child(&all)?;
+            idx.append_child(&more)?;
+            main.append_child(&idx)?;
+        }
         if !data.experiments.is_empty() {
             let idx = el(doc, "section", "index", None)?;
             let label = format!("( Experiments \u{2014} {} )", two(data.experiments.len()));
@@ -412,9 +789,25 @@ fn render_route(doc: &Document, main: &Element, data: &SiteData, route: &str) ->
         }
         return Ok(());
     }
+    if let Some(slug) = route.strip_prefix("work/") {
+        if let Some(i) = data.projects.iter().position(|p| p.slug == slug) {
+            return render_project(doc, main, data, i);
+        }
+    }
     let head = el(doc, "section", "page-head", None)?;
     main.append_child(&head)?;
-    if route == "experiments" {
+    if route == "work" {
+        add(&head, &el(doc, "h1", "display", Some("Work"))?)?;
+        let n = format!("( {} projects )", two(data.projects.len()));
+        add(&head, &el(doc, "p", "label", Some(&n))?)?;
+        let idx = el(doc, "section", "index index-page work-index", None)?;
+        if data.projects.is_empty() {
+            add(&idx, &el(doc, "p", "prose-aside", Some("Nothing published yet."))?)?;
+        } else {
+            append_work(doc, &idx, &data.projects, usize::MAX)?;
+        }
+        main.append_child(&idx)?;
+    } else if route == "experiments" {
         add(&head, &el(doc, "h1", "display", Some("Experiments"))?)?;
         let n = format!("( {} published )", two(data.experiments.len()));
         add(&head, &el(doc, "p", "label", Some(&n))?)?;
@@ -449,7 +842,8 @@ fn mark_current(doc: &Document, route: &str) {
     let Ok(links) = doc.query_selector_all(".site-header nav a") else { return };
     for i in 0..links.length() {
         let Some(a) = links.get(i).and_then(|n| n.dyn_into::<Element>().ok()) else { continue };
-        let on = a.get_attribute("data-slug").as_deref() == Some(route);
+        let slug = a.get_attribute("data-slug").unwrap_or_default();
+        let on = slug == route || (!slug.is_empty() && route.starts_with(&format!("{slug}/")));
         let _ = if on { a.set_attribute("aria-current", "page") } else { a.remove_attribute("aria-current") };
     }
 }
@@ -463,12 +857,25 @@ struct App {
     route: RefCell<String>,
     /// bumped on every layout change, so the field redraws its mask
     layout: Cell<u32>,
+    /// plays loops while on screen (none without IntersectionObserver)
+    loops: Option<web_sys::IntersectionObserver>,
 }
 
 impl App {
     fn show(&self, route: &str, scroll_top: bool) -> Result<(), JsValue> {
         *self.route.borrow_mut() = route.to_string();
+        if let Some(io) = &self.loops {
+            io.disconnect();
+        }
         render_route(&self.doc, &self.main, &self.data, route)?;
+        if let Some(io) = &self.loops {
+            let videos = self.main.query_selector_all("video[data-loop]")?;
+            for i in 0..videos.length() {
+                if let Some(v) = videos.get(i).and_then(|n| n.dyn_into::<Element>().ok()) {
+                    io.observe(&v);
+                }
+            }
+        }
         mark_current(&self.doc, route);
         // replay the route's arrival
         let list = self.main.class_list();
@@ -483,6 +890,39 @@ impl App {
         self.layout.set(self.layout.get().wrapping_add(1));
         Ok(())
     }
+}
+
+/// An IntersectionObserver that plays each loop while it is on screen and
+/// pauses it otherwise; loops never play under prefers-reduced-motion (the
+/// poster shows).
+fn loop_observer() -> Option<web_sys::IntersectionObserver> {
+    let cb = Closure::<dyn FnMut(js_sys::Array)>::new(|entries: js_sys::Array| {
+        let still = web_sys::window()
+            .and_then(|w| w.match_media("(prefers-reduced-motion: reduce)").ok().flatten())
+            .map(|m| m.matches())
+            .unwrap_or(false);
+        for e in entries.iter() {
+            let Ok(e) = e.dyn_into::<web_sys::IntersectionObserverEntry>() else { continue };
+            let Ok(v) = e.target().dyn_into::<web_sys::HtmlVideoElement>() else { continue };
+            if e.is_intersecting() && !still {
+                v.set_muted(true);
+                let _ = v.set_attribute("preload", "auto");
+                if let Ok(p) = v.play() {
+                    // a refused play just leaves the poster
+                    let ignore = Closure::<dyn FnMut(JsValue)>::new(|_| {});
+                    let _ = p.catch(&ignore);
+                    ignore.forget();
+                }
+            } else if !v.paused() {
+                let _ = v.pause();
+            }
+        }
+    });
+    let opts = web_sys::IntersectionObserverInit::new();
+    opts.set_root_margin("120px 0px");
+    let io = web_sys::IntersectionObserver::new_with_options(cb.as_ref().unchecked_ref(), &opts).ok();
+    cb.forget();
+    io
 }
 
 #[wasm_bindgen(start)]
@@ -530,6 +970,7 @@ async fn run() -> Result<Rc<App>, JsValue> {
         data: loaded.content,
         route: RefCell::new(String::new()),
         layout: Cell::new(0),
+        loops: loop_observer(),
     });
     app.show(&loaded.route, false)?;
 
@@ -561,6 +1002,17 @@ async fn run() -> Result<Rc<App>, JsValue> {
         let a = app.clone();
         let cb = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |e: web_sys::MouseEvent| {
             let Some(t) = e.target().and_then(|t| t.dyn_into::<Element>().ok()) else { return };
+            if let Ok(Some(ext)) = t.closest("a[data-external]") {
+                // the sandbox can't open tabs: the parent does (http(s) only)
+                e.prevent_default();
+                let url = ext.get_attribute("data-external").unwrap_or_default();
+                if host_call("openExternal", &[url.as_str().into()]).is_none() {
+                    if let Some(w) = web_sys::window() {
+                        let _ = w.open_with_url_and_target_and_features(&url, "_blank", "noopener,noreferrer");
+                    }
+                }
+                return;
+            }
             let Ok(Some(link)) = t.closest("a[data-slug]") else { return };
             e.prevent_default();
             let slug = link.get_attribute("data-slug").unwrap_or_default();

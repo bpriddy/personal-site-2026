@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/bpriddy/personal-site-2026/internal/fetoken"
+	"github.com/bpriddy/personal-site-2026/internal/media"
 	webuc "github.com/bpriddy/personal-site-2026/web/usercontent"
 )
 
@@ -475,5 +476,50 @@ func TestDirSourceRejectsInvalidRef(t *testing.T) {
 			o.Body.Close()
 			t.Errorf("ref %q opened: %q", ref, b)
 		}
+	}
+}
+
+// /media/... is project media for front ends (v1.4): served by Options.Media,
+// with no token (it's public), and 404 when no media handler is configured.
+func TestMedia(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "projects", "a"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "projects", "a", "loop-1.mp4"), []byte("0123456789"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h, err := New(Options{SigningKey: testKey, MainOrigin: testOrigin, Source: NewDirSource(fixture(t)),
+		Media: media.New(media.Dir{Root: dir}, nil)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := do(h, "/media/projects/a/loop-1.mp4", map[string]string{"Range": "bytes=2-5"})
+	if w.Code != http.StatusPartialContent || w.Body.String() != "2345" {
+		t.Fatalf("range: %d %q", w.Code, w.Body)
+	}
+	for k, v := range map[string]string{
+		"Content-Type": "video/mp4", "Access-Control-Allow-Origin": "*", "Cross-Origin-Resource-Policy": "cross-origin",
+		"X-Content-Type-Options": "nosniff", "Cache-Control": "public, max-age=31536000, immutable",
+	} {
+		if got := w.Header().Get(k); got != v {
+			t.Errorf("%s = %q, want %q", k, got, v)
+		}
+	}
+	for _, p := range []string{"/media/projects/a/missing.mp4", "/media/projects/../../secret.txt", "/media/projects/a/.x.mp4", "/media/x.txt"} {
+		if w := do(h, p, nil); w.Code != http.StatusNotFound || strings.Contains(w.Body.String(), secret) {
+			t.Errorf("%s: %d", p, w.Code)
+		}
+	}
+	r := httptest.NewRequest(http.MethodPost, "/media/projects/a/loop-1.mp4", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, r)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("POST: %d", rec.Code)
+	}
+	// without a media handler, nothing is served
+	h2, _ := newHandler(t)
+	if w := do(h2, "/media/projects/a/loop-1.mp4", nil); w.Code != http.StatusNotFound {
+		t.Errorf("no media handler: %d", w.Code)
 	}
 }

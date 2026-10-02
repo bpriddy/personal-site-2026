@@ -49,11 +49,19 @@
   // field as a string, every collection as an array of objects, and items
   // tagged with _collection so site.field can report gaps against them.
 
-  // declared fields per collection; the first is the item key (slug)
+  // declared text fields per collection; the first is the item key (slug)
   var DECLARED = {
     pages: ["slug", "title", "body"],
-    experiments: ["slug", "title", "summary"]
+    experiments: ["slug", "title", "summary", "link"],
+    projects: ["slug", "title", "client", "agency", "year", "summary", "contribution", "body", "link", "youtube"]
   };
+  // list-of-text fields (v1.4): always arrays of strings
+  var LISTS = { projects: ["tags", "roles", "palette"] };
+  // media lists (v1.4): always arrays of {kind, src, poster, width, height, alt}
+  var MEDIA = { experiments: ["media"], projects: ["media"] };
+  // a media path on this origin; never another host (the CSP would block it,
+  // and front ends must not hotlink)
+  var MEDIA_PATH = /^\/media\/[A-Za-z0-9][A-Za-z0-9._\/-]*$/;
   var EXPECT_ALIASES = { text: "text", string: "text", list: "list", array: "list", number: "number", bool: "bool", "boolean": "bool" };
   var MAX_GAP_REPORTS = 50; // per page load, after deduplication
   var gapsSent = {};
@@ -114,6 +122,30 @@
       }
       item[f] = "";
     }
+    var lists = LISTS[collection] || [];
+    for (var l = 0; l < lists.length; l++) {
+      var lv = item[lists[l]];
+      var out = [];
+      if (Array.isArray(lv)) {
+        for (var li = 0; li < lv.length; li++) {
+          var s = own(lv, li);
+          if (typeof s === "string" && s.trim() !== "") out.push(s);
+        }
+      } else if (lv !== undefined && lv !== null) {
+        coerced = coerced || {};
+        coerced[lists[l]] = typeName(lv);
+      }
+      item[lists[l]] = out;
+    }
+    var media = MEDIA[collection] || [];
+    for (var m = 0; m < media.length; m++) {
+      var mv = item[media[m]];
+      if (mv !== undefined && mv !== null && !Array.isArray(mv)) {
+        coerced = coerced || {};
+        coerced[media[m]] = typeName(mv);
+      }
+      item[media[m]] = normalizeMedia(mv);
+    }
     var gen = item._generated;
     var list = [];
     if (Array.isArray(gen)) {
@@ -123,6 +155,51 @@
     item._collection = collection;
     if (coerced && coercedTypes) coercedTypes.set(item, coerced);
     return item;
+  }
+
+  function mediaPath(v) {
+    return typeof v === "string" && v.length <= 300 && MEDIA_PATH.test(v) && v.indexOf("..") < 0 && v.indexOf("//") < 0;
+  }
+
+  function dimension(v) {
+    return typeof v === "number" && isFinite(v) && v > 0 ? Math.round(v) : 0;
+  }
+
+  // normalizeMedia: only items a front end can show safely: an object with a
+  // kind string and a same-origin /media/ src; every key present.
+  function normalizeMedia(list) {
+    var out = [];
+    if (!Array.isArray(list)) return out;
+    for (var i = 0; i < list.length; i++) {
+      var raw = own(list, i);
+      if (!isObject(raw)) continue;
+      var kind = own(raw, "kind");
+      var src = own(raw, "src");
+      if (typeof kind !== "string" || kind === "" || !mediaPath(src)) continue;
+      var poster = own(raw, "poster");
+      var alt = own(raw, "alt");
+      out.push({
+        kind: kind,
+        src: src,
+        poster: mediaPath(poster) ? poster : "",
+        width: dimension(own(raw, "width")),
+        height: dimension(own(raw, "height")),
+        alt: typeof alt === "string" ? alt : ""
+      });
+    }
+    return out;
+  }
+
+  // safeURL: an absolute http(s) URL as a string, or "".
+  function safeURL(v) {
+    if (typeof v !== "string" || v.length > 2000) return "";
+    try {
+      var u = new URL(v);
+      if (u.protocol !== "http:" && u.protocol !== "https:") return "";
+      return u.href;
+    } catch (e) {
+      return "";
+    }
   }
 
   // normalize: the contract shape from any value. Unknown top-level keys and
@@ -244,6 +321,36 @@
 
     pages: function () { return collection("pages"); },
     experiments: function () { return collection("experiments"); },
+    projects: function () { return collection("projects"); },
+
+    // collection: site.content[name] if it is an array, else []. Never throws.
+    collection: function (name) {
+      try { return collection(String(name)); } catch (e) { return []; }
+    },
+
+    // project: the published project with this slug, or {}.
+    project: function (slug) {
+      try {
+        var want = slug == null ? "" : String(slug);
+        var list = collection("projects");
+        for (var i = 0; i < list.length; i++) {
+          if (list[i] && list[i].slug === want) return list[i];
+        }
+      } catch (e) { /* fall through */ }
+      return {};
+    },
+
+    // openExternal: ask the parent to open an http(s) URL in a new tab (the
+    // sandbox can't open popups or navigate the top window). Returns whether
+    // the request was sent; anything but http(s) is refused. Call it from a
+    // click handler: the parent can only open a tab right after a user
+    // gesture.
+    openExternal: function (url) {
+      var href = safeURL(url);
+      if (!href) return false;
+      post({ type: "site:open", url: href });
+      return true;
+    },
 
     // page: the page with this slug ("" or no argument: home), or {}.
     page: function (slug) {
@@ -278,6 +385,8 @@
           }
         }
       } catch (e) { /* defaults */ }
+      var optional = false;
+      try { optional = !!(opts && typeof opts === "object" && own(opts, "optional") === true); } catch (e) { /* not optional */ }
       if (!hasFallback) fallback = defaultFallback(expect);
       try {
         name = typeof name === "string" ? name : safeString(name);
@@ -289,7 +398,9 @@
           var orig = coercedTypes.get(item);
           if (orig && orig[name]) got = orig[name]; // normalization defaulted a wrong type
         }
-        reportGap(item, name, expect, got);
+        // optional: empty is a legitimate value (no link, no video), not a
+        // gap; type breaks are still reported
+        if (!(optional && (got === "empty" || got === "missing"))) reportGap(item, name, expect, got);
         return r[0] !== undefined ? r[0] : fallback;
       } catch (e) {
         return fallback;
@@ -383,7 +494,7 @@
       } catch (e) {
         // never leave front ends without the shape; not a site:error, which
         // before ready would make the parent fall back over bad content
-        site.content = { contractVersion: 1, pages: [], experiments: [] };
+        site.content = { contractVersion: 1, pages: [], experiments: [], projects: [] };
         try { console.warn("site-host: content normalization failed:", e); } catch (e2) { /* no console */ }
       }
       site.route = typeof m.route === "string" ? m.route : "";

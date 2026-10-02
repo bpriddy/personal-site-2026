@@ -52,7 +52,7 @@ var (
 
 // Collections front ends may report on, and the expectations site.field accepts.
 var (
-	collections = map[string]bool{"pages": true, "experiments": true}
+	collections = map[string]bool{"pages": true, "experiments": true, "projects": true}
 	expects     = map[string]bool{"text": true, "list": true, "number": true, "bool": true}
 	// fields a front end can't ask the observer to generate
 	reservedFields = map[string]bool{"slug": true, "published": true, "order": true, "contractVersion": true}

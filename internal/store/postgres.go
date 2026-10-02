@@ -81,34 +81,35 @@ func (p *Postgres) SavePage(ctx context.Context, pg content.Page) error {
 func (p *Postgres) Experiment(ctx context.Context, slug string) (content.Experiment, error) {
 	var e content.Experiment
 	err := p.pool.QueryRow(ctx, `
-		SELECT slug, title, summary, published, sort_order, updated_at
+		SELECT slug, title, summary, link, media, published, sort_order, updated_at
 		FROM experiments WHERE slug = $1`, slug).
-		Scan(&e.Slug, &e.Title, &e.Summary, &e.Published, &e.Order, &e.UpdatedAt)
+		Scan(&e.Slug, &e.Title, &e.Summary, &e.Link, &e.Media, &e.Published, &e.Order, &e.UpdatedAt)
 	return e, notFound(err)
 }
 
 func (p *Postgres) Experiments(ctx context.Context) ([]content.Experiment, error) {
 	rows, err := p.pool.Query(ctx, `
-		SELECT slug, title, summary, published, sort_order, updated_at
+		SELECT slug, title, summary, link, media, published, sort_order, updated_at
 		FROM experiments ORDER BY sort_order, slug`)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (content.Experiment, error) {
 		var e content.Experiment
-		err := r.Scan(&e.Slug, &e.Title, &e.Summary, &e.Published, &e.Order, &e.UpdatedAt)
+		err := r.Scan(&e.Slug, &e.Title, &e.Summary, &e.Link, &e.Media, &e.Published, &e.Order, &e.UpdatedAt)
 		return e, err
 	})
 }
 
 func (p *Postgres) SaveExperiment(ctx context.Context, e content.Experiment) error {
 	_, err := p.pool.Exec(ctx, `
-		INSERT INTO experiments (slug, title, summary, published, sort_order, updated_at)
-		VALUES ($1, $2, $3, $4, $5, now())
+		INSERT INTO experiments (slug, title, summary, link, media, published, sort_order, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, now())
 		ON CONFLICT (slug) DO UPDATE
-		SET title = excluded.title, summary = excluded.summary, published = excluded.published,
+		SET title = excluded.title, summary = excluded.summary, link = excluded.link,
+		    media = excluded.media, published = excluded.published,
 		    sort_order = excluded.sort_order, updated_at = now()`,
-		e.Slug, e.Title, e.Summary, e.Published, e.Order)
+		e.Slug, e.Title, e.Summary, e.Link, mediaList(e.Media), e.Published, e.Order)
 	return err
 }
 

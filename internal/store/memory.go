@@ -17,8 +17,9 @@ type Memory struct {
 	pages       map[string]content.Page
 	experiments map[string]content.Experiment
 	frontends   map[string]content.Frontend
-	builder     memBuilder  // builder_memory.go
-	visitors    memVisitors // visitor_memory.go
+	builder     memBuilder                 // builder_memory.go
+	visitors    memVisitors                // visitor_memory.go
+	projects    map[string]content.Project // projects_memory.go
 }
 
 func NewMemory() *Memory {
@@ -79,6 +80,7 @@ func (m *Memory) Experiment(_ context.Context, slug string) (content.Experiment,
 	if !ok {
 		return content.Experiment{}, ErrNotFound
 	}
+	e.Media = mediaList(e.Media)
 	return e, nil
 }
 
@@ -87,6 +89,7 @@ func (m *Memory) Experiments(_ context.Context) ([]content.Experiment, error) {
 	defer m.mu.RUnlock()
 	out := make([]content.Experiment, 0, len(m.experiments))
 	for _, e := range m.experiments {
+		e.Media = mediaList(e.Media)
 		out = append(out, e)
 	}
 	slices.SortFunc(out, func(a, b content.Experiment) int {
@@ -102,6 +105,7 @@ func (m *Memory) SaveExperiment(_ context.Context, e content.Experiment) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	e.UpdatedAt = time.Now()
+	e.Media = mediaList(e.Media)
 	m.experiments[e.Slug] = e
 	return nil
 }

@@ -1,0 +1,46 @@
+{
+  "source": "e2e fixture (tests/work.spec.ts); media in fixtures/media (MEDIA_DIR)",
+  "projects": [
+    {
+      "slug": "e2e-work",
+      "title": "E2E Work",
+      "client": "Test Client",
+      "agency": "Test Agency",
+      "year": "2020",
+      "tags": ["Experiential", "Test"],
+      "roles": ["Creative Director"],
+      "summary": "A project imported by the end-to-end tests.\n\nIts second paragraph.",
+      "contribution": "I wrote the tests.",
+      "body": "",
+      "link": "https://example.com/e2e-work",
+      "palette": ["#001d48", "#1a7aba"],
+      "youtube": "e6PKBbvRYV0",
+      "media": [
+        { "kind": "image", "src": "/media/projects/e2e-work/hero.jpg", "width": 160, "height": 90 },
+        { "kind": "loop", "src": "/media/projects/e2e-work/loop-1.mp4", "poster": "/media/projects/e2e-work/loop-1.jpg", "width": 160, "height": 40 }
+      ],
+      "order": 0,
+      "published": true
+    },
+    {
+      "slug": "e2e-second",
+      "title": "E2E Second",
+      "client": "Other Client",
+      "year": "2021",
+      "summary": "The second project, so there is a next one.",
+      "media": [
+        { "kind": "loop", "src": "/media/projects/e2e-work/loop-1.mp4", "poster": "/media/projects/e2e-work/loop-1.jpg", "width": 160, "height": 40 }
+      ],
+      "order": 1,
+      "published": true
+    },
+    {
+      "slug": "e2e-draft",
+      "title": "E2E Draft",
+      "summary": "Not published.",
+      "order": 100,
+      "published": false
+    }
+  ],
+  "experiments": []
+}

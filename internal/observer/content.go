@@ -39,6 +39,14 @@ func experimentItem(e content.Experiment) item {
 		names: []string{"title", "summary"}, fields: map[string]string{"title": e.Title, "summary": e.Summary}}
 }
 
+// projectItem: a project's own generatable text. Its factual fields (client,
+// year, link, ...; contract.Factual) aren't the observer's to fill, so they
+// aren't part of the item: a gap on one goes to review.
+func projectItem(p content.Project) item {
+	return item{collection: "projects", slug: p.Slug, published: p.Published,
+		names: []string{"title", "summary"}, fields: map[string]string{"title": p.Title, "summary": p.Summary}}
+}
+
 // loadItem returns a published item; errNoItem if it is absent or unpublished
 // (front ends only ever see published content).
 func (o *Observer) loadItem(ctx context.Context, collection, slug string) (item, error) {
@@ -56,6 +64,16 @@ func (o *Observer) loadItem(ctx context.Context, collection, slug string) (item,
 			return it, notFoundAs(err)
 		}
 		it = experimentItem(e)
+	case "projects":
+		ps := store.ProjectsOf(o.content)
+		if ps == nil {
+			return it, errNoItem
+		}
+		p, err := ps.Project(ctx, slug)
+		if err != nil {
+			return it, notFoundAs(err)
+		}
+		it = projectItem(p)
 	default:
 		return it, errNoItem
 	}
@@ -88,6 +106,15 @@ func (o *Observer) allItems(ctx context.Context) (map[[2]string]item, error) {
 	}
 	for _, e := range exps {
 		out[[2]string{"experiments", e.Slug}] = experimentItem(e)
+	}
+	if ps := store.ProjectsOf(o.content); ps != nil {
+		projects, err := ps.Projects(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, p := range projects {
+			out[[2]string{"projects", p.Slug}] = projectItem(p)
+		}
 	}
 	return out, nil
 }

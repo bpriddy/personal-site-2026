@@ -19,6 +19,8 @@ type Experiment struct {
 	Slug      string
 	Title     string
 	Summary   string
+	Link      string  // where the piece lives (http(s)), or ""
+	Media     []Media // stills and loops (migration 0005)
 	Published bool
 	Order     int
 	UpdatedAt time.Time

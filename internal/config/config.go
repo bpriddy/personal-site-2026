@@ -21,7 +21,8 @@ type Config struct {
 	MainOrigin        string // MAIN_ORIGIN — the main site, e.g. https://benpriddy.com
 	UsercontentOrigin string // USERCONTENT_ORIGIN — e.g. https://benpriddy-usercontent.com
 	FrontendsDir      string // FRONTENDS_DIR — local front-end files: <dir>/<ref>/index.html
-	FrontendsBucket   string // FRONTENDS_BUCKET — GCS bucket for revision files; empty = FRONTENDS_DIR
+	FrontendsBucket   string // FRONTENDS_BUCKET — GCS bucket for revision files (rev/...) and media (media/...); empty = local dirs
+	MediaDir          string // MEDIA_DIR — local media files when FRONTENDS_BUCKET is unset: <dir>/projects/<slug>/hero.jpg
 }
 
 // Role says which binary is loading config; each requires only its own secrets
@@ -48,6 +49,7 @@ func Load(role Role) (Config, error) {
 		UsercontentOrigin: env("USERCONTENT_ORIGIN", "http://127.0.0.1:8091"),
 		FrontendsDir:      env("FRONTENDS_DIR", "build/frontends"),
 		FrontendsBucket:   os.Getenv("FRONTENDS_BUCKET"),
+		MediaDir:          env("MEDIA_DIR", "build/media"),
 	}
 	if len(c.SigningKey) == 0 {
 		if c.Env == "prod" {

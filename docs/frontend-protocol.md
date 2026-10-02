@@ -494,3 +494,124 @@ modal and the admin builder.
 - **`/?shuffle`**: the parent passes `shuffle=1` to `/api/frontend` once per
   page load. That picks a different front end from the rotation when there is
   one, then removes `shuffle` from the address bar.
+
+---
+
+# v1.4 (2026-10-01): projects, media, links out
+
+Ben's work (client projects, imported from the 2019–2022 site) joins the
+content, with stills and silent loops. Everything is additive to v1.
+
+## Content contract
+
+- New collection **`projects`** (published only, by `order` then slug),
+  keyed by slug. Every field is always sent: text fields `slug`, `title`,
+  `client`, `agency`, `year`, `summary`, `contribution`, `body`, `link`,
+  `youtube` (`""` by default); lists `tags`, `roles`, `palette` (`[]`);
+  `media` (`[]`); `_generated`.
+- **Experiments** gain `link` and `media` (always sent).
+- A **media item** is `{kind, src, poster, width, height, alt}`, every key
+  always present. `kind` is `"image"` or `"loop"` (an MP4 to play muted,
+  looping and inline, with a still `poster`). `src` and `poster` are paths
+  under `/media/` (never another host); `width`/`height` are pixels (`0` if
+  unknown).
+- The server only serves safe values: `link` is an absolute http(s) URL or
+  `""`, `youtube` an 11-character id or `""`, palette colours `#rrggbb`
+  (lowercase), media under `/media/` with a known file type.
+- **Factual fields are never generated** (`contract.Factual`): experiments'
+  `link`; projects' `client`, `agency`, `year`, `contribution`, `body`,
+  `link`, `youtube`, and every list and media field. A gap on one goes to
+  review in the observer instead of generation.
+- `docs/content-contract.json` describes it; the v1 snapshot is unchanged and
+  the compatibility gate passes (all additions are optional in the schema).
+
+## Routes
+
+| Route | |
+|---|---|
+| `work` | the index of published projects (transcript `/work`, `/work/`) |
+| `work/<slug>` | one project (`/work/<slug>`); unpublished or unknown → 404 |
+
+`publicNav` adds **Work** (after the pages, before Experiments) when any
+project is published. The home page features the first six projects
+("Selected work") after the bio.
+
+## Media: `GET/HEAD /media/<name>` (both services)
+
+- Source: the Cloud Storage objects `media/<name>` in `FRONTENDS_BUCKET`
+  when it is set, else the file `<MEDIA_DIR>/<name>` (`MEDIA_DIR`, dev
+  default `build/media`). Project files are laid out as
+  `media/projects/<slug>/{hero.jpg, loop-N.mp4, loop-N.jpg}`.
+- Names: 1–8 segments of `[A-Za-z0-9._-]` not starting with a dot, at most
+  200 bytes, extension `.mp4 .webm .jpg .jpeg .png .gif .webp`; anything
+  else is a 404 (`content.MediaName`).
+- Response headers: the right `Content-Type`, `Cache-Control: public,
+  max-age=31536000, immutable` (never reuse a file name), `Access-Control-
+  Allow-Origin: *`, `Cross-Origin-Resource-Policy: cross-origin`,
+  `X-Content-Type-Options: nosniff`; `Range`, `If-Modified-Since` and `HEAD`
+  through `http.ServeContent`. A 404 is cached for 60 s. Files over 32 MB
+  are refused.
+- The user-content service serves the same paths, so a front end's media is
+  same-origin (`img-src`/`media-src 'self'`).
+- Main-site CSP: adds `media-src 'self'`, and `frame-src` adds
+  `https://www.youtube-nocookie.com` (the transcript's film embed only).
+
+## Host API additions (`site-host.js`)
+
+| Member | |
+|---|---|
+| `site.projects()`, `site.project(slug)` | always an array, or an object (`{}` if not found) |
+| `site.collection(name)` | any collection by name; always an array |
+| `site.openExternal(url)` | posts `site:open {url}` for an absolute http(s) URL; returns whether it was sent (`javascript:`, `data:`, relative URLs are refused) |
+| `site.field(item, name, {optional: true})` | an empty or missing value returns the fallback **without** a gap report (type breaks are still reported). For legitimately empty fields: a link, a film, an agency. |
+
+Normalization (the second net): project lists are always arrays of
+non-blank strings; media lists keep only objects with a `kind` string and a
+same-origin `/media/...` `src` (no `..`, no `//`), with every key present.
+
+## Messages additions
+
+| Direction | type | fields |
+|---|---|---|
+| iframe → parent | `site:open` | `url` |
+
+The parent (`frontend-host.js`, and the admin preview) opens only http(s)
+URLs, with `window.open(url, "_blank", "noopener,noreferrer")`, at most one
+per second. A sandboxed iframe can't open popups or navigate the top window
+itself; the click's user activation reaches the parent, so the popup blocker
+lets it through.
+
+## Transcript
+
+- `/work`: numbered hairline rows (index, serif title, `CLIENT · YEAR`, the
+  first loop as a 4:1 strip that plays on hover, or while on screen on touch
+  screens).
+- `/work/<slug>`: title, meta row (client, agency, year, roles, tags,
+  palette), hero still, brief/role/notes, links out, loops, the film
+  (`youtube-nocookie` iframe, `loading="lazy"`), next project.
+- Loops are `<video muted loop playsinline preload="none" poster>` without
+  `autoplay`: `web/static/media.js` plays them only while on screen, while
+  the transcript is the visible site (never under `fe-loading`/`fe-live`),
+  and never under `prefers-reduced-motion`. Without JavaScript they are their
+  posters. Images below the fold use `loading="lazy"`.
+
+## Admin
+
+- **Projects** on `/admin/`: order, thumbnail, slug, title, client, year,
+  media count, a Publish/Unpublish toggle; `/admin/projects/<slug>` edits
+  every text field (tags, roles, palette as comma lists); media is shown
+  read-only. A new slug starts a new project.
+- **Import**: `POST /admin/import/projects` (basic auth, cross-origin
+  protected, `Content-Type: application/json`, ≤ 4 MB) with
+  `{projects: [...], experiments: [...]}` (the old site's normalized
+  export). All or nothing: any invalid item rejects the file (400 with
+  `problems`). Projects are upserted whole; an existing experiment gets only
+  `link` and `media`, a new one is created (published unless `"published":
+  false`). Items equal to their import are left alone, so re-importing
+  changes nothing. Pages are never touched. Response:
+  `{"projects": {"created": [], "updated": [], "unchanged": []}, "experiments": {...}}`.
+
+## Migrations
+
+- `0005_projects.sql`: the `projects` table; `experiments.link`,
+  `experiments.media`.

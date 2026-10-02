@@ -34,6 +34,8 @@ export APP_ENV=dev
 # the public builder runs offline: a canned model instead of Claude (dev only)
 export BUILDER_DEMO_MODEL=1
 export FRONTENDS_DIR="${FRONTENDS_DIR:-$ROOT/build/frontends}"
+# project media for tests/work.spec.ts (tiny generated fixtures; real media never lives in git)
+export MEDIA_DIR="$E2E_DIR/fixtures/media"
 export MAIN_ORIGIN="http://localhost:$MAIN_PORT"
 export USERCONTENT_ORIGIN="http://127.0.0.1:$UC_PORT"
 export E2E_MAIN_ORIGIN="$MAIN_ORIGIN" E2E_USERCONTENT_ORIGIN="$USERCONTENT_ORIGIN"

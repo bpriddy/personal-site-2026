@@ -23,7 +23,17 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, "experiments", err)
 		return
 	}
-	s.renderPublic(w, r, "home.html", http.StatusOK, map[string]any{"Page": page, "Experiments": exps})
+	projects, err := s.publishedProjects(r.Context())
+	if err != nil {
+		s.fail(w, "projects", err)
+		return
+	}
+	data := map[string]any{"Page": page, "Experiments": exps, "WorkCount": len(projects)}
+	if len(projects) > selectedWork {
+		projects = projects[:selectedWork]
+	}
+	data["Work"] = projects
+	s.renderPublic(w, r, "home.html", http.StatusOK, data)
 }
 
 func (s *Server) page(w http.ResponseWriter, r *http.Request) {
@@ -91,13 +101,14 @@ type navItem struct {
 }
 
 // publicNav lists the published pages (home first) and, when any are
-// published, the experiments, numbered 01, 02, ... like the default front
+// published, the work and the experiments, numbered 01, 02, ... like the default front
 // end's nav. Errors just leave the nav out: it never breaks a page.
 func (s *Server) publicNav(r *http.Request) []navItem {
 	var out []navItem
 	route := strings.Trim(r.URL.Path, "/")
 	add := func(href, label, slug string) {
-		out = append(out, navItem{Href: href, Label: label, Index: fmt.Sprintf("%02d", len(out)+1), Current: route == slug})
+		current := route == slug || (slug != "" && strings.HasPrefix(route, slug+"/"))
+		out = append(out, navItem{Href: href, Label: label, Index: fmt.Sprintf("%02d", len(out)+1), Current: current})
 	}
 	if pages, err := s.store.Pages(r.Context()); err == nil {
 		for _, p := range pages {
@@ -112,6 +123,9 @@ func (s *Server) publicNav(r *http.Request) []navItem {
 			}
 			add("/"+p.Slug, label, p.Slug)
 		}
+	}
+	if projects, err := s.publishedProjects(r.Context()); err == nil && len(projects) > 0 {
+		add("/work/", "Work", "work")
 	}
 	if exps, err := s.publishedExperiments(r); err == nil && len(exps) > 0 {
 		add("/experiments/", "Experiments", "experiments")

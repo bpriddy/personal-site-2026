@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bpriddy/personal-site-2026/internal/contract"
 	"github.com/bpriddy/personal-site-2026/internal/frontend"
 	"github.com/bpriddy/personal-site-2026/internal/store"
 )
@@ -62,6 +63,14 @@ func (o *Observer) heal(ctx context.Context, id int64, force bool) error {
 		return set(store.StatusNeedsReview, store.Action{Type: "review",
 			Summary: fmt.Sprintf("%s expects %s of %s to be %s, but your value is text; fixing it would overwrite your content",
 				d.Frontend, d.Field, it.label(), d.Expect)})
+	}
+
+	// Facts (a client, a year, a link, a video, lists, media) are never
+	// invented: the contract wouldn't serve them anyway (contract.Factual).
+	if contract.Factual(d.Collection, d.Field) {
+		return set(store.StatusNeedsReview, store.Action{Type: "review",
+			Summary: fmt.Sprintf("%s wants %s of %s, which is empty; it's a fact, so it isn't generated: fill it in, or dismiss this if it's empty on purpose",
+				d.Frontend, d.Field, it.label())})
 	}
 
 	// The contract merges generated values as strings, so only text can be

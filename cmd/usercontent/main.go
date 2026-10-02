@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/bpriddy/personal-site-2026/internal/config"
+	"github.com/bpriddy/personal-site-2026/internal/media"
 	"github.com/bpriddy/personal-site-2026/internal/usercontent"
 )
 
@@ -40,11 +41,19 @@ func main() {
 		log.Info("revisions: cloud storage", "bucket", cfg.FrontendsBucket)
 	}
 
+	// media (/media/...): FRONTENDS_BUCKET objects media/..., else MEDIA_DIR
+	mediaSrc, err := media.FromEnv(context.Background(), cfg.FrontendsBucket, cfg.MediaDir)
+	if err != nil {
+		log.Error("media", "err", err)
+		os.Exit(1)
+	}
+
 	h, err := usercontent.New(usercontent.Options{
 		SigningKey: cfg.SigningKey,
 		MainOrigin: cfg.MainOrigin,
 		Source:     src,
 		Log:        log,
+		Media:      media.New(mediaSrc, log),
 	})
 	if err != nil {
 		log.Error("usercontent", "err", err)

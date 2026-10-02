@@ -11,6 +11,13 @@
   <div class="bio-text">{{template "prose" $.Page.Body}}</div>
 </section>
 {{end}}
+{{if .Work}}
+<section class="index work-index" aria-labelledby="work-h">
+  <h2 class="label" id="work-h">( Selected work <span aria-hidden="true">&mdash;</span> {{two .WorkCount}} )</h2>
+  {{template "work-list" .Work}}
+  <p class="index-more"><a class="label" href="/work/">( All work )</a></p>
+</section>
+{{end}}
 {{if .Experiments}}
 <section class="index" aria-labelledby="exp-h">
   <h2 class="label" id="exp-h">( Experiments <span aria-hidden="true">&mdash;</span> {{two (len .Experiments)}} )</h2>

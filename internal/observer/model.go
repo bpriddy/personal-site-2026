@@ -87,6 +87,8 @@ func singular(collection string) string {
 		return "page"
 	case "experiments":
 		return "experiment (an interactive web piece)"
+	case "projects":
+		return "project (a piece of client work Ben made)"
 	}
 	return "item"
 }

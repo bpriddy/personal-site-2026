@@ -237,6 +237,24 @@
     setMode(null);
   }
 
+
+  // openExternal handles site:open (v1.4): the sandboxed front end can't open
+  // tabs itself, so the parent opens http(s) URLs, and nothing else, in a new
+  // tab without an opener or referrer. At most one per second; the browser's
+  // popup blocker still requires a recent click in the front end.
+  var lastOpen = 0;
+  function openExternal(url) {
+    if (typeof url !== "string" || url.length > 2000) return false;
+    var u;
+    try { u = new URL(url); } catch (e) { return false; }
+    if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+    var now = Date.now();
+    if (now - lastOpen < 1000) return false;
+    lastOpen = now;
+    try { window.open(u.href, "_blank", "noopener,noreferrer"); } catch (e) { return false; }
+    return true;
+  }
+
   window.addEventListener("message", function (ev) {
     if (!iframe || ev.source !== iframe.contentWindow) return;
     var m = ev.data;
@@ -258,6 +276,9 @@
         break;
       case "site:navigate":
         navigate(m.slug, true);
+        break;
+      case "site:open":
+        openExternal(m.url);
         break;
       case "site:error":
         if (window.console) console.warn("front end error (" + m.kind + "): " + m.message);

@@ -27,6 +27,28 @@
     </tr>{{end}}
   </table>
 </section>
+<section id="projects">
+  <h2>Projects</h2>
+  <p class="muted">Client work at <code>/work/&lt;slug&gt;</code>, in order (lowest first). Import the media and fields with <code>POST /admin/import/projects</code>; edit the text here.</p>
+  <table>
+    <tr><th class="num">Order</th><th></th><th>Slug</th><th>Title</th><th>Client</th><th>Year</th><th class="num">Media</th><th>Published</th></tr>
+    {{range .Projects}}<tr>
+      <td class="num"><code>{{.Order}}</code></td>
+      <td>{{with thumbOf .Media}}<img class="thumb" src="{{.}}" alt="" width="64" height="40" loading="lazy">{{end}}</td>
+      <td><a href="/admin/projects/{{.Slug}}"><code>{{.Slug}}</code></a></td>
+      <td>{{.Title}}</td><td>{{.Client}}</td><td><code>{{.Year}}</code></td>
+      <td class="num"><code>{{len .Media}}</code></td>
+      <td><form method="post" action="/admin/projects/{{.Slug}}/publish" class="toggle">
+        {{if .Published}}<input type="hidden" name="published" value="0"><span>yes</span> <button>Unpublish</button>
+        {{else}}<input type="hidden" name="published" value="1"><span class="muted">no</span> <button>Publish</button>{{end}}
+      </form></td>
+    </tr>{{else}}<tr><td colspan="8" class="muted">No projects yet.</td></tr>{{end}}
+  </table>
+  <form method="get" action="/admin/projects/" class="inline" id="new-project">
+    <input name="slug" placeholder="new-project-slug" required pattern="[a-z0-9][a-z0-9-]*" aria-label="New project slug">
+    <button>New project</button>
+  </form>
+</section>
 <section>
   <h2>Front ends</h2>
   {{if .RotationOverridden}}<p class="notice"><strong>FRONTEND_ROTATION is set:</strong> it overrides the rotation below.</p>{{end}}

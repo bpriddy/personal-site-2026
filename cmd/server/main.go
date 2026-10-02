@@ -17,6 +17,7 @@ import (
 	"github.com/bpriddy/personal-site-2026/internal/builder"
 	"github.com/bpriddy/personal-site-2026/internal/config"
 	"github.com/bpriddy/personal-site-2026/internal/llm"
+	"github.com/bpriddy/personal-site-2026/internal/media"
 	"github.com/bpriddy/personal-site-2026/internal/observer"
 	"github.com/bpriddy/personal-site-2026/internal/revfiles"
 	"github.com/bpriddy/personal-site-2026/internal/server"
@@ -92,8 +93,15 @@ func main() {
 	obs := newObserver(cfg, st, obsStore, log)
 	obs.Start(ctx)
 
+	// media (/media/...): FRONTENDS_BUCKET objects media/..., else MEDIA_DIR
+	mediaSrc, err := media.FromEnv(context.Background(), cfg.FrontendsBucket, cfg.MediaDir)
+	if err != nil {
+		log.Error("media", "err", err)
+		os.Exit(1)
+	}
+
 	srv, err := server.New(cfg, st, log, server.WithObserver(obs), server.WithBuilder(agent, files),
-		server.WithBuildLimits(limits))
+		server.WithBuildLimits(limits), server.WithMedia(mediaSrc))
 	if err != nil {
 		log.Error("server", "err", err)
 		os.Exit(1)

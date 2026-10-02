@@ -60,6 +60,22 @@ func (o *Observer) saveHuman(ctx context.Context, collection, slug, field, value
 			e.Summary = value
 		}
 		return o.content.SaveExperiment(ctx, e)
+	case "projects":
+		ps := store.ProjectsOf(o.content)
+		if ps == nil {
+			return actionErr("unknown collection")
+		}
+		p, err := ps.Project(ctx, slug)
+		if err != nil {
+			return err
+		}
+		switch field {
+		case "title":
+			p.Title = value
+		case "summary":
+			p.Summary = value
+		}
+		return ps.SaveProject(ctx, p)
 	}
 	return actionErr("unknown collection")
 }

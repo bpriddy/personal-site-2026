@@ -134,3 +134,19 @@ body.admin * { transition-duration: var(--d-1) !important; }
 .admin .action { color: var(--fg); }
 .admin .actions { display: flex; flex-wrap: wrap; gap: var(--s-2); align-items: end; margin-top: var(--s-3); }
 .admin .actions .inline { flex: 1 1 18rem; }
+
+/* projects: thumbnails, the publish toggle, the media list (read-only) */
+.admin th.num, .admin td.num { text-align: right; padding-right: var(--s-4); }
+.admin img.thumb { display: block; width: 64px; height: 40px; object-fit: cover; border-radius: var(--r-1); background: var(--bg-raised); }
+.admin form.toggle { display: flex; align-items: center; gap: var(--s-3); }
+.admin form.toggle button { min-height: 28px; padding: 0 var(--s-3); }
+.admin .cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-5); }
+@media (max-width: 599px) { .admin .cols { grid-template-columns: 1fr; } }
+.admin .swatches { display: flex; gap: var(--s-1); margin: calc(var(--s-3) * -1) 0 0; }
+.admin .swatches span { width: 24px; height: 24px; border-radius: var(--r-1); border: 1px solid var(--rule); }
+.admin .media-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--s-5); }
+.admin .media-grid li { display: grid; gap: var(--s-1); align-content: start; }
+.admin .media-grid img, .admin .media-grid video {
+  width: 100%; height: auto; aspect-ratio: 16 / 10; object-fit: cover; border-radius: var(--r-1); background: var(--bg-raised);
+}
+.admin .media-grid code { overflow-wrap: anywhere; font-size: .75rem; }

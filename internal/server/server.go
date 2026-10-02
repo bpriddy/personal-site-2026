@@ -15,7 +15,10 @@ import (
 
 	"github.com/bpriddy/personal-site-2026/internal/auth"
 	"github.com/bpriddy/personal-site-2026/internal/config"
+	"github.com/bpriddy/personal-site-2026/internal/content"
+	"github.com/bpriddy/personal-site-2026/internal/contract"
 	"github.com/bpriddy/personal-site-2026/internal/frontend"
+	"github.com/bpriddy/personal-site-2026/internal/media"
 	"github.com/bpriddy/personal-site-2026/internal/store"
 	"github.com/bpriddy/personal-site-2026/web"
 )
@@ -40,6 +43,16 @@ type Server struct {
 	// the public builder (build.go)
 	limits     BuildLimits   // build_limits.go; WithBuildLimits
 	newLimiter windowLimiter // POST /build/new per client IP
+
+	media media.Source // /media/...; WithMedia, default MEDIA_DIR
+}
+
+// WithMedia sets where /media/... comes from (default: the MEDIA_DIR directory).
+func WithMedia(src media.Source) Option {
+	return func(s *Server) error {
+		s.media = src
+		return nil
+	}
 }
 
 // An Option configures optional subsystems (builder, observer) at New.
@@ -99,6 +112,11 @@ func (s *Server) routes() {
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		fonts.ServeHTTP(w, r)
 	}))
+	// project and experiment media, for the transcript (docs/frontend-protocol.md, v1.4)
+	if s.media == nil {
+		s.media = media.Dir{Root: s.cfg.MediaDir}
+	}
+	s.mux.Handle("GET /media/", media.New(s.media, s.log))
 	s.mux.HandleFunc("GET /api/site.json", s.siteJSON)
 	s.mux.HandleFunc("GET /api/frontend", s.apiFrontend)
 	s.mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
@@ -107,6 +125,9 @@ func (s *Server) routes() {
 	// both spellings: front ends navigate by slug ("experiments" → /experiments)
 	s.mux.HandleFunc("GET /experiments", s.experiments)
 	s.mux.HandleFunc("GET /experiments/{$}", s.experiments)
+	s.mux.HandleFunc("GET /work", s.work)
+	s.mux.HandleFunc("GET /work/{$}", s.work)
+	s.mux.HandleFunc("GET /work/{slug}", s.project)
 	s.mux.HandleFunc("GET /{slug}", s.page)
 
 	admin := http.NewServeMux()
@@ -116,6 +137,11 @@ func (s *Server) routes() {
 	admin.HandleFunc("GET /admin/experiments/{slug}", s.adminExperimentForm)
 	admin.HandleFunc("POST /admin/experiments/{slug}", s.adminExperimentSave)
 	admin.HandleFunc("POST /admin/frontends", s.adminFrontendRotation)
+	admin.HandleFunc("GET /admin/projects/{$}", s.adminProjectNew)
+	admin.HandleFunc("GET /admin/projects/{slug}", s.adminProjectForm)
+	admin.HandleFunc("POST /admin/projects/{slug}", s.adminProjectSave)
+	admin.HandleFunc("POST /admin/projects/{slug}/publish", s.adminProjectPublish)
+	admin.HandleFunc("POST /admin/import/projects", s.adminImportProjects)
 	// basic auth credentials ride along on cross-site requests, so reject those
 	guarded := http.NewCrossOriginProtection().Handler(admin)
 	s.builderRoutes(admin)
@@ -184,8 +210,10 @@ func publicCSP(usercontentOrigin string) string {
 		"script-src 'self'",
 		"style-src 'self'",
 		"img-src 'self' data:",
+		"media-src 'self'", // project loops (/media/)
 		"connect-src 'self'",
-		"frame-src " + strings.TrimRight(usercontentOrigin, "/"),
+		// the front end; YouTube's privacy-enhanced player, for project films
+		"frame-src " + strings.TrimRight(usercontentOrigin, "/") + " " + youtubeEmbedOrigin,
 		"object-src 'none'",
 		"base-uri 'none'",
 		"form-action 'self'",
@@ -233,6 +261,50 @@ var templateFuncs = template.FuncMap{
 	// two pads a number to two digits, like the site's indices (01, 02)
 	"two": func(n int) string { return fmt.Sprintf("%02d", n) },
 	"inc": func(n int) int { return n + 1 },
+	"mul": func(a, b int) int { return a * b },
+	// extLink is u if it is an http(s) URL, else ""
+	"extLink": func(u string) string {
+		if u = strings.TrimSpace(u); content.ValidLink(u) {
+			return u
+		}
+		return ""
+	},
+	// shape sorts media for layout without inline styles (the public CSP has
+	// no 'unsafe-inline'): "strip" (3:1 and wider), "wide", or "box"
+	"shape": func(m contract.MediaItem) string {
+		switch {
+		case m.Width <= 0 || m.Height <= 0:
+			return "wide"
+		case m.Width >= 3*m.Height:
+			return "strip"
+		case 2*m.Width >= 3*m.Height:
+			return "wide"
+		}
+		return "box"
+	},
+	// join sets a list as the admin's comma list
+	"join": func(l []string) string { return strings.Join(l, ", ") },
+	// thumbOf is a media list's first still: an image, or a loop's poster
+	"thumbOf": func(l []content.Media) string {
+		for _, m := range contract.Media(l) {
+			if m.Kind == content.MediaImage {
+				return m.Src
+			}
+			if m.Poster != "" {
+				return m.Poster
+			}
+		}
+		return ""
+	},
+	// firstLoop is a media list's first loop, if any
+	"firstLoop": func(l []content.Media) *contract.MediaItem {
+		for _, m := range contract.Media(l) {
+			if m.Kind == content.MediaLoop {
+				return &m
+			}
+		}
+		return nil
+	},
 }
 
 // proseBlock is one paragraph and its role in the type scale.

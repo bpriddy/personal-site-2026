@@ -1,0 +1,11 @@
+{{define "title"}}Work · Ben Priddy{{end}}
+{{define "description"}}Selected work by Ben Priddy: experiential, interactive and AI projects.{{end}}
+{{define "main"}}
+<section class="page-head">
+  <h1 class="display">Work</h1>
+  <p class="label">( {{two (len .Projects)}} projects )</p>
+</section>
+<section class="index index-page work-index" aria-label="Projects">
+  {{if .Projects}}{{template "work-list" .Projects}}{{else}}<p class="prose-aside">Nothing published yet.</p>{{end}}
+</section>
+{{end}}

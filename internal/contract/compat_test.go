@@ -125,8 +125,18 @@ func TestBreakingInline(t *testing.T) {
 }
 
 // TestSchemaMatchesDeclared keeps the JSON Schema and the Go declaration of
-// each collection's fields in step.
+// each collection's fields in step: every declared field is a string
+// property, every list an array of strings, every media field an array of
+// media objects; required names only fields the server always sends, and
+// always the key and _generated.
 func TestSchemaMatchesDeclared(t *testing.T) {
+	type prop struct {
+		Type  any `json:"type"`
+		Items struct {
+			Type string `json:"type"`
+			Ref  string `json:"$ref"`
+		} `json:"items"`
+	}
 	var schema struct {
 		Required   []string `json:"required"`
 		Properties map[string]struct {
@@ -135,9 +145,9 @@ func TestSchemaMatchesDeclared(t *testing.T) {
 			} `json:"items"`
 		} `json:"properties"`
 		Defs map[string]struct {
-			Required   []string                  `json:"required"`
-			Properties map[string]map[string]any `json:"properties"`
-			Extra      map[string]any            `json:"additionalProperties"`
+			Required   []string        `json:"required"`
+			Properties map[string]prop `json:"properties"`
+			Extra      any             `json:"additionalProperties"`
 		} `json:"$defs"`
 	}
 	if err := json.Unmarshal(readFile(t, contractPath), &schema); err != nil {
@@ -150,16 +160,37 @@ func TestSchemaMatchesDeclared(t *testing.T) {
 			t.Errorf("%s: no item schema (ref %q)", coll, ref)
 			continue
 		}
-		want := append(slices.Clone(fields), GeneratedKey)
-		if got := slices.Sorted(slices.Values(def.Required)); !slices.Equal(got, slices.Sorted(slices.Values(want))) {
-			t.Errorf("%s: schema requires %v; Declared + _generated = %v", coll, got, want)
-		}
-		for _, f := range fields {
-			if def.Properties[f]["type"] != "string" {
-				t.Errorf("%s.%s: schema type %v, want string", coll, f, def.Properties[f]["type"])
+		sent := append(slices.Clone(fields), GeneratedKey)
+		sent = append(append(sent, Lists[coll]...), MediaFields[coll]...)
+		for _, r := range def.Required {
+			if !slices.Contains(sent, r) {
+				t.Errorf("%s: schema requires %q, which the server doesn't always send", coll, r)
 			}
 		}
-		if def.Extra == nil {
+		for _, r := range []string{fields[0], GeneratedKey} {
+			if !slices.Contains(def.Required, r) {
+				t.Errorf("%s: schema doesn't require %q", coll, r)
+			}
+		}
+		if len(def.Properties) != len(sent) {
+			t.Errorf("%s: schema has %d properties, the server sends %d (%v)", coll, len(def.Properties), len(sent), sent)
+		}
+		for _, f := range fields {
+			if def.Properties[f].Type != "string" {
+				t.Errorf("%s.%s: schema type %v, want string", coll, f, def.Properties[f].Type)
+			}
+		}
+		for _, f := range Lists[coll] {
+			if p := def.Properties[f]; p.Type != "array" || p.Items.Type != "string" {
+				t.Errorf("%s.%s: schema %+v, want an array of strings", coll, f, p)
+			}
+		}
+		for _, f := range MediaFields[coll] {
+			if p := def.Properties[f]; p.Type != "array" || p.Items.Ref != "#/$defs/media" {
+				t.Errorf("%s.%s: schema %+v, want an array of media", coll, f, p)
+			}
+		}
+		if _, ok := def.Extra.(map[string]any); !ok {
 			t.Errorf("%s: items must allow extra (generated) fields", coll)
 		}
 	}
@@ -168,4 +199,25 @@ func TestSchemaMatchesDeclared(t *testing.T) {
 			t.Errorf("schema doesn't require %s", c)
 		}
 	}
+	// the media object: exactly MediaItem's JSON keys, all required
+	var mi map[string]any
+	_ = json.Unmarshal(mustMarshal(t, MediaItem{}), &mi)
+	media := schema.Defs["media"]
+	if len(media.Required) != len(mi) || len(media.Properties) != len(mi) {
+		t.Errorf("media schema: required %v, properties %d; MediaItem has %v", media.Required, len(media.Properties), mi)
+	}
+	for k := range mi {
+		if !slices.Contains(media.Required, k) {
+			t.Errorf("media schema doesn't require %q", k)
+		}
+	}
+}
+
+func mustMarshal(t *testing.T, v any) []byte {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }
