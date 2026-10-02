@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/bpriddy/personal-site-2026/internal/store"
 )
@@ -203,6 +204,24 @@ func (o *Observer) Revert(ctx context.Context, id int64) error {
 		delete(o.errors, d.Action.Pulled)
 		o.mu.Unlock()
 		a.Summary = fmt.Sprintf("put %s back in the rotation", d.Action.Pulled)
+	case store.KindContentDrift:
+		if !d.Action.Activated || d.Action.Previous == "" {
+			return actionErr("nothing to revert: the observer didn't activate a rebuilt revision")
+		}
+		b, _ := o.content.(store.Builder)
+		if b == nil {
+			return actionErr("no front-end revisions here")
+		}
+		if err := b.SetActiveRevision(ctx, d.Frontend, d.Action.Previous); err != nil {
+			return err
+		}
+		o.mu.Lock()
+		delete(o.probation, d.Frontend)
+		o.mu.Unlock()
+		a = d.Action
+		a.Type, a.Auto, a.Activated, a.ProbationUntil, a.At = "revert", false, false, time.Time{}, o.now()
+		a.Summary = fmt.Sprintf("you reverted %s to v%d; the observer's v%d is kept in its history",
+			d.Frontend, d.Action.PreviousNumber, d.Action.RevisionNumber)
 	default:
 		return actionErr("nothing to revert")
 	}

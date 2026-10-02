@@ -16,8 +16,11 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/bpriddy/personal-site-2026/internal/frontend"
+	"github.com/bpriddy/personal-site-2026/internal/revfiles"
 	"github.com/bpriddy/personal-site-2026/internal/store"
 )
 
@@ -46,6 +49,18 @@ type Config struct {
 	ErrorLimit  int           // errors in the window that pull a front end; zero means 5
 	NotReady    int           // "never ready" reports in the window that pull it; zero means 3
 
+	// Content drift (drift.go): front ends in the rotation that don't read
+	// content the site now has are rebuilt by the builder (SetRebuilder).
+	Files             revfiles.Store // revision files, for the static scan; nil turns drift checks off
+	DriftEvery        time.Duration  // drift check interval; zero means 10 minutes
+	DriftDelay        time.Duration  // first check after Start; zero means 30 seconds
+	DriftDebounce     time.Duration  // wait after a content change before checking; zero means 3 seconds
+	RebuildsPerDay    int            // creative rebuilds per rolling 24 hours, all instances; zero means 6
+	RebuildTimeout    time.Duration  // one rebuild; zero means 25 minutes
+	Probation         time.Duration  // watch after an observer activation; zero means 30 minutes
+	ProbationErrors   int            // errors in probation that roll back; zero means 3
+	ProbationNotReady int            // never-ready reports in probation that roll back; zero means 2
+
 	Now func() time.Time // for tests
 }
 
@@ -68,6 +83,15 @@ type Observer struct {
 	budget   bucket                 // generations
 	startMu  sync.Mutex
 	started  bool
+
+	// content drift (drift.go)
+	files     revfiles.Store
+	rebuilder Rebuilder             // guarded by mu
+	changed   chan struct{}         // content changed; coalesced
+	changes   atomic.Int64          // ContentChanged calls (tests)
+	driftMu   sync.Mutex            // one drift check (and rebuild) at a time per instance
+	probation map[string]*probation // by front end; guarded by mu
+	override  frontend.Rotation     // FRONTEND_ROTATION, if set
 }
 
 type errorMark struct {
@@ -105,6 +129,30 @@ func New(cfg Config) *Observer {
 	if cfg.NotReady == 0 {
 		cfg.NotReady = 3
 	}
+	if cfg.DriftEvery == 0 {
+		cfg.DriftEvery = 10 * time.Minute
+	}
+	if cfg.DriftDelay == 0 {
+		cfg.DriftDelay = 30 * time.Second
+	}
+	if cfg.DriftDebounce == 0 {
+		cfg.DriftDebounce = 3 * time.Second
+	}
+	if cfg.RebuildsPerDay == 0 {
+		cfg.RebuildsPerDay = 6
+	}
+	if cfg.RebuildTimeout == 0 {
+		cfg.RebuildTimeout = 25 * time.Minute
+	}
+	if cfg.Probation == 0 {
+		cfg.Probation = 30 * time.Minute
+	}
+	if cfg.ProbationErrors == 0 {
+		cfg.ProbationErrors = 3
+	}
+	if cfg.ProbationNotReady == 0 {
+		cfg.ProbationNotReady = 2
+	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
@@ -119,6 +167,13 @@ func New(cfg Config) *Observer {
 		inflight: map[string]bool{},
 		errors:   map[string][]errorMark{},
 		budget:   bucket{tokens: float64(cfg.GenPerHour), last: cfg.Now()},
+
+		files:     cfg.Files,
+		changed:   make(chan struct{}, 1),
+		probation: map[string]*probation{},
+	}
+	if rot, ok, _ := frontend.RotationOverride(); ok {
+		o.override = rot
 	}
 	return o
 }
@@ -159,6 +214,7 @@ func (o *Observer) Start(ctx context.Context) {
 			}
 		}
 	}()
+	go o.driftLoop(ctx)
 	go func() {
 		o.CheckContent(ctx)
 		t := time.NewTicker(o.cfg.CheckEvery)

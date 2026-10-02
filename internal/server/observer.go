@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/bpriddy/personal-site-2026/internal/contract"
 	"github.com/bpriddy/personal-site-2026/internal/observer"
@@ -91,6 +92,38 @@ func (r observerRow) Stack() string {
 	return rep.Stack
 }
 
+// driftView is a content-drift detection's sample, for the admin.
+type driftView struct {
+	Title    string `json:"title"`
+	Number   int    `json:"number"`
+	Headline string `json:"headline"`
+	Missing  []struct {
+		Collection string `json:"collection"`
+		Items      int    `json:"items"`
+		Whole      bool   `json:"whole"`
+		Fields     []struct {
+			Name     string `json:"name"`
+			NonEmpty int    `json:"nonEmpty"`
+		} `json:"fields"`
+	} `json:"missing"`
+}
+
+// Drift is a content-drift detection's details.
+func (r observerRow) Drift() driftView {
+	var v driftView
+	json.Unmarshal(r.Sample, &v)
+	return v
+}
+
+// RevisionLink opens a revision of the detection's front end in the builder.
+func (r observerRow) RevisionLink(rev string) string {
+	slug, ok := strings.CutPrefix(r.Frontend, "fe/")
+	if !ok || rev == "" {
+		return ""
+	}
+	return "/admin/builder/fe/" + url.PathEscape(slug) + "?" + url.Values{"rev": {rev}}.Encode()
+}
+
 // EditLink is the content form for a content-invalid detection's item.
 func (r observerRow) EditLink() string {
 	switch r.Collection {
@@ -169,6 +202,7 @@ func (s *Server) renderObserver(w http.ResponseWriter, r *http.Request, status i
 	}
 	data["Tabs"], data["Tab"], data["Rows"], data["Generated"] = tabs, key, rows, gens
 	data["Healing"] = o.HealingEnabled()
+	data["Rebuilding"] = o.RebuildEnabled()
 	s.render(w, "admin/observer.html", status, data)
 }
 

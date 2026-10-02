@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -200,4 +202,111 @@ func (o *PostgresObserver) GeneratedFields(ctx context.Context, statuses ...stri
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (GeneratedField, error) { return scanGenerated(r) })
+}
+
+// rebuildLock is a pg_advisory_xact_lock key serializing rebuild claims
+// across instances.
+const rebuildLock = 7_310_201_412
+
+func (o *PostgresObserver) ClaimRebuild(ctx context.Context, r Rebuild, perDay int) (Rebuild, error) {
+	var out Rebuild
+	err := pgx.BeginFunc(ctx, o.pool, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, rebuildLock); err != nil {
+			return err
+		}
+		stale := RebuildStale.Seconds()
+		var prevID int64
+		var prevStatus string
+		var prevStale bool
+		err := tx.QueryRow(ctx, `SELECT id, status, started_at < now() - make_interval(secs => $3)
+			FROM observer_rebuilds WHERE frontend = $1 AND fingerprint = $2`,
+			r.Frontend, r.Fingerprint, stale).Scan(&prevID, &prevStatus, &prevStale)
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			prevID = 0
+		case err != nil:
+			return err
+		case prevStatus != RunRunning || !prevStale:
+			return ErrRebuildDone
+		}
+		var busy bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM observer_rebuilds
+			WHERE status = 'running' AND started_at >= now() - make_interval(secs => $1))`, stale).Scan(&busy); err != nil {
+			return err
+		}
+		if busy {
+			return ErrRebuildBusy
+		}
+		var n int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM observer_rebuilds
+			WHERE started_at >= now() - interval '24 hours'`).Scan(&n); err != nil {
+			return err
+		}
+		if n >= perDay {
+			return ErrRebuildQuota
+		}
+		var det *int64
+		if r.DetectionID != 0 {
+			det = &r.DetectionID
+		}
+		if prevID != 0 { // take over a dead attempt
+			_, err = tx.Exec(ctx, `UPDATE observer_rebuilds SET detection_id = $2, parent = $3, revision = '',
+				status = 'running', error = '', started_at = now(), finished_at = NULL WHERE id = $1`,
+				prevID, det, r.Parent)
+			r.ID = prevID
+		} else {
+			err = tx.QueryRow(ctx, `INSERT INTO observer_rebuilds (frontend, fingerprint, detection_id, parent)
+				VALUES ($1, $2, $3, $4) RETURNING id`, r.Frontend, r.Fingerprint, det, r.Parent).Scan(&r.ID)
+		}
+		if err != nil {
+			return err
+		}
+		out, err = scanRebuild(tx.QueryRow(ctx, `SELECT `+rebuildCols+` FROM observer_rebuilds WHERE id = $1`, r.ID))
+		return err
+	})
+	return out, err
+}
+
+const rebuildCols = `id, frontend, fingerprint, coalesce(detection_id, 0), parent, revision, status, error, started_at, finished_at`
+
+func scanRebuild(r pgx.Row) (Rebuild, error) {
+	var b Rebuild
+	var fin *time.Time
+	err := r.Scan(&b.ID, &b.Frontend, &b.Fingerprint, &b.DetectionID, &b.Parent, &b.Revision, &b.Status, &b.Error, &b.StartedAt, &fin)
+	if fin != nil {
+		b.FinishedAt = *fin
+	}
+	return b, notFound(err)
+}
+
+func (o *PostgresObserver) FinishRebuild(ctx context.Context, id int64, revision, errMsg string) error {
+	status := RunDone
+	if errMsg != "" {
+		status = RunFailed
+	}
+	tag, err := o.pool.Exec(ctx, `UPDATE observer_rebuilds SET status = $2, revision = $3, error = $4, finished_at = now()
+		WHERE id = $1`, id, status, revision, errMsg)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (o *PostgresObserver) CancelRebuild(ctx context.Context, id int64) error {
+	_, err := o.pool.Exec(ctx, `DELETE FROM observer_rebuilds WHERE id = $1`, id)
+	return err
+}
+
+func (o *PostgresObserver) Rebuilds(ctx context.Context, limit int) ([]Rebuild, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := o.pool.Query(ctx, `SELECT `+rebuildCols+` FROM observer_rebuilds ORDER BY started_at DESC, id DESC LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Rebuild, error) { return scanRebuild(r) })
 }

@@ -308,6 +308,7 @@ func (s *Server) builderRotation(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, "builder: rotation", err)
 		return
 	}
+	s.contentChanged()
 	http.Redirect(w, r, back, http.StatusSeeOther)
 }
 
@@ -453,6 +454,7 @@ func (s *Server) builderActivate(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, "builder: activate", err)
 		return
 	}
+	s.contentChanged()
 	http.Redirect(w, r, "/admin/builder/fe/"+slug+"?rev="+rev, http.StatusSeeOther)
 }
 

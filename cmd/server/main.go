@@ -90,8 +90,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	obs := newObserver(cfg, st, obsStore, log)
-	obs.Start(ctx)
+	obs := newObserver(cfg, st, obsStore, files, log)
 
 	// media (/media/...): FRONTENDS_BUCKET objects media/..., else MEDIA_DIR
 	mediaSrc, err := media.FromEnv(context.Background(), cfg.FrontendsBucket, cfg.MediaDir)
@@ -106,6 +105,12 @@ func main() {
 		log.Error("server", "err", err)
 		os.Exit(1)
 	}
+	// content drift: the observer rebuilds front ends with the builder agent
+	// (the server runs it); without a model, drift is only recorded
+	if agent != nil {
+		obs.SetRebuilder(srv)
+	}
+	obs.Start(ctx)
 
 	httpSrv := &http.Server{
 		Addr:              ":" + cfg.Port,
@@ -131,8 +136,12 @@ func main() {
 
 // newObserver builds the site observer. Without ANTHROPIC_API_KEY it still
 // records detections, but healing (generation) is off.
-func newObserver(cfg config.Config, st store.Store, obsStore store.ObserverStore, log *slog.Logger) *observer.Observer {
-	oc := observer.Config{Content: st, Obs: obsStore, ModelName: llm.Model, Log: log, XFFHops: 1}
+func newObserver(cfg config.Config, st store.Store, obsStore store.ObserverStore, files revfiles.Store, log *slog.Logger) *observer.Observer {
+	oc := observer.Config{Content: st, Obs: obsStore, ModelName: llm.Model, Log: log, XFFHops: 1, Files: files}
+	// creative rebuilds for content drift, per rolling 24 hours (all instances)
+	if v, err := strconv.Atoi(os.Getenv("OBSERVER_REBUILDS_PER_DAY")); err == nil && v > 0 {
+		oc.RebuildsPerDay = v
+	}
 	// X-Forwarded-For entries appended by Google's front ends: 1 on Cloud Run
 	// alone, 2 behind the external load balancer (see observer.ClientIP)
 	if v, err := strconv.Atoi(os.Getenv("OBSERVE_XFF_HOPS")); err == nil {

@@ -134,6 +134,7 @@ body.admin * { transition-duration: var(--d-1) !important; }
 .admin .action { color: var(--fg); }
 .admin .actions { display: flex; flex-wrap: wrap; gap: var(--s-2); align-items: end; margin-top: var(--s-3); }
 .admin .actions .inline { flex: 1 1 18rem; }
+.admin .drift-missing { margin: var(--s-2) 0 0; padding-left: var(--s-4); font-size: .875rem; }
 
 /* projects: thumbnails, the publish toggle, the media list (read-only) */
 .admin th.num, .admin td.num { text-align: right; padding-right: var(--s-4); }

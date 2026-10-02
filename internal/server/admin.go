@@ -62,6 +62,7 @@ func (s *Server) adminPageSave(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, "save page", err)
 		return
 	}
+	s.contentChanged()
 	http.Redirect(w, r, "/admin/", http.StatusSeeOther)
 }
 
@@ -96,6 +97,7 @@ func (s *Server) adminExperimentSave(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, "save experiment", err)
 		return
 	}
+	s.contentChanged()
 	http.Redirect(w, r, "/admin/", http.StatusSeeOther)
 }
 
@@ -124,5 +126,6 @@ func (s *Server) adminFrontendRotation(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, "set rotation", err)
 		return
 	}
+	s.contentChanged()
 	http.Redirect(w, r, "/admin/", http.StatusSeeOther)
 }

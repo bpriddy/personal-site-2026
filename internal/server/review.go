@@ -52,6 +52,7 @@ func (s *Server) adminReview(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, "builder: review", err)
 		return
 	}
+	s.contentChanged()
 	http.Redirect(w, r, "/admin/builder/#submissions", http.StatusSeeOther)
 }
 

@@ -47,7 +47,7 @@
     {{if .Running}}<p class="b-notice">A chat run is in progress for this front end. Reload when it finishes.</p>{{end}}
     <ol id="chat" class="b-chat">
       {{range .Conversation}}<li class="b-turn b-{{.Role}}">
-        <div class="b-who">{{if eq .Role "user"}}{{if $.Visitor}}Visitor{{else}}Ben{{end}}{{else}}Claude{{end}}</div>
+        <div class="b-who">{{if eq .Role "user"}}{{if eq .By "observer"}}Site observer{{else if $.Visitor}}Visitor{{else}}Ben{{end}}{{else}}Claude{{end}}</div>
         {{range paragraphs .Text}}<p>{{.}}</p>{{end}}
         {{if .Actions}}<div class="b-actions">{{range .Actions}}<code>{{.}}</code> {{end}}</div>{{end}}
       </li>{{end}}

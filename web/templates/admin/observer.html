@@ -8,22 +8,27 @@
 {{with .Problem}}<p class="notice problem" role="alert">{{.}}</p>{{end}}
 {{with .Done}}<p class="notice" role="status">{{if eq . "accept"}}Accepted.{{else if eq . "edit"}}Saved.{{else if eq . "regenerate"}}Regenerated.{{else if eq . "revert"}}Reverted.{{else if eq . "dismiss"}}Dismissed.{{end}}</p>{{end}}
 <p>Problems front ends reported, and what the observer did about them. Generated values never overwrite your content; review is only needed when a fix would.</p>
+<p class="muted">Content drift: when the content grows (a new collection, a widely used new field), front ends in the rotation that don't read it are rebuilt by the builder within their own concept{{if not .Rebuilding}} (off on this server: no <code>ANTHROPIC_API_KEY</code>){{end}}. A rebuild is activated only if it provably reads the new content, and rolled back if it errors in its first 30 minutes.</p>
 <nav class="tabs">
   {{range .Tabs}}<a href="/admin/observer/?tab={{.Key}}"{{if .Active}} aria-current="page"{{end}}>{{.Label}} <span class="count">{{.Count}}</span></a>{{end}}
 </nav>
 {{$tab := .Tab}}
 {{if not .Rows}}<p>Nothing here.</p>{{end}}
 <ul class="detections">
-{{range .Rows}}
+{{range .Rows}}{{$row := .}}
   <li class="detection" id="d{{.ID}}">
     <div class="detection-head">
       {{if .New}}<span class="dot dot-new" title="new"></span>{{end}}
       <strong class="kind kind-{{.Kind}}">{{.Kind}}</strong>
-      {{if .Field}}<code>{{.Collection}}/{{if .Item}}{{.Item}}{{else}}(home){{end}}.{{.Field}}</code>{{else if .Collection}}<code>{{.Collection}}/{{if .Item}}{{.Item}}{{else}}(home){{end}}</code>{{end}}
+      {{if eq .Kind "content-drift"}}<span>{{.Drift.Headline}}</span>
+      {{else if .Field}}<code>{{.Collection}}/{{if .Item}}{{.Item}}{{else}}(home){{end}}.{{.Field}}</code>{{else if .Collection}}<code>{{.Collection}}/{{if .Item}}{{.Item}}{{else}}(home){{end}}</code>{{end}}
       {{if .Expect}}<span class="muted">expected {{.Expect}}, got {{.Got}}</span>{{end}}
       <span class="muted">· {{.Count}}× · last {{.LastSeen.Format "2006-01-02 15:04"}} · first {{.FirstSeen.Format "2006-01-02 15:04"}}</span>
     </div>
     {{if .Frontend}}<div class="muted">front end <code>{{.Frontend}}</code>{{if and .Serve (ne .Serve .Frontend)}} (<code>{{.Serve}}</code>){{end}}{{if .Route}} · route <code>/{{.Route}}</code>{{end}}</div>{{end}}
+    {{if eq .Kind "content-drift"}}{{with .Drift.Missing}}<ul class="drift-missing muted">
+      {{range .}}<li><code>{{.Collection}}</code> ({{.Items}} published){{if .Whole}}: not shown at all{{else}}: not shown{{end}} · {{range $i, $f := .Fields}}{{if $i}}, {{end}}{{$f.Name}} <span title="items with a value">{{$f.NonEmpty}}</span>{{end}}</li>{{end}}
+    </ul>{{end}}{{end}}
     {{with .Message}}<div>Error: <code>{{.}}</code></div>{{end}}
     {{with .Stack}}<details><summary>Stack</summary><pre>{{.}}</pre></details>{{end}}
     {{if .Action.Summary}}<p class="action">{{if .Action.Auto}}<span class="badge">auto</span> {{end}}{{.Action.Summary}}</p>{{end}}
@@ -44,6 +49,10 @@
         </form>
       {{else if eq .Kind "frontend-error"}}
         {{if .Action.Pulled}}<form method="post" action="/admin/observer/{{.ID}}/revert"><input type="hidden" name="tab" value="{{$tab}}"><button>Revert (put {{.Action.Pulled}} back in the rotation)</button></form>{{end}}
+      {{else if eq .Kind "content-drift"}}
+        {{with .RevisionLink .Action.Revision}}<a class="button-link" href="{{.}}">Preview v{{$row.Action.RevisionNumber}} in the builder</a>{{end}}
+        {{if and .Action.Activated .Action.Previous}}<form method="post" action="/admin/observer/{{.ID}}/revert"><input type="hidden" name="tab" value="{{$tab}}"><button>Revert (activate v{{.Action.PreviousNumber}})</button></form>{{end}}
+        {{if and (not .Action.Revision) .Action.Previous}}{{with .RevisionLink .Action.Previous}}<a href="{{.}}">Open in the builder</a>{{end}}{{end}}
       {{else if eq .Kind "content-invalid"}}
         {{with .EditLink}}<a href="{{.}}">Edit the content</a>{{end}}
       {{end}}

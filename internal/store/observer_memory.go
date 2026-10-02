@@ -17,6 +17,11 @@ type ObserverMemory struct {
 	byID      map[int64]*Detection
 	bySig     map[string]int64
 	generated map[[3]string]GeneratedField
+
+	rebuilds    []Rebuild // oldest first
+	nextRebuild int64
+	// RebuildNow is the clock for rebuild claims (nil: time.Now); for tests.
+	RebuildNow func() time.Time
 }
 
 func NewObserverMemory() *ObserverMemory {

@@ -103,6 +103,7 @@ func (s *Server) adminProjectSave(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, "save project", err)
 		return
 	}
+	s.contentChanged()
 	http.Redirect(w, r, "/admin/#projects", http.StatusSeeOther)
 }
 
@@ -125,6 +126,7 @@ func (s *Server) adminProjectPublish(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, "save project", err)
 		return
 	}
+	s.contentChanged()
 	http.Redirect(w, r, "/admin/#projects", http.StatusSeeOther)
 }
 
@@ -372,6 +374,7 @@ func (s *Server) adminImportProjects(w http.ResponseWriter, r *http.Request) {
 		}
 		res.Experiments.Updated = append(res.Experiments.Updated, e.Slug)
 	}
+	s.contentChanged()
 	writeJSON(w, http.StatusOK, res)
 }
 

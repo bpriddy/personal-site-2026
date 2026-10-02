@@ -25,6 +25,7 @@ type Turn struct {
 	At       time.Time `json:"at"`
 	Revision string    `json:"revision,omitempty"` // assistant: the revision it produced
 	Actions  []string  `json:"actions,omitempty"`  // assistant: file operations, e.g. "write index.html"
+	By       string    `json:"by,omitempty"`       // user: "observer" when the site observer wrote it
 }
 
 // ParseConversation decodes a stored conversation; bad or empty JSON is an
@@ -67,6 +68,10 @@ type Request struct {
 	// builder), not Ben. The model is told so (VisitorNote); the prompt itself
 	// still goes only into user messages.
 	Visitor bool
+	// Observer: the prompt was written by the site observer (a content-drift
+	// rebuild), on Ben's behalf. Only the label of the request in the first
+	// message changes; the system prompt stays the same (cached).
+	Observer bool
 }
 
 // Result is a finished run.
@@ -272,9 +277,12 @@ func firstMessage(req Request) string {
 		sb.Write(req.Content)
 		sb.WriteString("\n</content>\n\n")
 	}
-	if req.Visitor {
+	switch {
+	case req.Visitor:
 		sb.WriteString("The visitor's request:\n\n")
-	} else {
+	case req.Observer:
+		sb.WriteString("A request from Ben's site observer (automatic, on Ben's behalf: the site's content changed and this front end doesn't show all of it yet):\n\n")
+	default:
 		sb.WriteString("Ben's request:\n\n")
 	}
 	sb.WriteString(req.Prompt)

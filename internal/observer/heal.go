@@ -262,6 +262,10 @@ func (o *Observer) frontendError(ctx context.Context, d store.Detection, r Repor
 		o.obs.SetDetection(ctx, d.ID, store.StatusNeedsReview, store.Action{Type: "review", At: o.now(),
 			Summary: fmt.Sprintf("%s reported an error: %s. Front-end patches aren't automated yet.", d.Frontend, display(msg))})
 	}
+	// a front end the observer just rebuilt is rolled back, not pulled
+	if d.Status != store.StatusDismissed && o.onProbation(ctx, d, r) {
+		return
+	}
 	now := o.now()
 	o.mu.Lock()
 	marks := o.errors[d.Frontend][:0:0]

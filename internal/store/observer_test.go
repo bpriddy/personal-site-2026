@@ -139,6 +139,69 @@ func observerConformance(t *testing.T, newStore func(t *testing.T) ObserverStore
 			t.Fatalf("all = %+v", all)
 		}
 	})
+
+	t.Run("content drift and rebuilds", func(t *testing.T) {
+		st := newStore(t)
+		// the content-drift kind is accepted (migration 0006)
+		d, _, err := st.RecordDetection(ctx, Detection{Kind: KindContentDrift, Frontend: "fe/layers", Serve: "rev/abcd1234",
+			Collection: "projects", Signature: "drift-1", Sample: json.RawMessage(`{"headline":"x"}`)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		until := time.Now().Add(30 * time.Minute).UTC().Truncate(time.Millisecond)
+		a := Action{Type: "rebuild", Auto: true, Activated: true, Revision: "rev2", RevisionNumber: 2,
+			Previous: "rev1", PreviousNumber: 1, ProbationUntil: until}
+		if err := st.SetDetection(ctx, d.ID, StatusFixed, a); err != nil {
+			t.Fatal(err)
+		}
+		got, _ := st.Detection(ctx, d.ID)
+		if got.Action.Revision != "rev2" || got.Action.PreviousNumber != 1 || !got.Action.Activated || !got.Action.ProbationUntil.Equal(until) {
+			t.Fatalf("action = %+v", got.Action)
+		}
+
+		r, err := st.ClaimRebuild(ctx, Rebuild{Frontend: "fe/layers", Fingerprint: "fp1", DetectionID: d.ID, Parent: "rev1"}, 2)
+		if err != nil || r.ID == 0 || r.Status != RunRunning || r.Parent != "rev1" || r.DetectionID != d.ID {
+			t.Fatalf("claim = %+v, %v", r, err)
+		}
+		// one at a time
+		if _, err := st.ClaimRebuild(ctx, Rebuild{Frontend: "fe/other", Fingerprint: "fp9"}, 2); !errors.Is(err, ErrRebuildBusy) {
+			t.Fatalf("busy err = %v", err)
+		}
+		if err := st.FinishRebuild(ctx, r.ID, "rev2", ""); err != nil {
+			t.Fatal(err)
+		}
+		// one attempt per (front end, fingerprint) ever
+		if _, err := st.ClaimRebuild(ctx, Rebuild{Frontend: "fe/layers", Fingerprint: "fp1"}, 2); !errors.Is(err, ErrRebuildDone) {
+			t.Fatalf("again err = %v", err)
+		}
+		// a cancelled claim neither counts nor blocks
+		c, err := st.ClaimRebuild(ctx, Rebuild{Frontend: "fe/layers", Fingerprint: "fp2"}, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := st.CancelRebuild(ctx, c.ID); err != nil {
+			t.Fatal(err)
+		}
+		r2, err := st.ClaimRebuild(ctx, Rebuild{Frontend: "fe/layers", Fingerprint: "fp2"}, 2)
+		if err != nil {
+			t.Fatalf("after cancel err = %v", err)
+		}
+		if err := st.FinishRebuild(ctx, r2.ID, "", "model declined"); err != nil {
+			t.Fatal(err)
+		}
+		// the daily budget: 2 started in 24 hours
+		if _, err := st.ClaimRebuild(ctx, Rebuild{Frontend: "fe/layers", Fingerprint: "fp3"}, 2); !errors.Is(err, ErrRebuildQuota) {
+			t.Fatalf("quota err = %v", err)
+		}
+		all, err := st.Rebuilds(ctx, 0)
+		if err != nil || len(all) != 2 || all[0].ID != r2.ID || all[0].Status != RunFailed || all[0].Error != "model declined" ||
+			all[1].Status != RunDone || all[1].Revision != "rev2" || all[1].FinishedAt.IsZero() {
+			t.Fatalf("rebuilds = %+v, %v", all, err)
+		}
+		if err := st.FinishRebuild(ctx, 9999, "", ""); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("finish missing err = %v", err)
+		}
+	})
 }
 
 func TestObserverMemoryConformance(t *testing.T) {
