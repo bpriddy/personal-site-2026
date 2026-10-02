@@ -423,7 +423,9 @@ body.public::after {
 }
 .shuffle-fe[hidden] { display: none; }
 .shuffle-fe svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-.shuffle-fe:hover, .shuffle-fe:focus-visible { background: var(--fg); color: var(--bg); }
+/* hover only where there's a pointer that hovers: on touch it would stick */
+@media (hover: hover) { .shuffle-fe:hover { background: var(--fg); color: var(--bg); } }
+.shuffle-fe:focus-visible { background: var(--fg); color: var(--bg); }
 .shuffle-fe:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .shuffle-fe:active { transform: scale(.94); }
 .shuffle-fe.is-spinning svg { animation: shuffle-turn 900ms var(--ease-out); }
@@ -434,7 +436,8 @@ body.public::after {
     background: color-mix(in oklab, var(--bg) 72%, transparent);
     -webkit-backdrop-filter: blur(14px) saturate(1.2); backdrop-filter: blur(14px) saturate(1.2);
   }
-  .shuffle-fe:hover, .shuffle-fe:focus-visible { background: var(--fg); }
+  .shuffle-fe:focus-visible { background: var(--fg); }
+  @media (hover: hover) { .shuffle-fe:hover { background: var(--fg); } }
 }
 .make-own {
   position: relative;
