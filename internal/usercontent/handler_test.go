@@ -523,3 +523,29 @@ func TestMedia(t *testing.T) {
 		t.Errorf("no media handler: %d", w.Code)
 	}
 }
+
+// With SelfOrigin, the CSP names this service's origin next to 'self', so
+// WebKit, which doesn't match 'self' from a sandboxed (opaque) frame, still
+// lets a front end load its own files (e.g. its .wasm).
+func TestCSPNamesSelfOrigin(t *testing.T) {
+	got := csp("https://main.example", "https://uc.example")
+	for _, d := range []string{
+		"default-src 'self' https://uc.example;",
+		"script-src 'self' https://uc.example 'unsafe-inline' 'wasm-unsafe-eval';",
+		"connect-src 'self' https://uc.example;",
+		"img-src 'self' https://uc.example data: blob:;",
+		"media-src 'self' https://uc.example blob:;",
+		"font-src 'self' https://uc.example data:;",
+		"frame-ancestors https://main.example",
+	} {
+		if !strings.Contains(got, d) {
+			t.Errorf("CSP lacks %q:\n%s", d, got)
+		}
+	}
+	if csp("https://main.example", "") != wantCSP {
+		t.Error("without SelfOrigin the CSP must be unchanged")
+	}
+	if _, err := New(Options{SigningKey: []byte("k"), Source: NewDirSource(t.TempDir()), MainOrigin: "https://main.example", SelfOrigin: "https://uc.example/x"}); err == nil {
+		t.Error("a SelfOrigin with a path must be refused")
+	}
+}

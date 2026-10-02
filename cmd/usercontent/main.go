@@ -51,6 +51,7 @@ func main() {
 	h, err := usercontent.New(usercontent.Options{
 		SigningKey: cfg.SigningKey,
 		MainOrigin: cfg.MainOrigin,
+		SelfOrigin: cfg.UsercontentOrigin,
 		Source:     src,
 		Log:        log,
 		Media:      media.New(mediaSrc, log),

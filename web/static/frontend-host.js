@@ -417,8 +417,12 @@
     bar.append(concept, actions);
     document.body.insertBefore(bar, document.body.firstChild);
     root.classList.add("has-cta", "has-bar");
+    // measure whenever the bar's size changes: on load the stylesheet may not
+    // have applied yet (WebKit runs this first), and fonts and wrapping change it
     fitBar();
+    if (typeof ResizeObserver === "function") new ResizeObserver(fitBar).observe(bar);
     window.addEventListener("resize", fitBar);
+    window.addEventListener("load", fitBar);
     // Cmd/Ctrl+K opens the builder from anywhere on the parent page
     document.addEventListener("keydown", function (e) {
       if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && (e.key === "k" || e.key === "K")) {

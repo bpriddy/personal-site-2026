@@ -57,8 +57,12 @@
       W = Math.max(1, Math.round(r.width)); H = Math.max(1, Math.round(r.height));
       cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
       // a fixed character size: a bigger portrait gets more lines, not bigger letters
-      cw = W < 600 ? 4.6 : 6; cols = Math.floor(W / cw); cw = W / cols; font = cw / 0.6; lh = cw * 2; rows = Math.floor(H / lh);
+      cw = W < 600 ? 4.6 : 6; cols = Math.floor(W / cw); cw = W / cols; lh = cw * 2; rows = Math.floor(H / lh);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      // size the font so one character advances exactly cw (browsers differ in the mono they end up with)
+      ctx.font = '100px "Fragment Mono", ui-monospace, Menlo, monospace';
+      var adv = ctx.measureText("MMMMMMMMMM").width / 10 / 100 || 0.6;
+      font = cw / adv;
       ctx.font = font.toFixed(2) + 'px "Fragment Mono", ui-monospace, Menlo, monospace';
       ctx.textBaseline = "top";
       kick();

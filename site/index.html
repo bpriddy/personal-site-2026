@@ -350,7 +350,8 @@
         .site-header nav { grid-column: 3 / 5; flex-direction: column; align-items: flex-end; gap: var(--s-2); }
         .hero { padding-bottom: calc(var(--s-9) + env(safe-area-inset-bottom)); }
         .name { grid-column: 1 / 5; font-size: min(29vw, 9rem); }
-        .portrait { left: 50%; right: auto; top: 96px; width: 132vw; transform: translateX(-50%);
+        /* as big as the phone allows: on short screens it shrinks so the face stays clear of the name */
+        .portrait { left: 50%; right: auto; top: 96px; width: clamp(300px, calc((100svh - 380px) / .6), 132vw); transform: translateX(-50%);
           -webkit-mask-image: linear-gradient(#000 52%, transparent 74%); mask-image: linear-gradient(#000 52%, transparent 74%); }
         .hero .meta { grid-column: 1 / 5; margin-top: var(--s-5); color: var(--fg-2); animation: fade-in var(--d-4) var(--ease-out) 750ms backwards; }
         .bio > .label, .bio-text { grid-column: 1 / 5; } .bio-text { gap: var(--s-5); }

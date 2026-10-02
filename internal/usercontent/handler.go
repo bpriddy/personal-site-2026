@@ -38,6 +38,11 @@ const (
 type Options struct {
 	SigningKey []byte           // FRONTEND_SIGNING_KEY
 	MainOrigin string           // MAIN_ORIGIN, used in frame-ancestors and site-host.js
+	// SelfOrigin (USERCONTENT_ORIGIN) is this service's own origin. Optional;
+	// when set, the CSP names it next to 'self'. A front end runs in a sandbox
+	// (an opaque origin), and WebKit doesn't match 'self' for its fetches, so
+	// without the explicit origin Safari refuses e.g. a front end's own .wasm.
+	SelfOrigin string
 	Source     FileSource       // front-end files
 	Now        func() time.Time // clock; nil means time.Now
 	Log        *slog.Logger     // nil means discard
@@ -67,12 +72,17 @@ func New(o Options) (*Handler, error) {
 	if err := checkOrigin(o.MainOrigin); err != nil {
 		return nil, err
 	}
+	if o.SelfOrigin != "" {
+		if err := checkOrigin(o.SelfOrigin); err != nil {
+			return nil, err
+		}
+	}
 	h := &Handler{
 		key:      o.SigningKey,
 		src:      o.Source,
 		now:      o.Now,
 		log:      o.Log,
-		csp:      csp(o.MainOrigin),
+		csp:      csp(o.MainOrigin, o.SelfOrigin),
 		siteHost: []byte(strings.ReplaceAll(webuc.SiteHostJS, "__MAIN_ORIGIN__", o.MainOrigin)),
 		fonts:    o.Fonts,
 		media:    o.Media,
@@ -101,17 +111,21 @@ func checkOrigin(o string) error {
 	return nil
 }
 
-func csp(mainOrigin string) string {
+func csp(mainOrigin, selfOrigin string) string {
+	self := "'self'"
+	if selfOrigin != "" {
+		self += " " + selfOrigin
+	}
 	return strings.Join([]string{
 		"sandbox allow-scripts",
-		"default-src 'self'",
-		"script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
-		"style-src 'self' 'unsafe-inline'",
-		"img-src 'self' data: blob:",
-		"font-src 'self' data:",
-		"media-src 'self' blob:",
-		"connect-src 'self'",
-		"worker-src 'self' blob:",
+		"default-src " + self,
+		"script-src " + self + " 'unsafe-inline' 'wasm-unsafe-eval'",
+		"style-src " + self + " 'unsafe-inline'",
+		"img-src " + self + " data: blob:",
+		"font-src " + self + " data:",
+		"media-src " + self + " blob:",
+		"connect-src " + self,
+		"worker-src " + self + " blob:",
 		"frame-src 'none'",
 		"form-action 'none'",
 		"base-uri 'none'",
