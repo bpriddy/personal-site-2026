@@ -267,6 +267,100 @@
     }
   }
 
+  // ── route transitions (v1.6) ──
+  // Every front end gets them without doing anything: on a route change the
+  // content on screen animates out (a short stagger, top to bottom), the front
+  // end renders the new route (its onRoute listeners), and the new content
+  // animates in. About 0.8-1.2s in all. The exit starts at site.navigate, so
+  // it runs while the parent fetches the page. Web Animations only (no CSS
+  // is injected; transforms compose with the front end's own). A front end
+  // with its own transition turns this off with site.transitions(false).
+  var transitionsOn = true;
+  var reduceMQ = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
+  var BLOCKS = "h1,h2,h3,h4,h5,h6,p,li,dt,dd,figure,img,video,picture,blockquote,pre,table,button,a,label,canvas,svg,hr,input,textarea";
+  var MAX_BLOCKS = 48;
+  var exiting = null; // {done: Promise, anims: Animation[], timer}
+  function canAnimate() {
+    return transitionsOn && document.body && typeof document.body.animate === "function";
+  }
+  function calm() { return !!(reduceMQ && reduceMQ.matches); }
+  // the outermost content blocks currently on screen, top to bottom
+  function visibleBlocks() {
+    var vw = window.innerWidth, vh = window.innerHeight, out = [];
+    var all = document.body.querySelectorAll(BLOCKS);
+    for (var i = 0; i < all.length && out.length < MAX_BLOCKS; i++) {
+      var el = all[i], inside = false;
+      for (var j = out.length - 1; j >= 0; j--) if (out[j].contains(el)) { inside = true; break; }
+      if (inside) continue;
+      var r = el.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2 || r.bottom <= 0 || r.top >= vh || r.right <= 0 || r.left >= vw) continue;
+      var cs = window.getComputedStyle(el);
+      if (cs.visibility === "hidden" || cs.display === "none" || parseFloat(cs.opacity) === 0) continue;
+      out.push(el);
+    }
+    out.sort(function (a, b) {
+      var ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+      return (ra.top - rb.top) || (ra.left - rb.left);
+    });
+    return out;
+  }
+  // play runs a fade (replacing opacity) and, unless still, a drift (added to
+  // the element's own transform); returns the animations
+  function play(el, o0, o1, y0, y1, opts) {
+    var out = [];
+    try { out.push(el.animate([{ opacity: o0 }, { opacity: o1 }], opts)); } catch (e) { /* not animatable */ }
+    if (y0 !== y1) {
+      var t = {}; for (var k in opts) t[k] = opts[k];
+      t.composite = "add";
+      try { out.push(el.animate([{ transform: "translateY(" + y0 + "px)" }, { transform: "translateY(" + y1 + "px)" }], t)); } catch (e) { /* no composite: skip the drift */ }
+    }
+    return out;
+  }
+  function startExit() {
+    if (exiting) return exiting.done;
+    var still = calm(), els = visibleBlocks(), anims = [], last = 0;
+    var step = still ? 0 : Math.min(28, 200 / Math.max(1, els.length));
+    var dur = still ? 140 : 320;
+    els.forEach(function (el, i) {
+      var a = play(el, 1, 0, 0, still ? 0 : -12, { duration: dur, delay: i * step, easing: "cubic-bezier(.5,0,.75,0)", fill: "forwards" });
+      if (a.length) { anims.push.apply(anims, a); last = Math.max(last, i * step + dur); }
+    });
+    var ex = { anims: anims, timer: 0, route: null, waiting: false };
+    ex.done = new Promise(function (resolve) { setTimeout(resolve, last); });
+    // the parent may not navigate after all (same page, refused slug): come back
+    ex.timer = setTimeout(function () { if (exiting === ex) { exiting = null; enter(anims); } }, last + 1500);
+    exiting = ex;
+    return ex.done;
+  }
+  function enter(old) {
+    // after the front end has rendered (give it two frames), bring the new content in
+    var go = function () {
+      (old || []).forEach(function (a) { try { a.cancel(); } catch (e) { /* gone */ } });
+      if (!canAnimate()) return;
+      var still = calm(), els = visibleBlocks();
+      var step = still ? 0 : Math.min(30, 260 / Math.max(1, els.length));
+      els.forEach(function (el, i) {
+        play(el, 0, 1, still ? 0 : 14, 0, { duration: still ? 160 : 520, delay: i * step, easing: "cubic-bezier(.16,1,.3,1)", fill: "backwards" });
+      });
+    };
+    if (window.requestAnimationFrame) requestAnimationFrame(function () { requestAnimationFrame(go); });
+    else setTimeout(go, 32);
+  }
+  // routeTo: a route change from the parent (after site.navigate, or back/forward)
+  function routeTo(route) {
+    if (!canAnimate() || (route === site.route && !exiting)) { setRoute(route); return; }
+    var ex = exiting || (startExit(), exiting);
+    ex.route = route; // the latest wins if routes arrive while it's leaving
+    if (ex.waiting) return;
+    ex.waiting = true;
+    ex.done.then(function () {
+      clearTimeout(ex.timer);
+      if (exiting === ex) exiting = null;
+      setRoute(ex.route);
+      enter(ex.anims);
+    });
+  }
+
   function setRoute(route) {
     site.route = route;
     for (var i = 0; i < routeListeners.length; i++) {
@@ -294,7 +388,15 @@
     },
 
     navigate: function (slug) {
-      post({ type: "site:navigate", slug: slug == null ? "" : String(slug) });
+      var s = slug == null ? "" : String(slug);
+      if (canAnimate() && s !== site.route) startExit(); // out while the parent fetches the page
+      post({ type: "site:navigate", slug: s });
+    },
+
+    // transitions (v1.6): false turns off the host's route transitions, for a
+    // front end that animates its own; true turns them back on.
+    transitions: function (on) {
+      transitionsOn = on !== false;
     },
 
     ready: function () {
@@ -513,7 +615,7 @@
         setRoute(site.route);
       }
     } else if (m.type === "site:route" && typeof m.route === "string") {
-      setRoute(m.route);
+      routeTo(m.route);
     }
   });
 

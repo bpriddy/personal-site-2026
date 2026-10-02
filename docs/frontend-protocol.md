@@ -655,3 +655,20 @@ inside every front end.
 - **Builder rule:** front ends don't repeat the concept line or draw their own
   Re-imagine or shuffle controls; they call `site.theme` to match the bar to
   their design (`internal/builder/prompt.go`, `quality.go`).
+
+# v1.6 (2026-10-02): route transitions for every front end
+
+- `site-host.js` animates route changes itself, so every front end has them
+  without code: when the front end calls `site.navigate`, the content blocks
+  on screen (headings, paragraphs, list items, media, links, canvases: the
+  outermost of each, top to bottom, up to 48) fade out and drift up with a
+  short stagger (~0.3-0.5s) while the parent fetches the page; on
+  `site:route` the host calls the `onRoute` listeners, waits two frames for
+  the render, and the new content fades in and settles (~0.5-0.8s). Back and
+  forward run the same exit on `site:route`. Under reduced motion it's a
+  quick fade. If the navigation doesn't happen (same page, refused slug), the
+  content comes back after 1.5s.
+- Web Animations only: no CSS is injected; the drift composes with the front
+  end's own transforms (`composite: "add"`).
+- `site.transitions(false)` turns it off for a front end with its own route
+  transition (`true` turns it back on).

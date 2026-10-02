@@ -40,6 +40,7 @@ It is a classic script that defines window.site:
 | site.navigate(slug) | ask the parent to navigate to a page. The parent updates the URL and then calls your onRoute listeners. Don't re-render before that. |
 | site.ready() | signal that the first frame is up. Idempotent. REQUIRED: if it isn't called within 10 seconds the parent replaces your front end with the default one. |
 | site.theme("light" \| "dark") | the theme of the site bar above your frame (style fixed by the host), so it sits well with your design. Call it at startup; again when a route changes theme. Until called, the bar follows the visitor's system theme. |
+| site.transitions(false) | turn off the host's automatic route transitions (it animates the content on screen out on navigation and the new route's content in, about a second in all). Only for a front end that designs its own route transition; by default leave them on. |
 | site.reportError(err, kind = "report") | report an error. kind "gpu-lost" makes the parent replace your front end, so use it only when the front end can no longer show the content. |
 | site.textCanvas(text, {font, color, maxWidth, lineHeight, padding}) | draws text into an OffscreenCanvas (or a 2D canvas) and returns it, ready for GPUQueue.copyExternalImageToTexture. For text inside a WebGPU scene. |
 | site.get(path, fallback) | dotted path into site.content ("pages.0.title"); never throws. |
@@ -84,7 +85,7 @@ site.content has this shape (see Ben's current content in his first message; it 
 
 # Navigation
 
-Build links from the content, e.g. <a href="#" data-slug="about">About</a>, and on click: event.preventDefault(); site.navigate(slug). Render the new route in site.onRoute(route => ...). The home page is slug "". Scroll to the top on route change. Don't read location or use the History API.
+Build links from the content, e.g. <a href="#" data-slug="about">About</a>, and on click: event.preventDefault(); site.navigate(slug). Render the new route in site.onRoute(route => ...) (not on click: the host animates the old content out first, then calls onRoute, then animates the new content in). The home page is slug "". Scroll to the top on route change. Don't read location or use the History API.
 
 # Straightforward code
 
