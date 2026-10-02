@@ -38,7 +38,7 @@ type builderState struct {
 }
 
 // RunTimeout bounds one builder chat run (many model turns).
-const RunTimeout = 20 * time.Minute
+const RunTimeout = 28 * time.Minute // under the 30-minute Cloud Run request timeout; 3D builds take 15-20
 
 // WithBuilder configures the builder. agent may be nil (chat disabled, with a
 // message; everything else still works); files may be nil (FRONTENDS_DIR).
