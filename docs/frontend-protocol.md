@@ -640,6 +640,9 @@ inside every front end.
   concept line, "This site is re-imagined by its visitors", and on the right
   the shuffle button (`#shuffle-fe`) and Re-imagine (`#make-own`, "Re-imagine
   it"). Its style is fixed by the site and never changes with the front end.
+  It's set apart from every front end, the default included: the device's
+  system sans-serif and neutral greys (white or near-black), not the house
+  serif or paper.
 - **The front end starts below it:** the iframe's top is `--bar-h` (measured
   by `frontend-host.js`), and nothing of the parent is drawn over the frame,
   so front ends no longer keep a corner clear. The draft tape sits under the

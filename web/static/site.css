@@ -412,8 +412,15 @@ body.public::after {
    Drawn by frontend-host.js across the top of every page: the concept line,
    shuffle and Re-imagine. The site owns it, so its style never changes with
    the front end; only its theme does (site.theme sets data-theme; without it
-   the bar follows the system). The front end starts below it (--bar-h). */
+   the bar follows the system). The front end starts below it (--bar-h).
+   It's deliberately not in any front end's style, the default's included:
+   the device's own sans-serif and neutral greys, no house serif, no paper. */
 .site-bar {
+  --font-text: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --bg: #0B0B0C; --bg-raised: #18181A; --fg: #F5F5F6; --fg-2: #A1A1A8;
+  --rule: rgb(255 255 255 / .12); --rule-strong: rgb(255 255 255 / .28); --accent: #FF5B1F;
+  font-family: var(--font-text);
   position: fixed; z-index: var(--z-cta); top: 0; left: 0; right: 0;
   display: flex; align-items: center; justify-content: space-between; gap: var(--s-4);
   min-height: calc(44px + env(safe-area-inset-top));
@@ -421,17 +428,19 @@ body.public::after {
   background: var(--bg); color: var(--fg); border-bottom: 1px solid var(--rule);
   transition: background-color var(--d-3) var(--ease-out), color var(--d-3) var(--ease-out), border-color var(--d-3) var(--ease-out);
 }
-.site-bar[data-theme="dark"] {
-  --bg: #0F0F0D; --bg-raised: #171714; --fg: #ECE8DF; --fg-2: #A8A398;
-  --rule: rgb(236 232 223 / .14); --rule-strong: rgb(236 232 223 / .32); --accent: #FF5B1F;
+@media (prefers-color-scheme: light) {
+  .site-bar:not([data-theme="dark"]) {
+    --bg: #FFFFFF; --bg-raised: #F2F2F3; --fg: #111113; --fg-2: #5E5E66;
+    --rule: rgb(0 0 0 / .1); --rule-strong: rgb(0 0 0 / .26); --accent: #E5480F;
+  }
 }
 .site-bar[data-theme="light"] {
-  --bg: #F1EEE7; --bg-raised: #E8E4DB; --fg: #151513; --fg-2: #55524B;
-  --rule: rgb(21 21 19 / .14); --rule-strong: rgb(21 21 19 / .4); --accent: #D9400B;
+  --bg: #FFFFFF; --bg-raised: #F2F2F3; --fg: #111113; --fg-2: #5E5E66;
+  --rule: rgb(0 0 0 / .1); --rule-strong: rgb(0 0 0 / .26); --accent: #E5480F;
 }
 .site-bar-line {
   margin: 0; padding: 6px 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left;
-  font: italic 400 17px/1.2 var(--font-display); letter-spacing: -.005em;
+  font: 500 14.5px/1.25 var(--font-text); letter-spacing: -.01em;
   color: inherit; background: none; border: 0; cursor: pointer;
   text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: .25em;
   text-decoration-color: transparent; transition: text-decoration-color var(--d-2) var(--ease-quint);
@@ -440,20 +449,21 @@ body.public::after {
 .site-bar-line:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; text-decoration-color: var(--fg); }
 .make-own-spark { display: none; }
 .make-own-spark svg { display: block; width: 18px; height: 18px; fill: currentColor; }
+.site-bar .make-own { font-stretch: normal; letter-spacing: -.005em; }
 .site-bar-actions { flex: none; display: flex; align-items: center; gap: var(--s-2); }
 .has-bar body { padding-top: var(--bar-h, 45px); } /* the transcript, when it's the site */
 .has-bar .site-footer .concept, .has-bar .kicker { display: none; } /* the bar says it */
 @media (max-width: 599px) {
   /* the line always reads in full: on phones it wraps to two lines (the bar grows, the front end follows) */
   .site-bar { gap: var(--s-3); padding-top: calc(env(safe-area-inset-top) + 6px); padding-bottom: 6px; }
-  .site-bar-line { font-size: 15px; line-height: 1.15; white-space: normal; overflow: visible; text-wrap: balance; }
+  .site-bar-line { font-size: 14px; line-height: 1.2; white-space: normal; overflow: visible; text-wrap: balance; }
   /* Re-imagine becomes a round sparkle button */
   .make-own { width: 38px; padding: 0; justify-content: center; gap: 0; }
   .make-own-dot, .make-own-roll, .make-own-kbd { display: none; }
   .make-own-spark { display: block; color: var(--accent); }
   .make-own:hover .make-own-spark, .make-own:focus-visible .make-own-spark { color: var(--bg); }
 }
-@media (max-width: 359px) { .site-bar-line { font-size: 14px; } }
+@media (max-width: 359px) { .site-bar-line { font-size: 13px; } }
 .shuffle-fe {
   position: relative; flex: none; display: grid; place-items: center;
   width: 32px; height: 32px; padding: 0; margin: 0;
