@@ -233,11 +233,33 @@
     });
   }
 
+  // follow: a run whose stream dropped ({slug, had: its version count before});
+  // when it finishes, its new version goes on the site as if we'd streamed it
+  var follow = null;
+  function checkFollow() {
+    if (!follow || busy) return;
+    var f = findFrontend(follow.slug);
+    if (!f) { follow = null; return; }
+    if (f.running) return; // still working: the poll comes back
+    var had = follow.had;
+    follow = null;
+    if (f.revisions.length > had) {
+      var rv = f.revisions[0];
+      show(f, rv).then(function () {
+        pStatus.classList.remove("bm-error");
+        pStatus.textContent = "Version " + rv.number + " is on the site now. Want to change anything?";
+        setPill("Version " + rv.number + " is ready · Open", true);
+      });
+    } else {
+      pStatus.textContent = "That one didn't finish. Please try again.";
+    }
+  }
   function refresh() {
     if (loading) return loading;
     loading = api("/frontends").then(function (s) {
       state = s;
       render();
+      checkFollow();
       return s;
     }).catch(function () {
       showNotice("Couldn't load your creations. Close this and try again in a moment.");
@@ -253,7 +275,7 @@
   // another tab), check back until it's done
   function schedulePoll() {
     clearTimeout(pollTimer);
-    if (!isOpen || busy || !state) return;
+    if ((!isOpen && !follow) || busy || !state) return;
     if (state.frontends.some(function (f) { return f.running; })) pollTimer = setTimeout(refresh, POLL_MS);
   }
 
@@ -523,6 +545,7 @@
 
     start.then(function (target) {
       render();
+      var f0 = findFrontend(target.slug), had = f0 ? f0.revisions.length : 0;
       return window.BuilderStream.run({
         url: API + "/fe/" + encodeURIComponent(target.slug) + "/chat",
         prompt: prompt,
@@ -536,8 +559,10 @@
         onThinking: function (t) { pThinking.textContent += t; },
         onText: function (t) { pText.textContent += t; },
         onTool: function (text) { logStep(text); }
-      }).then(function (res) { res.slug = target.slug; return res; });
+      }).then(function (res) { res.slug = target.slug; res.had = had; return res; });
     }).then(function (res) {
+      // the connection dropped mid-run: keep checking, and show the version when it lands
+      if (res.outcome === "dropped") follow = { slug: res.slug, had: res.had };
       if (res.outcome !== "revision") {
         progress.classList.toggle("bm-failed", res.outcome === "error");
         if (res.outcome === "error") setPill("It didn't work · Open", true);

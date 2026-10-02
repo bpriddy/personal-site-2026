@@ -129,6 +129,7 @@ func main() {
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	srv.InterruptRuns(shutdownCtx) // builds in progress die with this instance: don't leave them "running"
 	if err := httpSrv.Shutdown(shutdownCtx); err != nil {
 		log.Error("shutdown", "err", err)
 	}

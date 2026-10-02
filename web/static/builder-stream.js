@@ -72,6 +72,14 @@
       }
     }
 
+    var streaming = false; // the run started: losing the connection now doesn't stop it
+    function dropped() {
+      result.outcome = "dropped";
+      result.message = friendly
+        ? "The connection dropped, but " + who + " is still working on it. It will show up here when it's done."
+        : "The connection ended before the run finished. It may still complete: reload in a minute.";
+      onStatus(result.message, false);
+    }
     onStatus("Starting…", false);
     return fetch(o.url, {
       method: "POST",
@@ -79,6 +87,7 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prompt: o.prompt, parent: o.parent || "" })
     }).then(function (r) {
+      if (r.ok) streaming = true;
       if (!r.ok) {
         return r.text().then(function (t) {
           // for visitors, only these carry a message written for them
@@ -109,15 +118,12 @@
       }
       return pump();
     }).then(function () {
-      if (!result.outcome) {
-        result.outcome = "dropped";
-        result.message = friendly
-          ? "The connection dropped, but " + who + " may still be working on it. Check back in a minute."
-          : "The connection ended before the run finished. It may still complete: reload in a minute.";
-        onStatus(result.message, false);
-      }
+      if (!result.outcome) dropped();
       return result;
     }).catch(function (err) {
+      // a network failure mid-stream (the phone slept, the tab went to the
+      // background, the server restarted): the run goes on without us
+      if (streaming && !result.outcome && err instanceof TypeError) { dropped(); return result; }
       var msg = err && typeof err.message === "string" ? err.message : String(err);
       // a network failure's message is the browser's, not ours
       if (friendly && err instanceof TypeError) msg = "";

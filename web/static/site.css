@@ -458,8 +458,9 @@ body.public::after {
   .site-bar { gap: var(--s-3); padding-top: calc(env(safe-area-inset-top) + 6px); padding-bottom: 6px; }
   .site-bar-line { font-size: 14px; line-height: 1.2; white-space: normal; overflow: visible; text-wrap: balance; }
   /* Re-imagine becomes a round plus button */
-  .make-own { width: 38px; padding: 0; justify-content: center; gap: 0; }
-  .make-own-dot, .make-own-roll, .make-own-kbd { display: none; }
+  /* (scoped to the bar so it outranks .make-own's base padding, which comes later) */
+  .site-bar .make-own { width: 38px; padding: 0; justify-content: center; gap: 0; }
+  .site-bar .make-own-dot, .site-bar .make-own-roll, .site-bar .make-own-kbd { display: none; }
   .make-own-plus { display: block; color: var(--accent); }
   .make-own:hover .make-own-plus, .make-own:focus-visible .make-own-plus { color: var(--bg); }
 }

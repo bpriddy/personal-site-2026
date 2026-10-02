@@ -35,6 +35,31 @@ type builderState struct {
 
 	mu      sync.Mutex
 	running map[string]bool // front-end IDs with a chat run in progress
+	runs    map[int64]bool  // their builder_runs IDs, to close if the server stops mid-run
+}
+
+// InterruptRuns records the chat runs still in progress on this instance as
+// failed. Call it when the server is stopping (a deploy, a scale-down): the
+// runs die with the process, and left "running" they would count against the
+// visitor's one-at-a-time limit until they aged out.
+func (s *Server) InterruptRuns(ctx context.Context) {
+	b := s.builderStore()
+	if b == nil {
+		return
+	}
+	s.builder.mu.Lock()
+	ids := make([]int64, 0, len(s.builder.runs))
+	for id := range s.builder.runs {
+		ids = append(ids, id)
+	}
+	s.builder.mu.Unlock()
+	for _, id := range ids {
+		if err := b.FinishRun(ctx, id, "", "interrupted: the server stopped mid-run"); err != nil {
+			s.log.Error("builder: interrupt run", "run", id, "err", err)
+		} else {
+			s.log.Warn("builder: run interrupted by shutdown", "run", id)
+		}
+	}
 }
 
 // RunTimeout bounds one builder chat run (many model turns).
@@ -668,6 +693,17 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, f store.Fronten
 		s.fail(w, "builder: start run", err)
 		return
 	}
+	s.builder.mu.Lock()
+	if s.builder.runs == nil {
+		s.builder.runs = map[int64]bool{}
+	}
+	s.builder.runs[runID] = true
+	s.builder.mu.Unlock()
+	defer func() {
+		s.builder.mu.Lock()
+		delete(s.builder.runs, runID)
+		s.builder.mu.Unlock()
+	}()
 	req.Content = s.siteContent(ctx)
 
 	ev := newEventStream(w)
