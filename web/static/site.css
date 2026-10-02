@@ -77,7 +77,8 @@ body.public::after {
   margin-left: -.04em; /* optical: the B's stem sits on the margin */
   view-transition-name: name;
 }
-.name .line { display: block; overflow: clip; padding-bottom: .06em; margin-bottom: -.06em; }
+.name .line { display: block; overflow: clip; padding: .2em 0 .24em; margin: -.2em 0 -.44em; } /* room for ascenders and the y's tail: the clip is only for the rise-in (sibling margins collapse, so the bottom one carries both) */
+.name .line:last-child { margin-bottom: -.24em; }
 .name .line > span { display: inline-block; }
 .cue {
   grid-column: 11 / 13; justify-self: end; align-self: end; color: var(--fg-2);
@@ -429,16 +430,30 @@ body.public::after {
   --rule: rgb(21 21 19 / .14); --rule-strong: rgb(21 21 19 / .4); --accent: #D9400B;
 }
 .site-bar-line {
-  margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  margin: 0; padding: 6px 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left;
   font: italic 400 17px/1.2 var(--font-display); letter-spacing: -.005em;
+  color: inherit; background: none; border: 0; cursor: pointer;
+  text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: .25em;
+  text-decoration-color: transparent; transition: text-decoration-color var(--d-2) var(--ease-quint);
 }
+@media (hover: hover) { .site-bar-line:hover { text-decoration-color: var(--rule-strong); } }
+.site-bar-line:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; text-decoration-color: var(--fg); }
+.make-own-spark { display: none; }
+.make-own-spark svg { display: block; width: 18px; height: 18px; fill: currentColor; }
 .site-bar-actions { flex: none; display: flex; align-items: center; gap: var(--s-2); }
 .has-bar body { padding-top: var(--bar-h, 45px); } /* the transcript, when it's the site */
 .has-bar .site-footer .concept, .has-bar .kicker { display: none; } /* the bar says it */
 @media (max-width: 599px) {
-  .site-bar { gap: var(--s-3); }
-  .site-bar-line { font-size: 15px; }
+  /* the line always reads in full: on phones it wraps to two lines (the bar grows, the front end follows) */
+  .site-bar { gap: var(--s-3); padding-top: calc(env(safe-area-inset-top) + 6px); padding-bottom: 6px; }
+  .site-bar-line { font-size: 15px; line-height: 1.15; white-space: normal; overflow: visible; text-wrap: balance; }
+  /* Re-imagine becomes a round sparkle button */
+  .make-own { width: 38px; padding: 0; justify-content: center; gap: 0; }
+  .make-own-dot, .make-own-roll, .make-own-kbd { display: none; }
+  .make-own-spark { display: block; color: var(--accent); }
+  .make-own:hover .make-own-spark, .make-own:focus-visible .make-own-spark { color: var(--bg); }
 }
+@media (max-width: 359px) { .site-bar-line { font-size: 14px; } }
 .shuffle-fe {
   position: relative; flex: none; display: grid; place-items: center;
   width: 32px; height: 32px; padding: 0; margin: 0;

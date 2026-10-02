@@ -9,6 +9,9 @@
          runs standalone with placeholder content. -->
     <script src="/site-host.js"></script>
     <link data-trunk rel="rust" data-wasm-opt="z" />
+    <!-- the interactive ASCII portrait on the home hero (portrait.js) -->
+    <link data-trunk rel="copy-file" href="portrait.js" />
+    <script src="portrait.js" defer></script>
     <style>
       /* builtin/site: the "Instrument" design (docs/design-pov.md, 5.1-5.2
          and 6), the same composition as the main site's HTML transcript
@@ -94,9 +97,18 @@
       }
 
       .hero {
+        position: relative; overflow: clip; /* the portrait may bleed past the edges */
         min-height: 100vh; min-height: 100svh; align-items: end; align-content: end;
         padding-bottom: calc(var(--s-8) + env(safe-area-inset-bottom));
       }
+      /* Ben's portrait in characters (portrait.js): upper right, behind the name */
+      .portrait {
+        position: absolute; z-index: 0; right: 0; top: clamp(72px, 9vh, 120px);
+        width: min(69vw, 1080px); aspect-ratio: 1; pointer-events: none;
+        -webkit-mask-image: linear-gradient(#000 64%, transparent 92%); mask-image: linear-gradient(#000 64%, transparent 92%);
+        animation: fade-in var(--d-4) var(--ease-out) 300ms backwards;
+      }
+      .hero > :not(.portrait) { position: relative; z-index: 1; }
       .kicker {
         grid-column: 1 / -1; align-self: end; margin: 0 0 var(--s-5);
         font-family: var(--font-text); font-weight: 400; font-size: var(--t-lede);
@@ -107,7 +119,8 @@
         font-family: var(--font-display); font-weight: 300; font-size: var(--t-mega);
         font-variation-settings: "opsz" 72; line-height: .86; letter-spacing: -.045em; margin-left: -.04em;
       }
-      .name .line { display: block; overflow: clip; padding-bottom: .06em; margin-bottom: -.06em; }
+      .name .line { display: block; overflow: clip; padding: .2em 0 .24em; margin: -.2em 0 -.44em; } /* room for ascenders and the y's tail: the clip is only for the rise-in (sibling margins collapse, so the bottom one carries both) */
+      .name .line:last-child { margin-bottom: -.24em; }
       .name .line > span { display: inline-block; }
       .cue { grid-column: 11 / 13; justify-self: end; align-self: end; color: var(--fg-2); padding-bottom: calc(var(--t-mega) * .86 + .2em); }
       .label { color: var(--fg-2); }
@@ -304,6 +317,7 @@
         .site-header, .hero, .bio, .index-row, .page-head, .site-footer { grid-template-columns: repeat(6, minmax(0, 1fr)); }
         .brand { grid-column: 1 / 3; } .role { grid-column: 3 / 5; } .site-header nav { grid-column: 5 / 7; }
         .name { grid-column: 1 / 7; } .cue { display: none; }
+        .portrait { width: min(108vw, 960px); right: -10vw; }
         .bio > .label { grid-column: 1 / 7; padding: 0 0 var(--s-5); } .bio-text { grid-column: 1 / 7; }
         .index-row .idx { grid-column: 1 / 2; } .index-title { grid-column: 2 / 7; }
         .index-summary { grid-column: 2 / 7; margin-top: var(--s-3); }
@@ -336,6 +350,8 @@
         .site-header nav { grid-column: 3 / 5; flex-direction: column; align-items: flex-end; gap: var(--s-2); }
         .hero { padding-bottom: calc(var(--s-9) + env(safe-area-inset-bottom)); }
         .name { grid-column: 1 / 5; font-size: min(29vw, 9rem); }
+        .portrait { left: 50%; right: auto; top: 96px; width: 132vw; transform: translateX(-50%);
+          -webkit-mask-image: linear-gradient(#000 52%, transparent 74%); mask-image: linear-gradient(#000 52%, transparent 74%); }
         .hero .meta { grid-column: 1 / 5; margin-top: var(--s-5); color: var(--fg-2); animation: fade-in var(--d-4) var(--ease-out) 750ms backwards; }
         .bio > .label, .bio-text { grid-column: 1 / 5; } .bio-text { gap: var(--s-5); }
         .index-row { row-gap: var(--s-3); padding: var(--s-5) 0; }

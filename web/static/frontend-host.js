@@ -392,13 +392,26 @@
     });
     var kbd = span("make-own-kbd", MAC ? "\u2318K" : "Ctrl K");
     kbd.setAttribute("aria-hidden", "true");
-    a.append(dot, roll, kbd);
+    // on phones the label gives way to a sparkle, so the concept line has room
+    var spark = span("make-own-spark");
+    spark.setAttribute("aria-hidden", "true");
+    var NS = "http://www.w3.org/2000/svg", svg = document.createElementNS(NS, "svg"), path = document.createElementNS(NS, "path");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("focusable", "false");
+    path.setAttribute("d", "M12 2.5c.5 4.6 1.9 6.9 4.2 8 1.2.6 2.9 1 5.3 1.5-2.4.5-4.1.9-5.3 1.5-2.3 1.1-3.7 3.4-4.2 8-.5-4.6-1.9-6.9-4.2-8-1.2-.6-2.9-1-5.3-1.5 2.4-.5 4.1-.9 5.3-1.5 2.3-1.1 3.7-3.4 4.2-8z");
+    svg.appendChild(path);
+    spark.appendChild(svg);
+    a.append(dot, roll, kbd, spark);
     bar = document.createElement("div");
     bar.id = "site-bar";
     bar.className = "site-bar";
-    var concept = document.createElement("p");
+    // the concept line is itself a way in: it opens the builder too
+    var concept = document.createElement("button");
+    concept.type = "button";
     concept.className = "site-bar-line";
+    concept.setAttribute("aria-haspopup", "dialog");
     concept.textContent = "This site is re-imagined by its visitors";
+    concept.addEventListener("click", function () { openBuilder(concept); });
     var actions = span("site-bar-actions");
     actions.append(drawShuffle(), a);
     bar.append(concept, actions);

@@ -743,6 +743,10 @@ fn render_route(doc: &Document, main: &Element, data: &SiteData, route: &str) ->
     if route.is_empty() {
         let home = data.pages.iter().find(|p| p.slug.is_empty());
         let hero = el(doc, "section", "hero", None)?;
+        // Ben's portrait in characters, drawn and animated by portrait.js
+        let portrait = el(doc, "canvas", "portrait", None)?;
+        portrait.set_attribute("aria-hidden", "true")?;
+        hero.append_child(&portrait)?;
         let name = el(doc, "h1", "name", None)?;
         for line in name_lines(&home_title(data)) {
             let l = el(doc, "span", "line", None)?;
