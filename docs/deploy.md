@@ -82,6 +82,7 @@ won't take traffic until you run `--to-latest`. Roll back with
 --set-secrets FRONTEND_SIGNING_KEY=frontend-signing-key:latest,ADMIN_PASSWORD=admin-password:latest,DATABASE_URL=database-url:latest,ANTHROPIC_API_KEY=anthropic-api-key-never:latest
 --update-env-vars FRONTENDS_BUCKET=benpriddycom-frontends
 --timeout 1800   # builder runs stream for minutes
+--no-cpu-throttling   # observer rebuilds run in the background for minutes; request-only CPU would stall them
 --cpu 1 --memory 512Mi --min-instances 0 --max-instances 4
 ```
 
