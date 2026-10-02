@@ -33,6 +33,13 @@ Composition (every view, 2D or 3D):
 - Diagonals and tension. Use an angle, a tilt, a staggered or stepped arrangement, or an implied line through the composition rather than only rows and columns.
 - Rhythm with variation. Repeated items (projects, pages) should not be identical tiles in a uniform grid: vary size, offset, spacing or rotation in a deliberate pattern, so the list reads as a composition, not a spreadsheet.
 
+2D layout that doesn't come from a template (applies to every front end, with or without 3D):
+- Recognise and refuse the stock patterns: logo-left/links-right navbar over a centred hero with a button; a centred single column of identical sections; three or four equal cards in a row; alternating image-left/text-right blocks; a footer of link columns. Use one only if the concept truly calls for it, and then make it unmistakably yours.
+- Build the layout from the content and the concept instead. Devices to reach for: an editorial grid where elements span unequal columns; type set as a layout element (huge, rotated, vertical, running across sections, interlocking with images); split screens with a fixed side and a scrolling side; sticky or pinned elements that change as you scroll; a horizontal or diagonal sequence; an index or table of contents as the main navigation; content hung from a single strong axis or edge; images that crop, overlap type, or break out of their column.
+- Navigation is part of the composition: it can live on a side, along the bottom, in a corner, inside the hero, or as an index; it doesn't have to be a bar across the top.
+- Every route gets its own composition. The home page, a work index and a project page should not be the same template with different words; and within a page, consecutive sections should not repeat the same structure.
+- Asymmetric margins and deliberate, varied spacing (big gaps next to tight groupings) read as designed; uniform padding around everything reads as a template.
+
 Camera and 3D (whenever there is a WebGPU scene):
 - Never a frontal, centred, orthographic-looking camera. Choose a lens and an angle: a low angle looking up, a high three-quarter view, a close wide-angle that exaggerates perspective, or a long lens that compresses depth. A slight roll (2-8°) where it suits the concept.
 - Compose in depth. Arrange objects along the z-axis, not on a flat wall: near objects large and partly cropped, far objects small and soft; use fog, depth of field, or falloff in light or contrast to separate the planes.
@@ -58,8 +65,9 @@ Re-read your files as a critical art director and check each point. If any answe
 1. Can you state the concept in one sentence, and does every major choice serve it?
 2. Is there one clear hero per view, with real scale contrast?
 3. Is the composition off-centre or deliberately symmetrical, with depth (layers, overlap, perspective) rather than a flat centred stack?
-4. If there is a 3D scene: is the camera angled and composed (not frontal and centred), are objects arranged in depth (not a flat wall or uniform grid), and is the lighting directional?
-5. Does the phone layout recompose rather than shrink?
-6. Does it pass every floor above?
-7. Is Ben's content readable and central on every route?
+4. Is every page clearly not a template (if a page resembles a stock pattern, name it and change it), and does each route have its own composition?
+5. If there is a 3D scene: is the camera angled and composed (not frontal and centred), are objects arranged in depth (not a flat wall or uniform grid), and is the lighting directional?
+6. Does the phone layout recompose rather than shrink?
+7. Does it pass every floor above?
+8. Is Ben's content readable and central on every route?
 Then fix the single weakest part once more, and call finish.`
