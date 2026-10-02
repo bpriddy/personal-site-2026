@@ -447,8 +447,8 @@ body.public::after {
 }
 @media (hover: hover) { .site-bar-line:hover { text-decoration-color: var(--rule-strong); } }
 .site-bar-line:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; text-decoration-color: var(--fg); }
-.make-own-spark { display: none; }
-.make-own-spark svg { display: block; width: 18px; height: 18px; fill: currentColor; }
+.make-own-plus { display: none; }
+.make-own-plus svg { display: block; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 .site-bar .make-own { font-stretch: normal; letter-spacing: -.005em; }
 .site-bar-actions { flex: none; display: flex; align-items: center; gap: var(--s-2); }
 .has-bar body { padding-top: var(--bar-h, 45px); } /* the transcript, when it's the site */
@@ -457,11 +457,11 @@ body.public::after {
   /* the line always reads in full: on phones it wraps to two lines (the bar grows, the front end follows) */
   .site-bar { gap: var(--s-3); padding-top: calc(env(safe-area-inset-top) + 6px); padding-bottom: 6px; }
   .site-bar-line { font-size: 14px; line-height: 1.2; white-space: normal; overflow: visible; text-wrap: balance; }
-  /* Re-imagine becomes a round sparkle button */
+  /* Re-imagine becomes a round plus button */
   .make-own { width: 38px; padding: 0; justify-content: center; gap: 0; }
   .make-own-dot, .make-own-roll, .make-own-kbd { display: none; }
-  .make-own-spark { display: block; color: var(--accent); }
-  .make-own:hover .make-own-spark, .make-own:focus-visible .make-own-spark { color: var(--bg); }
+  .make-own-plus { display: block; color: var(--accent); }
+  .make-own:hover .make-own-plus, .make-own:focus-visible .make-own-plus { color: var(--bg); }
 }
 @media (max-width: 359px) { .site-bar-line { font-size: 13px; } }
 .shuffle-fe {

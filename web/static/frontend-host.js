@@ -392,16 +392,16 @@
     });
     var kbd = span("make-own-kbd", MAC ? "\u2318K" : "Ctrl K");
     kbd.setAttribute("aria-hidden", "true");
-    // on phones the label gives way to a sparkle, so the concept line has room
-    var spark = span("make-own-spark");
-    spark.setAttribute("aria-hidden", "true");
+    // on phones the label gives way to a plus, so the concept line has room
+    var plus = span("make-own-plus");
+    plus.setAttribute("aria-hidden", "true");
     var NS = "http://www.w3.org/2000/svg", svg = document.createElementNS(NS, "svg"), path = document.createElementNS(NS, "path");
     svg.setAttribute("viewBox", "0 0 24 24");
     svg.setAttribute("focusable", "false");
-    path.setAttribute("d", "M12 2.5c.5 4.6 1.9 6.9 4.2 8 1.2.6 2.9 1 5.3 1.5-2.4.5-4.1.9-5.3 1.5-2.3 1.1-3.7 3.4-4.2 8-.5-4.6-1.9-6.9-4.2-8-1.2-.6-2.9-1-5.3-1.5 2.4-.5 4.1-.9 5.3-1.5 2.3-1.1 3.7-3.4 4.2-8z");
+    path.setAttribute("d", "M12 5v14M5 12h14");
     svg.appendChild(path);
-    spark.appendChild(svg);
-    a.append(dot, roll, kbd, spark);
+    plus.appendChild(svg);
+    a.append(dot, roll, kbd, plus);
     bar = document.createElement("div");
     bar.id = "site-bar";
     bar.className = "site-bar";
