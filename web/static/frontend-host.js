@@ -34,6 +34,16 @@
   var RESERVED = { admin: true, api: true, "static": true, health: true, build: true };
 
   var root = document.documentElement;
+  // ?shuffle asks for a fresh random front end (handy for cycling the
+  // rotation); read once, then removed from the address bar
+  var shuffle = /[?&]shuffle(=|&|$)/.test(location.search);
+  if (shuffle) {
+    try {
+      var u = new URL(location.href);
+      u.searchParams.delete("shuffle");
+      history.replaceState(history.state, "", u.pathname + u.search + u.hash);
+    } catch (e) { /* keep the URL */ }
+  }
   var iframe = null; // the current front end's iframe
   var attempt = 0; // bumps on every load, so stale callbacks are ignored
   var currentRef = null;
@@ -156,7 +166,9 @@
     if (!revealed) setMode("fe-loading");
     readyTimer = setTimeout(function () { fail(my, "no site:ready within " + READY_TIMEOUT_MS + "ms"); }, READY_TIMEOUT_MS);
 
-    fetch("/api/frontend" + (fallback ? "?fallback=1" : ""), { credentials: "same-origin", cache: "no-store" })
+    var reroll = shuffle && !fallback;
+    shuffle = false; // once per page load: later reloads keep the new pick
+    fetch("/api/frontend" + (fallback ? "?fallback=1" : (reroll ? "?shuffle=1" : "")), { credentials: "same-origin", cache: "no-store" })
       .then(function (r) {
         if (!r.ok) throw new Error("api/frontend: HTTP " + r.status);
         return r.json();

@@ -85,21 +85,36 @@ func (s *Server) signedIndexURL(serve frontend.Ref) string {
 // visitPick returns the visit's front end: the fe_pick cookie if it names an
 // ID in the current rotation, otherwise a new random pick, stored in the cookie.
 func (s *Server) visitPick(w http.ResponseWriter, r *http.Request, rotation frontend.Rotation) frontend.Ref {
+	cur := ""
 	if c, err := r.Cookie(pickCookie); err == nil && frontend.ValidID(c.Value) && rotation.Contains(c.Value) {
-		return c.Value
+		cur = c.Value
 	}
-	ref := rotation.Pick(s.intn)
+	ref := cur
+	if _, shuffle := r.URL.Query()["shuffle"]; ref == "" || shuffle {
+		// ?shuffle: a fresh pick, different from the current one when possible
+		others := rotation
+		if cur != "" && len(rotation) > 1 {
+			others = slices.DeleteFunc(slices.Clone(rotation), func(id frontend.Ref) bool { return id == cur })
+		}
+		ref = others.Pick(s.intn)
+	}
+	// A visit ends after pickTTL without a page view. A session cookie isn't
+	// enough: Safari restores session cookies when it reopens, so the first
+	// pick would stick forever. Refreshed on every load (sliding).
 	http.SetCookie(w, &http.Cookie{
 		Name:     pickCookie,
 		Value:    ref,
 		Path:     "/",
+		MaxAge:   pickTTL,
 		HttpOnly: true,
 		Secure:   !s.cfg.Dev(),
 		SameSite: http.SameSiteLaxMode,
-		// no MaxAge/Expires: a session cookie, so the pick lasts one visit
 	})
 	return ref
 }
+
+// pickTTL is how long a visit's front-end pick lasts without a page view.
+const pickTTL = 30 * 60
 
 // rotation is the servable rotation: front-end IDs, and the ref each serves.
 type rotation struct {

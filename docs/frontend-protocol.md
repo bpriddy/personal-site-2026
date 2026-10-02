@@ -484,3 +484,13 @@ modal and the admin builder.
   `font-src 'self'` covers it because it's the same origin.
 - The main site serves the same files at `/static/fonts/`.
 - The builder system prompt lists the paths and gives an `@font-face` snippet.
+
+## v1.3 change: what counts as a visit
+
+- **`fe_pick`** now has `Max-Age` 1800, refreshed on every `/api/frontend`.
+  A visit ends after 30 minutes without a page view. It used to be a session
+  cookie, but Safari restores session cookies when it reopens, so a visitor's
+  first pick stuck forever.
+- **`/?shuffle`**: the parent passes `shuffle=1` to `/api/frontend` once per
+  page load. That picks a different front end from the rotation when there is
+  one, then removes `shuffle` from the address bar.

@@ -113,19 +113,20 @@ func TestAPIFrontendCookie(t *testing.T) {
 	if c == nil {
 		t.Fatal("no fe_pick cookie set")
 	}
-	if c.Value != fe.Ref || !c.HttpOnly || c.SameSite != http.SameSiteLaxMode || c.MaxAge != 0 || !c.Expires.IsZero() || c.Path != "/" {
+	if c.Value != fe.Ref || !c.HttpOnly || c.SameSite != http.SameSiteLaxMode || c.MaxAge != pickTTL || c.Path != "/" {
 		t.Errorf("cookie = %+v", c)
 	}
 
-	// sticky: the cookie wins over a different random pick, and isn't re-set
+	// sticky: the cookie wins over a different random pick, and is refreshed
+	// with the same value (a sliding pickTTL visit)
 	s.intn = func(int) int { return 0 }
 	for range 3 {
 		rec = get(s, "/api/frontend", &http.Cookie{Name: pickCookie, Value: c.Value})
 		if got := decodeFrontend(t, rec).Ref; got != c.Value {
 			t.Errorf("sticky ref = %q, want %q", got, c.Value)
 		}
-		if pickCookieOf(rec) != nil {
-			t.Error("cookie re-set for a valid pick")
+		if pc := pickCookieOf(rec); pc == nil || pc.Value != c.Value || pc.MaxAge != pickTTL {
+			t.Errorf("pick cookie should be refreshed with the same value: %+v", pc)
 		}
 	}
 
@@ -341,5 +342,31 @@ func TestBodyParagraphs(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("home missing %s", want)
 		}
+	}
+}
+
+func TestShufflePicksADifferentFrontEnd(t *testing.T) {
+	s := newTestServer(t)
+	s.intn = func(int) int { return 0 }
+	rec := get(s, "/api/frontend")
+	first := rec.Result().Cookies()[0]
+	if first.MaxAge != pickTTL {
+		t.Fatalf("pick cookie MaxAge = %d, want %d (Safari restores session cookies)", first.MaxAge, pickTTL)
+	}
+	var a frontendResponse
+	json.NewDecoder(rec.Body).Decode(&a)
+	// same visit, no shuffle: the same front end, and the cookie is refreshed
+	rec = get(s, "/api/frontend", first)
+	var b frontendResponse
+	json.NewDecoder(rec.Body).Decode(&b)
+	if b.Ref != a.Ref || len(rec.Result().Cookies()) != 1 || rec.Result().Cookies()[0].MaxAge != pickTTL {
+		t.Fatalf("sticky pick: %q then %q", a.Ref, b.Ref)
+	}
+	// ?shuffle: a different one (the rotation has two)
+	rec = get(s, "/api/frontend?shuffle=1", first)
+	var c frontendResponse
+	json.NewDecoder(rec.Body).Decode(&c)
+	if c.Ref == a.Ref || rec.Result().Cookies()[0].Value != c.Ref {
+		t.Fatalf("shuffle kept %q", c.Ref)
 	}
 }
