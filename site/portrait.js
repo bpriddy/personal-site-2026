@@ -43,7 +43,9 @@
     var ptr = { x: -1e4, y: -1e4, sx: -1e4, sy: -1e4, on: 0, son: 0 };
     var ripples = [], raf = 0, visible = true, start = performance.now(), alive = true;
 
+    var light = false;
     function readColors() {
+      light = matchMedia("(prefers-color-scheme: light)").matches;
       var cs = getComputedStyle(document.documentElement);
       colors.base = cs.getPropertyValue("--fg-2").trim() || colors.base;
       colors.lit = cs.getPropertyValue("--fg").trim() || colors.lit;
@@ -88,6 +90,8 @@
           if (s >= 0) {
             var b = s;
             if (lens > 0) b = Math.min(1, 0.5 + (b - 0.5) * (1 + 0.9 * lens) + 0.12 * lens); // sharper under the lens
+            // ink, not light: on the day theme the letters are dark on paper, so density follows the photo's darks
+            if (light) b = 1 - (b < 0 ? 0 : b > 1 ? 1 : b);
             for (var q = 0; q < ripples.length; q++) { // a ring of light running outward
               var rp = ripples[q], age = t - rp.t, rr = age * Math.max(W, H) * 0.75;
               var dd = Math.abs(Math.sqrt((cx - rp.x) * (cx - rp.x) + (cy - rp.y) * (cy - rp.y)) - rr);
