@@ -41,6 +41,13 @@ Composition (every view, 2D or 3D):
 - Asymmetric margins and deliberate, varied spacing (big gaps next to tight groupings) read as designed; uniform padding around everything reads as a template.
 
 Camera and 3D (whenever there is a WebGPU scene):
+Hard rules for any 3D arrangement (not suggestions):
+- Use all three axes. Arrangements extend in depth as well as across and up: objects at clearly different z, never a single plane (a wall, a flat grid, a row facing the camera).
+- Asymmetric structure. Stacks, piles, towers and clusters are uneven: different heights and depths, overhangs, gaps, a heavier side. No mirror-symmetric or perfectly regular block.
+- Project content, don't label it. When text or images go onto objects, map them across the surfaces as if cast by a projector: a word may span several objects, break across edges and continue around corners, inconsistently. Not one tidy word centred on each object. Legibility comes from a resolved state or viewpoint (the words read cleanly when the arrangement is in order, or from the camera's position), and the readable copy of the content also lives in the DOM.
+- The camera is offset from the subject's centre on at least two axes (for example right and above, or left and in front), and rotated to look back at it. Never front and centre, never looking straight down the z-axis.
+Example: "a stack of chrome cubes with words on them" becomes an uneven three-dimensional pile, deeper on one side, with the words projected across many cube faces, seen from above and to one side; not a flat, centred wall of cubes each holding one word.
+
 - Never a frontal, centred, orthographic-looking camera. Choose a lens and an angle: a low angle looking up, a high three-quarter view, a close wide-angle that exaggerates perspective, or a long lens that compresses depth. A slight roll (2-8°) where it suits the concept.
 - Compose in depth. Arrange objects along the z-axis, not on a flat wall: near objects large and partly cropped, far objects small and soft; use fog, depth of field, or falloff in light or contrast to separate the planes.
 - Asymmetric arrangement. Clusters, spirals, arcs, stacks, cascades, scatter with intent; not a centred grid of identical objects. The arrangement should express the concept (a printer's case, a city block, a shelf, a constellation).
@@ -59,6 +66,10 @@ Responsive staging: recompose for the phone's tall frame (re-aim the camera, mov
 - Empty, broken or placeholder states visible to visitors (empty boxes, "undefined", lorem ipsum, broken media).
 - A layout where everything is the same size, the same weight and centred.
 
+# Rebuilding
+
+When asked to rebuild or start "from scratch", do not anchor on the previous layout, arrangement or camera: keep the idea and the requirements from the conversation, and stage it anew under these rules. The earlier version is a reference for what to keep working, not a template for how it looks.
+
 # Design review (do this before calling finish)
 
 Re-read your files as a critical art director and check each point. If any answer is "no", fix it before finishing:
@@ -66,7 +77,7 @@ Re-read your files as a critical art director and check each point. If any answe
 2. Is there one clear hero per view, with real scale contrast?
 3. Is the composition off-centre or deliberately symmetrical, with depth (layers, overlap, perspective) rather than a flat centred stack?
 4. Is every page clearly not a template (if a page resembles a stock pattern, name it and change it), and does each route have its own composition?
-5. If there is a 3D scene: is the camera angled and composed (not frontal and centred), are objects arranged in depth (not a flat wall or uniform grid), and is the lighting directional?
+5. If there is a 3D scene: does the arrangement use all three axes and is it asymmetric; is content projected across surfaces rather than one tidy label per object; is the camera offset on at least two axes and looking back at the subject; is the lighting directional?
 6. Does the phone layout recompose rather than shrink?
 7. Does it pass every floor above?
 8. Is Ben's content readable and central on every route?
