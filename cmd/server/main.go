@@ -11,11 +11,13 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/bpriddy/personal-site-2026/internal/builder"
 	"github.com/bpriddy/personal-site-2026/internal/config"
+	"github.com/bpriddy/personal-site-2026/internal/connect"
 	"github.com/bpriddy/personal-site-2026/internal/llm"
 	"github.com/bpriddy/personal-site-2026/internal/media"
 	"github.com/bpriddy/personal-site-2026/internal/observer"
@@ -65,6 +67,14 @@ func main() {
 		files = gcs
 		log.Info("revisions: cloud storage", "bucket", cfg.FrontendsBucket)
 	}
+	// media (/media/...): FRONTENDS_BUCKET objects media/..., else MEDIA_DIR
+	mediaSrc, err := media.FromEnv(context.Background(), cfg.FrontendsBucket, cfg.MediaDir)
+	if err != nil {
+		log.Error("media", "err", err)
+		os.Exit(1)
+	}
+	// the builder's connections to outside services (internal/connect)
+	conns := connections(mediaSrc, log)
 	var agent *builder.Builder
 	if cfg.Dev() && os.Getenv("BUILDER_DEMO_MODEL") == "1" {
 		// offline: a canned model for local work and the e2e tests (never in prod)
@@ -75,7 +85,7 @@ func main() {
 		agent = builder.New(&builder.DemoModel{Delay: delay}, builder.Config{Model: "demo"})
 		log.Warn("builder: BUILDER_DEMO_MODEL=1; using the offline demo model, not Claude")
 	} else if client := llm.NewClient(cfg.AnthropicAPIKey); client != nil {
-		agent = builder.New(builder.ClaudeModel{Client: client}, builder.Config{Model: llm.Model, Fallbacks: true})
+		agent = builder.New(builder.ClaudeModel{Client: client}, builder.Config{Model: llm.Model, Fallbacks: true, Connections: conns})
 	} else {
 		log.Warn("builder: ANTHROPIC_API_KEY unset; builder chat (admin and public) disabled")
 	}
@@ -92,12 +102,6 @@ func main() {
 
 	obs := newObserver(cfg, st, obsStore, files, log)
 
-	// media (/media/...): FRONTENDS_BUCKET objects media/..., else MEDIA_DIR
-	mediaSrc, err := media.FromEnv(context.Background(), cfg.FrontendsBucket, cfg.MediaDir)
-	if err != nil {
-		log.Error("media", "err", err)
-		os.Exit(1)
-	}
 
 	srv, err := server.New(cfg, st, log, server.WithObserver(obs), server.WithBuilder(agent, files),
 		server.WithBuildLimits(limits), server.WithMedia(mediaSrc))
@@ -154,4 +158,42 @@ func newObserver(cfg config.Config, st store.Store, obsStore store.ObserverStore
 		log.Warn("observer: ANTHROPIC_API_KEY unset; detections are recorded but not healed")
 	}
 	return observer.New(oc)
+}
+
+// connections are the builder's outside services. BUILDER_CONNECTIONS lists
+// them (default: all); Sketchfab also needs SKETCHFAB_API_TOKEN. They import
+// into the media store, so it must be writable.
+func connections(src media.Source, log *slog.Logger) []connect.Connection {
+	st, ok := src.(connect.Store)
+	if !ok {
+		log.Warn("builder: the media store isn't writable; no connections")
+		return nil
+	}
+	want := map[string]bool{"sketchfab": true, "polyhaven": true, "googlefonts": true}
+	if v, set := os.LookupEnv("BUILDER_CONNECTIONS"); set {
+		want = map[string]bool{}
+		for _, n := range strings.Split(v, ",") {
+			want[strings.TrimSpace(n)] = true
+		}
+	}
+	var out []connect.Connection
+	if want["sketchfab"] {
+		if tok := os.Getenv("SKETCHFAB_API_TOKEN"); tok != "" {
+			out = append(out, &connect.Sketchfab{Token: tok, Store: st})
+		} else {
+			log.Warn("builder: SKETCHFAB_API_TOKEN unset; no Sketchfab models")
+		}
+	}
+	if want["polyhaven"] {
+		out = append(out, &connect.PolyHaven{Store: st})
+	}
+	if want["googlefonts"] {
+		out = append(out, &connect.GoogleFonts{Store: st})
+	}
+	var names []string
+	for _, c := range out {
+		names = append(names, c.Name())
+	}
+	log.Info("builder: connections", "on", strings.Join(names, ","))
+	return out
 }

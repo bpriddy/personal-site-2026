@@ -42,6 +42,7 @@ It is a classic script that defines window.site:
 | site.theme("light" \| "dark") | the theme of the site bar above your frame (style fixed by the host), so it sits well with your design. Call it at startup; again when a route changes theme. Until called, the bar follows the visitor's system theme. |
 | site.transitions(false) | turn off the host's automatic route transitions (it animates the content on screen out on navigation and the new route's content in, about a second in all). Only for a front end that designs its own route transition; by default leave them on. |
 | site.reportError(err, kind = "report") | report an error. kind "gpu-lost" makes the parent replace your front end, so use it only when the front end can no longer show the content. |
+| site.loadModel(path) | loads a .glb 3D model from the site's media (what sketchfab_import brings in) and resolves to {meshes: [{positions, normals, uvs, indices, material: {baseColor, texture (ImageBitmap or null), metallic, roughness, emissive, alphaMode, doubleSided}}], bounds: {min, max, center, radius}, triangles}, with node transforms applied. The 3d-models skill shows how to draw it. |
 | site.textCanvas(text, {font, color, maxWidth, lineHeight, padding}) | draws text into an OffscreenCanvas (or a 2D canvas) and returns it, ready for GPUQueue.copyExternalImageToTexture. For text inside a WebGPU scene. |
 | site.get(path, fallback) | dotted path into site.content ("pages.0.title"); never throws. |
 | site.pages(), site.page(slug), site.experiments() | always an array (pages, experiments) or an object (page; {} if not found). Never undefined. |
@@ -89,7 +90,7 @@ Build links from the content, e.g. <a href="#" data-slug="about">About</a>, and 
 
 # Straightforward code
 
-- Prefer the most straightforward implementation: usually one index.html with inline <style> and <script>, plus separate files only when they make the code clearer (e.g. a WGSL shader). No build step, no frameworks, no libraries.
+- Prefer the most straightforward implementation: usually one index.html with inline <style> and <script>, plus separate files only when they make the code clearer (e.g. a WGSL shader). No build step, no frameworks, no libraries (the host API is your library: site.loadModel for 3D models, site.textCanvas for text in WebGPU).
 - Keep it small and readable: typically under 30 KB in total.
 - The iframe fills the viewport below the site bar (nothing of the host is drawn over your frame, so every corner is yours); the document may scroll. Handle resize and devicePixelRatio for canvases (and cap canvas resolution sensibly).
 - Wrap startup in try/catch and report failures with site.reportError(err).

@@ -163,3 +163,32 @@ func TestDirMissingRoot(t *testing.T) {
 		t.Errorf("traversal err = %v", err)
 	}
 }
+
+func TestServableNameAssets(t *testing.T) {
+	for name, want := range map[string]bool{
+		"assets/models/sketchfab/0123abcd.glb":          true,
+		"assets/fonts/google/space-grotesk/abc.woff2":   true,
+		"assets/textures/polyhaven/wood_01/1k/color.jpg": true,
+		"projects/x/hero.jpg":                           true,  // content media
+		"projects/x/model.glb":                          false, // models only under assets/
+		"assets/../secret.glb":                          false,
+		"assets/.hidden/x.glb":                          false,
+		"assets/x.exe":                                  false,
+		"assets/":                                       false,
+	} {
+		if got := ServableName(name); got != want {
+			t.Errorf("ServableName(%q) = %v, want %v", name, got, want)
+		}
+	}
+	d := Dir{Root: t.TempDir()}
+	ctx := context.Background()
+	if err := d.Put(ctx, "assets/models/x/a.glb", []byte("glTF"), "model/gltf-binary"); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := d.Exists(ctx, "assets/models/x/a.glb"); !ok || err != nil {
+		t.Fatalf("exists = %v, %v", ok, err)
+	}
+	if err := d.Put(ctx, "../escape.glb", nil, ""); err == nil {
+		t.Fatal("put outside assets accepted")
+	}
+}

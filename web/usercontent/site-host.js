@@ -551,6 +551,15 @@
       post(msg);
     },
 
+    // loadModel (v1.7): a glTF 2.0 binary (.glb) from the site's media (what
+    // the builder's sketchfab_import brings in) → plain arrays ready for
+    // WebGPU: {meshes: [{positions, normals, uvs, indices, material}],
+    // bounds: {min, max, center, radius}, triangles}. Node transforms are
+    // applied; textures are ImageBitmaps (base colour, sRGB). Rest pose only.
+    loadModel: function (url) {
+      return loadModel(url);
+    },
+
     // textCanvas draws text (wrapped at maxWidth, "\n" for hard breaks) into
     // an OffscreenCanvas (or a 2D canvas where unavailable), sized to fit,
     // ready for GPUQueue.copyExternalImageToTexture.
@@ -602,6 +611,176 @@
   };
 
   // collection: site.content[name] if it's an array, else a fresh [].
+  // ── loadModel: a small glTF 2.0 (.glb) reader ──
+  var GLB_COMP = { 5120: [1, "getInt8", 127], 5121: [1, "getUint8", 255], 5122: [2, "getInt16", 32767], 5123: [2, "getUint16", 65535], 5125: [4, "getUint32", 0], 5126: [4, "getFloat32", 0] };
+  var GLB_N = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16 };
+  function loadModel(url) {
+    if (typeof url !== "string" || !/^\/media\/[A-Za-z0-9._\/-]+\.glb$/.test(url)) {
+      return Promise.reject(new TypeError("site.loadModel: give a /media/....glb path"));
+    }
+    return fetch(url).then(function (r) {
+      if (!r.ok) throw new Error("site.loadModel: HTTP " + r.status + " for " + url);
+      return r.arrayBuffer();
+    }).then(parseGLB);
+  }
+  function parseGLB(buf) {
+    var dv = new DataView(buf);
+    if (buf.byteLength < 20 || dv.getUint32(0, true) !== 0x46546C67) throw new Error("site.loadModel: not a .glb file");
+    if (dv.getUint32(4, true) !== 2) throw new Error("site.loadModel: only glTF 2.0");
+    var g = null, bin = 0, binLen = 0, off = 12;
+    while (off + 8 <= buf.byteLength) {
+      var len = dv.getUint32(off, true), type = dv.getUint32(off + 4, true), start = off + 8;
+      if (start + len > buf.byteLength) break;
+      if (type === 0x4E4F534A) g = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, start, len)));
+      else if (type === 0x004E4942 && !binLen) { bin = start; binLen = len; }
+      off = (start + len + 3) & ~3;
+    }
+    if (!g) throw new Error("site.loadModel: no glTF JSON");
+    // read an accessor as floats (or, when ints, as unsigned integers)
+    function read(i, ints) {
+      var a = g.accessors[i], n = GLB_N[a.type], c = GLB_COMP[a.componentType];
+      if (!n || !c) throw new Error("site.loadModel: unsupported accessor");
+      var out = ints ? new Uint32Array(a.count * n) : new Float32Array(a.count * n);
+      if (a.bufferView == null) return out;
+      var bv = g.bufferViews[a.bufferView];
+      var base = bin + (bv.byteOffset || 0) + (a.byteOffset || 0), stride = bv.byteStride || n * c[0];
+      var norm = a.normalized && c[2], get = dv[c[1]];
+      for (var k = 0; k < a.count; k++) {
+        for (var j = 0; j < n; j++) {
+          var v = get.call(dv, base + k * stride + j * c[0], true);
+          out[k * n + j] = norm ? Math.max(v / norm, -1) : v;
+        }
+      }
+      return out;
+    }
+    // 4x4 column-major helpers
+    function mul(a, b) {
+      var o = new Float32Array(16);
+      for (var col = 0; col < 4; col++) for (var row = 0; row < 4; row++) {
+        var s = 0;
+        for (var k = 0; k < 4; k++) s += a[k * 4 + row] * b[col * 4 + k];
+        o[col * 4 + row] = s;
+      }
+      return o;
+    }
+    function local(node) {
+      if (node.matrix) return new Float32Array(node.matrix);
+      var t = node.translation || [0, 0, 0], q = node.rotation || [0, 0, 0, 1], s = node.scale || [1, 1, 1];
+      var x = q[0], y = q[1], z = q[2], w = q[3];
+      return new Float32Array([
+        (1 - 2 * (y * y + z * z)) * s[0], (2 * (x * y + z * w)) * s[0], (2 * (x * z - y * w)) * s[0], 0,
+        (2 * (x * y - z * w)) * s[1], (1 - 2 * (x * x + z * z)) * s[1], (2 * (y * z + x * w)) * s[1], 0,
+        (2 * (x * z + y * w)) * s[2], (2 * (y * z - x * w)) * s[2], (1 - 2 * (x * x + y * y)) * s[2], 0,
+        t[0], t[1], t[2], 1]);
+    }
+    // the inverse-transpose of m's upper 3x3 (for normals), and its determinant
+    function normalMat(m) {
+      var a = m[0], b = m[1], c = m[2], d = m[4], e = m[5], f = m[6], h = m[8], i = m[9], j = m[10];
+      var A = e * j - f * i, B = f * h - d * j, C = d * i - e * h, det = a * A + b * B + c * C;
+      var inv = det ? 1 / det : 0;
+      return { det: det, m: [A * inv, B * inv, C * inv, (c * i - b * j) * inv, (a * j - c * h) * inv, (b * h - a * i) * inv,
+        (b * f - c * e) * inv, (c * d - a * f) * inv, (a * e - b * d) * inv] };
+    }
+    var images = {};
+    function bitmap(texIndex) {
+      if (texIndex == null || !g.textures || !g.textures[texIndex]) return Promise.resolve(null);
+      var tx = g.textures[texIndex], ext = tx.extensions || {};
+      var src = tx.source != null ? tx.source : ext.KHR_texture_webp ? ext.KHR_texture_webp.source : null;
+      var im = src != null && g.images && g.images[src];
+      if (!im || im.bufferView == null || typeof createImageBitmap !== "function") return Promise.resolve(null);
+      if (!images[src]) {
+        var bv = g.bufferViews[im.bufferView];
+        var blob = new Blob([new Uint8Array(buf, bin + (bv.byteOffset || 0), bv.byteLength)], { type: im.mimeType || "image/png" });
+        images[src] = createImageBitmap(blob, { colorSpaceConversion: "none", premultiplyAlpha: "none" }).catch(function () { return null; });
+      }
+      return images[src];
+    }
+    function material(i) {
+      var m = (g.materials && g.materials[i]) || {}, pbr = m.pbrMetallicRoughness || {};
+      var sg = m.extensions && m.extensions.KHR_materials_pbrSpecularGlossiness;
+      var tex = pbr.baseColorTexture ? pbr.baseColorTexture.index : sg && sg.diffuseTexture ? sg.diffuseTexture.index : null;
+      return bitmap(tex).then(function (bm) {
+        return {
+          baseColor: (pbr.baseColorFactor || (sg && sg.diffuseFactor) || [1, 1, 1, 1]).slice(),
+          texture: bm,
+          metallic: pbr.metallicFactor != null ? pbr.metallicFactor : sg ? 0 : 1,
+          roughness: pbr.roughnessFactor != null ? pbr.roughnessFactor : sg ? 1 - (sg.glossinessFactor != null ? sg.glossinessFactor : 1) : 1,
+          emissive: (m.emissiveFactor || [0, 0, 0]).slice(),
+          alphaMode: m.alphaMode || "OPAQUE",
+          doubleSided: !!m.doubleSided
+        };
+      });
+    }
+    var meshes = [], pending = [], triangles = 0;
+    var mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+    function visit(ni, parent, depth) {
+      var node = g.nodes[ni];
+      if (!node || depth > 64) return;
+      var world = mul(parent, local(node));
+      if (node.mesh != null && g.meshes[node.mesh]) {
+        var nm = normalMat(world);
+        g.meshes[node.mesh].primitives.forEach(function (p) {
+          if ((p.mode != null && p.mode !== 4) || p.attributes.POSITION == null) return;
+          var pos = read(p.attributes.POSITION), count = pos.length / 3;
+          var idx = p.indices != null ? read(p.indices, true) : (function () { var a = new Uint32Array(count); for (var k = 0; k < count; k++) a[k] = k; return a; })();
+          if (nm.det < 0) for (var t = 0; t + 2 < idx.length; t += 3) { var sw = idx[t + 1]; idx[t + 1] = idx[t + 2]; idx[t + 2] = sw; }
+          for (var k = 0; k < count; k++) {
+            var x = pos[k * 3], y = pos[k * 3 + 1], z = pos[k * 3 + 2];
+            for (var r = 0; r < 3; r++) {
+              var v = world[r] * x + world[4 + r] * y + world[8 + r] * z + world[12 + r];
+              pos[k * 3 + r] = v;
+              if (v < mn[r]) mn[r] = v;
+              if (v > mx[r]) mx[r] = v;
+            }
+          }
+          var nor;
+          if (p.attributes.NORMAL != null) {
+            nor = read(p.attributes.NORMAL);
+            var M = nm.m;
+            for (var k2 = 0; k2 < count; k2++) {
+              var a = nor[k2 * 3], b = nor[k2 * 3 + 1], c = nor[k2 * 3 + 2];
+              var nx = M[0] * a + M[3] * b + M[6] * c, ny = M[1] * a + M[4] * b + M[7] * c, nz = M[2] * a + M[5] * b + M[8] * c;
+              var l = Math.hypot(nx, ny, nz) || 1;
+              nor[k2 * 3] = nx / l; nor[k2 * 3 + 1] = ny / l; nor[k2 * 3 + 2] = nz / l;
+            }
+          } else {
+            nor = new Float32Array(count * 3); // smooth normals from the faces
+            for (var f = 0; f + 2 < idx.length; f += 3) {
+              var i0 = idx[f] * 3, i1 = idx[f + 1] * 3, i2 = idx[f + 2] * 3;
+              var ux = pos[i1] - pos[i0], uy = pos[i1 + 1] - pos[i0 + 1], uz = pos[i1 + 2] - pos[i0 + 2];
+              var vx = pos[i2] - pos[i0], vy = pos[i2 + 1] - pos[i0 + 1], vz = pos[i2 + 2] - pos[i0 + 2];
+              var fx = uy * vz - uz * vy, fy = uz * vx - ux * vz, fz = ux * vy - uy * vx;
+              [i0, i1, i2].forEach(function (q) { nor[q] += fx; nor[q + 1] += fy; nor[q + 2] += fz; });
+            }
+            for (var k3 = 0; k3 < count; k3++) {
+              var l2 = Math.hypot(nor[k3 * 3], nor[k3 * 3 + 1], nor[k3 * 3 + 2]) || 1;
+              nor[k3 * 3] /= l2; nor[k3 * 3 + 1] /= l2; nor[k3 * 3 + 2] /= l2;
+            }
+          }
+          var mesh = { positions: pos, normals: nor, uvs: p.attributes.TEXCOORD_0 != null ? read(p.attributes.TEXCOORD_0) : null, indices: idx, material: null };
+          triangles += idx.length / 3 | 0;
+          meshes.push(mesh);
+          pending.push(material(p.material).then(function (mat) { mesh.material = mat; }));
+        });
+      }
+      (node.children || []).forEach(function (c) { visit(c, world, depth + 1); });
+    }
+    var identity = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    var scene = g.scenes && g.scenes[g.scene || 0];
+    var roots = scene && scene.nodes ? scene.nodes : (g.nodes || []).map(function (_, i) { return i; });
+    roots.forEach(function (ni) { visit(ni, identity, 0); });
+    if (!meshes.length) throw new Error("site.loadModel: no triangle meshes");
+    var center = [(mn[0] + mx[0]) / 2, (mn[1] + mx[1]) / 2, (mn[2] + mx[2]) / 2], radius = 0;
+    meshes.forEach(function (m) {
+      for (var k = 0; k < m.positions.length; k += 3) {
+        radius = Math.max(radius, Math.hypot(m.positions[k] - center[0], m.positions[k + 1] - center[1], m.positions[k + 2] - center[2]));
+      }
+    });
+    return Promise.all(pending).then(function () {
+      return { meshes: meshes, bounds: { min: mn, max: mx, center: center, radius: radius || 1 }, triangles: triangles };
+    });
+  }
+
   function collection(name) {
     var list = site.content && typeof site.content === "object" ? own(site.content, name) : undefined;
     return Array.isArray(list) ? list : [];

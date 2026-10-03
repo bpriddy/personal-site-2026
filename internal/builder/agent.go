@@ -14,6 +14,7 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 
+	"github.com/bpriddy/personal-site-2026/internal/connect"
 	"github.com/bpriddy/personal-site-2026/internal/revfiles"
 )
 
@@ -83,6 +84,8 @@ type Result struct {
 
 // Config tunes a Builder.
 type Config struct {
+	// Connections are outside services the model may call (internal/connect).
+	Connections []connect.Connection
 	Model     string // e.g. llm.Model
 	Effort    anthropic.BetaOutputConfigEffort
 	MaxTokens int64 // per model turn
@@ -115,7 +118,13 @@ var ErrRefused = errors.New("the model declined this request")
 // Run applies req.Prompt to req.Parent and returns the new files. It stops
 // when the model calls finish with valid files, or fails.
 func (b *Builder) Run(ctx context.Context, req Request, emit func(Event)) (*Result, error) {
-	ws := &workspace{files: clone(req.Parent)}
+	ctx = connect.WithBudget(ctx) // import limits are per run
+	ws := &workspace{ctx: ctx, files: clone(req.Parent), conns: map[string]connect.Connection{}}
+	for _, c := range b.cfg.Connections {
+		for _, t := range c.Tools() {
+			ws.conns[t.Name] = c
+		}
+	}
 	msgs := historyMessages(req.History)
 	msgs = append(msgs, anthropic.NewBetaUserMessage(anthropic.NewBetaTextBlock(firstMessage(req))))
 
@@ -126,9 +135,10 @@ func (b *Builder) Run(ctx context.Context, req Request, emit func(Event)) (*Resu
 		// cache breakpoint sits on it so both static blocks are cached
 		System: []anthropic.BetaTextBlockParam{
 			{Text: SystemPrompt},
-			{Text: QualityBrief, CacheControl: anthropic.NewBetaCacheControlEphemeralParam()},
+			{Text: QualityBrief},
+			{Text: ToolsBrief(b.cfg.Connections), CacheControl: anthropic.NewBetaCacheControlEphemeralParam()},
 		},
-		Tools:        toolDefs(),
+		Tools:        toolDefs(b.cfg.Connections),
 		OutputConfig: anthropic.BetaOutputConfigParam{Effort: b.cfg.Effort},
 		Thinking: anthropic.BetaThinkingConfigParamUnion{OfAdaptive: &anthropic.BetaThinkingConfigAdaptiveParam{
 			Display: anthropic.BetaThinkingConfigAdaptiveDisplaySummarized,
@@ -168,11 +178,11 @@ func (b *Builder) Run(ctx context.Context, req Request, emit func(Event)) (*Resu
 			if block.Type != "tool_use" {
 				continue
 			}
-			out, isErr, done := ws.call(block.Name, block.Input, emit, msg.StopReason == anthropic.BetaStopReasonMaxTokens)
-			if done != "" && finished == "" {
-				finished = done
+			r := ws.call(block.Name, block.Input, emit, msg.StopReason == anthropic.BetaStopReasonMaxTokens)
+			if r.finished != "" && finished == "" {
+				finished = r.finished
 			}
-			results = append(results, anthropic.NewBetaToolResultBlock(block.ID, out, isErr))
+			results = append(results, toolResult(block.ID, r))
 		}
 		if finished != "" {
 			return &Result{Files: ws.files, Summary: finished, Actions: ws.actions}, nil
@@ -287,4 +297,15 @@ func firstMessage(req Request) string {
 	}
 	sb.WriteString(req.Prompt)
 	return sb.String()
+}
+
+// toolResult is a tool_result block: the text, then any images (by URL).
+func toolResult(id string, r result) anthropic.BetaContentBlockParamUnion {
+	blk := anthropic.NewBetaToolResultBlock(id, r.out, r.isErr)
+	for _, u := range r.images {
+		blk.OfToolResult.Content = append(blk.OfToolResult.Content, anthropic.BetaToolResultBlockParamContentUnion{
+			OfImage: &anthropic.BetaImageBlockParam{Source: anthropic.BetaImageBlockParamSourceUnion{
+				OfURL: &anthropic.BetaURLImageSourceParam{URL: u}}}})
+	}
+	return blk
 }

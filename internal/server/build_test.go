@@ -186,7 +186,7 @@ func TestPublicBuilderFlow(t *testing.T) {
 	if err != nil || r1.Author != "visitor" || r1.FrontendID != "fe/"+slug {
 		t.Fatalf("r1 = %+v, %v", r1, err)
 	}
-	if sys := e.model.Requests[0].System; len(sys) != 3 || sys[1].Text != builder.QualityBrief || sys[2].Text != builder.VisitorNote {
+	if sys := e.model.Requests[0].System; len(sys) != 4 || sys[1].Text != builder.QualityBrief || sys[3].Text != builder.VisitorNote {
 		t.Fatal("visitor run without the visitor note")
 	}
 	runs, _ := e.st.Runs(ctx, "fe/"+slug, 5)

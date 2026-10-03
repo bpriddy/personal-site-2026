@@ -133,12 +133,12 @@ func TestDriftRebuildThroughBuilder(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// the normal builder run: system prompt + quality brief, history, the observer's request
+	// the normal builder run: system prompt + quality brief + tools brief, history, the observer's request
 	if len(e.model.Requests) == 0 {
 		t.Fatal("no model call")
 	}
 	req := e.model.Requests[0]
-	if len(req.System) != 2 || req.System[0].Text != builder.SystemPrompt || req.System[1].Text != builder.QualityBrief {
+	if len(req.System) != 3 || req.System[0].Text != builder.SystemPrompt || req.System[1].Text != builder.QualityBrief || req.System[2].Text != builder.ToolsBrief(nil) {
 		t.Fatalf("system blocks = %d", len(req.System))
 	}
 	msgs, _ := json.Marshal(req.Messages)

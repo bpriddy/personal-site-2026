@@ -1,12 +1,16 @@
 package builder
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
 
+	"github.com/bpriddy/personal-site-2026/internal/connect"
 	"github.com/bpriddy/personal-site-2026/internal/revfiles"
 )
 
@@ -28,9 +32,27 @@ func tool(name, desc string, props map[string]any, required ...string) anthropic
 
 var str = map[string]any{"type": "string"}
 
-// toolDefs are the file tools. Declared in full on every request, so the
-// tools prefix (and prompt cache) stays stable.
-func toolDefs() []anthropic.BetaToolUnionParam {
+// toolDefs are the file tools, read_skill, and the connections' tools.
+// Declared in full on every request (the same for a given deployment), so
+// the tools prefix (and prompt cache) stays stable.
+func toolDefs(conns []connect.Connection) []anthropic.BetaToolUnionParam {
+	defs := fileToolDefs()
+	defs = append(defs, tool("read_skill", "Read one of the skills listed in your instructions: a short guide with working code for a technique (3D models, textures, type, WebGPU). Read it before using the technique or its tools.",
+		map[string]any{"name": map[string]any{"type": "string", "enum": SkillNames()}}, "name"))
+	for _, c := range conns {
+		for _, t := range c.Tools() {
+			req := make([]string, 0, len(t.Props))
+			for k := range t.Props {
+				req = append(req, k)
+			}
+			slices.Sort(req)
+			defs = append(defs, tool(t.Name, t.Description, t.Props, req...))
+		}
+	}
+	return defs
+}
+
+func fileToolDefs() []anthropic.BetaToolUnionParam {
 	pathProp := map[string]any{"type": "string", "description": "Relative file path, e.g. index.html or shaders/bg.wgsl"}
 	return []anthropic.BetaToolUnionParam{
 		tool("list_files", "List the working copy's files with their sizes.", nil),
@@ -47,9 +69,20 @@ func toolDefs() []anthropic.BetaToolUnionParam {
 
 // workspace is the working copy a run edits.
 type workspace struct {
+	ctx     context.Context
 	files   revfiles.Files
 	actions []string
 	warned  bool // finish has pointed out soft problems once
+	conns   map[string]connect.Connection // tool name → its connection
+	credits []connect.Credit              // what this run imported that must be credited
+}
+
+// result is one tool call's outcome.
+type result struct {
+	out      string
+	images   []string // https URLs shown to the model with the result
+	isErr    bool
+	finished string // a successful finish: the summary
 }
 
 func (ws *workspace) note(action string) {
@@ -61,10 +94,60 @@ func (ws *workspace) note(action string) {
 	ws.actions = append(ws.actions, action)
 }
 
-// call runs one tool. It returns the tool result, whether it's an error, and,
-// for a successful finish, the summary.
-func (ws *workspace) call(name string, input json.RawMessage, emit func(Event), truncated bool) (out string, isErr bool, finished string) {
+// call runs one tool.
+func (ws *workspace) call(name string, input json.RawMessage, emit func(Event), truncated bool) result {
+	if c, ok := ws.conns[name]; ok {
+		return ws.callConnection(c, name, input, emit, truncated)
+	}
+	out, isErr, finished := ws.callFile(name, input, emit, truncated)
+	return result{out: out, isErr: isErr, finished: finished}
+}
+
+// callConnection runs a connection's tool.
+func (ws *workspace) callConnection(c connect.Connection, name string, input json.RawMessage, emit func(Event), truncated bool) result {
+	if truncated {
+		return result{out: "Your response was cut off before this tool call's input was complete, so it was not run. Use smaller steps.", isErr: true}
+	}
+	ctx := ws.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	emit(Event{Type: "status", Tool: name, Text: "using " + c.Name()})
+	out, err := c.Call(ctx, name, input)
+	if err != nil {
+		msg := err.Error()
+		var ue *connect.UserError
+		if !errors.As(err, &ue) {
+			msg = name + " failed: " + msg
+		}
+		emit(Event{Type: "warning", Tool: name, Text: msg})
+		return result{out: msg, isErr: true}
+	}
+	if out.Credit != nil {
+		ws.credits = append(ws.credits, *out.Credit)
+		ws.note(name + " " + out.Credit.Asset)
+	}
+	emit(Event{Type: "tool", Tool: name})
+	return result{out: out.Text, images: out.Images}
+}
+
+// missingCredits lists the credit lines for assets the files use but don't credit.
+func (ws *workspace) missingCredits() []string {
+	var out []string
+	for _, c := range ws.credits {
+		if c.Must == "" || !anyContains(ws.files, c.Asset) || anyContains(ws.files, c.Must) {
+			continue
+		}
+		out = append(out, c.Line)
+	}
+	return out
+}
+
+// callFile runs a file tool, read_skill or finish. It returns the tool
+// result, whether it's an error, and, for a successful finish, the summary.
+func (ws *workspace) callFile(name string, input json.RawMessage, emit func(Event), truncated bool) (out string, isErr bool, finished string) {
 	var in struct {
+		Name    string  `json:"name"`
 		Path    string  `json:"path"`
 		Content *string `json:"content"`
 		OldStr  *string `json:"old_str"`
@@ -83,6 +166,14 @@ func (ws *workspace) call(name string, input json.RawMessage, emit func(Event), 
 		return msg, true, ""
 	}
 	switch name {
+	case "read_skill":
+		body, ok := Skill(in.Name)
+		if !ok {
+			return fail("No skill %q (skills: %s)", in.Name, strings.Join(SkillNames(), ", "))
+		}
+		emit(Event{Type: "tool", Tool: name, Path: in.Name})
+		return body, false, ""
+
 	case "list_files":
 		if len(ws.files) == 0 {
 			return "(no files yet)", false, ""
@@ -154,6 +245,9 @@ func (ws *workspace) call(name string, input json.RawMessage, emit func(Event), 
 	case "finish":
 		if err := Validate(ws.files); err != nil {
 			return fail("Not saved. Fix these problems, then call finish again: %v", err)
+		}
+		if miss := ws.missingCredits(); len(miss) > 0 {
+			return fail("Not saved. Your files use imported assets whose licenses require a visible credit, and the credit isn't in your files. Show these lines as text where the assets appear, then call finish again:\n%s", strings.Join(miss, "\n"))
 		}
 		if w := Warnings(ws.files); len(w) > 0 && !ws.warned {
 			ws.warned = true

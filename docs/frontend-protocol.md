@@ -674,3 +674,14 @@ inside every front end.
   end's own transforms (`composite: "add"`).
 - `site.transitions(false)` turns it off for a front end with its own route
   transition (`true` turns it back on).
+
+# v1.7 (2026-10-03): imported assets and site.loadModel
+
+- `/media/assets/...` serves what the builder's connections import
+  (docs/connections.md): `.glb` models (`model/gltf-binary`), `.woff2` fonts,
+  and texture images, on both origins, immutable, CORS `*`.
+- `site.loadModel(path)` (host API) loads a `.glb` from `/media/` and resolves
+  to `{meshes: [{positions, normals, uvs, indices, material}], bounds: {min,
+  max, center, radius}, triangles}`; node transforms applied, textures as
+  ImageBitmaps (base colour, sRGB), rest pose only. It rejects anything that
+  isn't a `/media/....glb` path.

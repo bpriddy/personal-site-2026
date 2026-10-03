@@ -67,7 +67,7 @@ func (f *File) Close() error {
 type Dir struct{ Root string }
 
 func (d Dir) Open(_ context.Context, name string) (*File, error) {
-	if !content.MediaName(name) {
+	if !ServableName(name) {
 		return nil, fs.ErrNotExist
 	}
 	// os.OpenInRoot confines the open (symlinks included) to Root
@@ -109,7 +109,7 @@ func NewGCS(ctx context.Context, bucket string) (*GCS, error) {
 }
 
 func (g *GCS) Open(ctx context.Context, name string) (*File, error) {
-	if !content.MediaName(name) {
+	if !ServableName(name) {
 		return nil, fs.ErrNotExist
 	}
 	r, err := g.Bucket.Object(ObjectPrefix + name).NewReader(ctx)
@@ -133,8 +133,104 @@ func (g *GCS) Open(ctx context.Context, name string) (*File, error) {
 	return &File{Body: bytes.NewReader(b), ModTime: r.Attrs.LastModified}, nil
 }
 
+// AssetPrefix is where the builder's imported assets live (3D models, fonts,
+// textures from its connections: internal/connect), next to the content's
+// media. Asset names are media names under assets/, plus these extensions.
+const AssetPrefix = "assets/"
+
+var assetExts = map[string]bool{".glb": true, ".woff2": true, ".jpg": true, ".jpeg": true, ".png": true, ".webp": true}
+
+// ServableName reports whether name can be served at /media/<name>: a
+// content media name (content.MediaName), or an imported asset.
+func ServableName(name string) bool {
+	if content.MediaName(name) {
+		return true
+	}
+	rest, ok := strings.CutPrefix(name, AssetPrefix)
+	if !ok || rest == "" || len(name) > 200 || path.Clean(name) != name {
+		return false
+	}
+	for _, s := range strings.Split(rest, "/") {
+		if !assetSeg(s) {
+			return false
+		}
+	}
+	return assetExts[strings.ToLower(path.Ext(name))]
+}
+
+func assetSeg(s string) bool {
+	if s == "" || !(s[0] >= 'a' && s[0] <= 'z' || s[0] >= 'A' && s[0] <= 'Z' || s[0] >= '0' && s[0] <= '9') {
+		return false
+	}
+	for _, r := range s {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '_' || r == '-') {
+			return false
+		}
+	}
+	return true
+}
+
+// Writer stores media (the builder's imported assets). Names are immutable:
+// a name is never reused for different content.
+type Writer interface {
+	Put(ctx context.Context, name string, body []byte, contentType string) error
+	Exists(ctx context.Context, name string) (bool, error)
+}
+
+func (d Dir) Put(_ context.Context, name string, body []byte, _ string) error {
+	if !ServableName(name) {
+		return fmt.Errorf("media: bad name %q", name)
+	}
+	p := filepath.Join(d.Root, filepath.FromSlash(name))
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(p, body, 0o644)
+}
+
+func (d Dir) Exists(_ context.Context, name string) (bool, error) {
+	if !ServableName(name) {
+		return false, nil
+	}
+	fi, err := os.Stat(filepath.Join(d.Root, filepath.FromSlash(name)))
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	return err == nil && fi.Mode().IsRegular(), err
+}
+
+func (g *GCS) Put(ctx context.Context, name string, body []byte, contentType string) error {
+	if !ServableName(name) {
+		return fmt.Errorf("media: bad name %q", name)
+	}
+	w := g.Bucket.Object(ObjectPrefix + name).NewWriter(ctx)
+	w.ContentType = contentType
+	w.CacheControl = cacheControl
+	if _, err := w.Write(body); err != nil {
+		w.Close()
+		return err
+	}
+	return w.Close()
+}
+
+func (g *GCS) Exists(ctx context.Context, name string) (bool, error) {
+	if !ServableName(name) {
+		return false, nil
+	}
+	_, err := g.Bucket.Object(ObjectPrefix + name).Attrs(ctx)
+	if errors.Is(err, storage.ErrObjectNotExist) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// ContentType is the type /media/ serves name as ("" if not servable).
+func ContentType(name string) string { return contentTypes[strings.ToLower(path.Ext(name))] }
+
 // contentTypes are the only types served; anything else is a 404.
 var contentTypes = map[string]string{
+	".glb":   "model/gltf-binary",
+	".woff2": "font/woff2",
 	".mp4":  "video/mp4",
 	".webm": "video/webm",
 	".jpg":  "image/jpeg",
@@ -171,7 +267,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	name, ok := strings.CutPrefix(r.URL.Path, content.MediaPrefix)
 	ctype := contentTypes[strings.ToLower(path.Ext(name))]
-	if !ok || ctype == "" || !content.MediaName(name) {
+	if !ok || ctype == "" || !ServableName(name) {
 		h.notFound(w)
 		return
 	}
