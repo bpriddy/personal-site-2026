@@ -72,7 +72,7 @@ type workspace struct {
 	ctx     context.Context
 	files   revfiles.Files
 	actions []string
-	warned  bool // finish has pointed out soft problems once
+	warned  bool                          // finish has pointed out soft problems once
 	conns   map[string]connect.Connection // tool name → its connection
 	credits []connect.Credit              // what this run imported that must be credited
 }

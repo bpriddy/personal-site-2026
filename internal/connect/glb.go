@@ -12,8 +12,8 @@ import (
 // GLBInfo summarizes a glTF 2.0 binary (.glb).
 type GLBInfo struct {
 	Meshes, Primitives, Triangles, Textures, Animations int
-	Min, Max                                           [3]float64 // POSITION bounds, before node transforms
-	Extensions                                         []string
+	Min, Max                                            [3]float64 // POSITION bounds, before node transforms
+	Extensions                                          []string
 }
 
 // unsupported extensions: site.loadModel (site-host.js) can't decode them

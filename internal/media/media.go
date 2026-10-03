@@ -231,13 +231,13 @@ func ContentType(name string) string { return contentTypes[strings.ToLower(path.
 var contentTypes = map[string]string{
 	".glb":   "model/gltf-binary",
 	".woff2": "font/woff2",
-	".mp4":  "video/mp4",
-	".webm": "video/webm",
-	".jpg":  "image/jpeg",
-	".jpeg": "image/jpeg",
-	".png":  "image/png",
-	".gif":  "image/gif",
-	".webp": "image/webp",
+	".mp4":   "video/mp4",
+	".webm":  "video/webm",
+	".jpg":   "image/jpeg",
+	".jpeg":  "image/jpeg",
+	".png":   "image/png",
+	".gif":   "image/gif",
+	".webp":  "image/webp",
 }
 
 // Handler serves GET and HEAD /media/<name> from a Source.

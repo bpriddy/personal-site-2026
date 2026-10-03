@@ -166,15 +166,15 @@ func TestDirMissingRoot(t *testing.T) {
 
 func TestServableNameAssets(t *testing.T) {
 	for name, want := range map[string]bool{
-		"assets/models/sketchfab/0123abcd.glb":          true,
-		"assets/fonts/google/space-grotesk/abc.woff2":   true,
+		"assets/models/sketchfab/0123abcd.glb":           true,
+		"assets/fonts/google/space-grotesk/abc.woff2":    true,
 		"assets/textures/polyhaven/wood_01/1k/color.jpg": true,
-		"projects/x/hero.jpg":                           true,  // content media
-		"projects/x/model.glb":                          false, // models only under assets/
-		"assets/../secret.glb":                          false,
-		"assets/.hidden/x.glb":                          false,
-		"assets/x.exe":                                  false,
-		"assets/":                                       false,
+		"projects/x/hero.jpg":                            true,  // content media
+		"projects/x/model.glb":                           false, // models only under assets/
+		"assets/../secret.glb":                           false,
+		"assets/.hidden/x.glb":                           false,
+		"assets/x.exe":                                   false,
+		"assets/":                                        false,
 	} {
 		if got := ServableName(name); got != want {
 			t.Errorf("ServableName(%q) = %v, want %v", name, got, want)

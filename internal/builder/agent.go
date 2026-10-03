@@ -86,11 +86,11 @@ type Result struct {
 type Config struct {
 	// Connections are outside services the model may call (internal/connect).
 	Connections []connect.Connection
-	Model     string // e.g. llm.Model
-	Effort    anthropic.BetaOutputConfigEffort
-	MaxTokens int64 // per model turn
-	MaxTurns  int   // model turns per run
-	Fallbacks bool  // server-side refusal fallbacks ("default" mode)
+	Model       string // e.g. llm.Model
+	Effort      anthropic.BetaOutputConfigEffort
+	MaxTokens   int64 // per model turn
+	MaxTurns    int   // model turns per run
+	Fallbacks   bool  // server-side refusal fallbacks ("default" mode)
 }
 
 // Builder runs builder turns against a Model.

@@ -102,7 +102,6 @@ func main() {
 
 	obs := newObserver(cfg, st, obsStore, files, log)
 
-
 	srv, err := server.New(cfg, st, log, server.WithObserver(obs), server.WithBuilder(agent, files),
 		server.WithBuildLimits(limits), server.WithMedia(mediaSrc))
 	if err != nil {

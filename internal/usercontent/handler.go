@@ -36,8 +36,8 @@ const (
 
 // Options configures a Handler.
 type Options struct {
-	SigningKey []byte           // FRONTEND_SIGNING_KEY
-	MainOrigin string           // MAIN_ORIGIN, used in frame-ancestors and site-host.js
+	SigningKey []byte // FRONTEND_SIGNING_KEY
+	MainOrigin string // MAIN_ORIGIN, used in frame-ancestors and site-host.js
 	// SelfOrigin (USERCONTENT_ORIGIN) is this service's own origin. Optional;
 	// when set, the CSP names it next to 'self'. A front end runs in a sandbox
 	// (an opaque origin), and WebKit doesn't match 'self' for its fetches, so
