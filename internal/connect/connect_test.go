@@ -358,3 +358,75 @@ func TestKrea(t *testing.T) {
 		t.Fatal("a fifth image in one run was allowed")
 	}
 }
+
+func TestKreaVideo(t *testing.T) {
+	mp4 := append([]byte{0, 0, 0, 0x18}, []byte("ftypisom"+strings.Repeat("v", 40))...)
+	var body map[string]any
+	fail := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "POST" && r.URL.Path == "/generate/video/bytedance/seedance-2-5":
+			body = nil
+			json.NewDecoder(r.Body).Decode(&body)
+			json.NewEncoder(w).Encode(map[string]any{"job_id": "11111111-2222-4333-8444-555555555555", "status": "queued"})
+		case r.URL.Path == "/jobs/11111111-2222-4333-8444-555555555555":
+			if fail {
+				json.NewEncoder(w).Encode(map[string]any{"status": "failed", "error": map[string]any{"message": "nope"}})
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]any{"status": "completed", "result": map[string]any{"urls": []string{"https://app-uploads.krea.ai/public/v.mp4"}}})
+		case r.URL.Path == "/public/v.mp4":
+			w.Write(mp4)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	routeAll(t, srv)
+	st := newMemStore()
+	st.files["assets/images/krea/still.png"] = []byte("png")
+	k := &KreaVideo{Token: "k", Store: st, Public: "https://uc.example", API: "https://api.krea.ai", Poll: time.Millisecond, DailyCap: 5}
+	ctx := WithBudget(context.Background())
+	call := func(in string) (Output, error) { return k.Call(ctx, "krea_generate_video", json.RawMessage(in)) }
+
+	out, err := call(`{"prompt":"the ship glides slowly to the left","model":"seedance-2.5","aspect_ratio":"21:9","seconds":5,"start_image":"/media/assets/images/krea/still.png"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body["start_image"] != "https://uc.example/media/assets/images/krea/still.png" || body["resolution"] != "720p" || body["duration"] != float64(5) {
+		t.Fatalf("request = %v", body)
+	}
+	if !bytes.Equal(st.files["assets/videos/krea/11111111-2222-4333-8444-555555555555.mp4"], mp4) || !strings.Contains(out.Text, "$1.60") {
+		t.Fatalf("stored/estimate: %s", out.Text)
+	}
+	// a start image that isn't in the media store is refused before any spend
+	if _, err := call(`{"prompt":"the ship glides slowly to the left","model":"seedance-2.5","aspect_ratio":"16:9","seconds":5,"start_image":"https://elsewhere.example/x.png"}`); err == nil {
+		t.Error("external start image accepted")
+	}
+	// a failed job is refunded; then the daily cap ($5: 1.60 spent) refuses a 12s clip ($3.84)
+	fail = true
+	if _, err := call(`{"prompt":"the ship glides slowly to the left","model":"seedance-2.5","aspect_ratio":"16:9","seconds":5,"start_image":""}`); err == nil {
+		t.Fatal("failed job reported success")
+	}
+	fail = false
+	ctx = WithBudget(context.Background()) // a new run
+	if _, err := call(`{"prompt":"the ship glides slowly to the left","model":"seedance-2.5","aspect_ratio":"16:9","seconds":12,"start_image":""}`); err == nil || !strings.Contains(err.Error(), "budget") {
+		t.Fatalf("over the daily cap: %v", err)
+	}
+	if k.spent != 1.60 {
+		t.Fatalf("spent = %v, want 1.60 (the failed clip refunded)", k.spent)
+	}
+}
+
+func TestForRunHidesBenOnly(t *testing.T) {
+	all := []Connection{&PolyHaven{}, &KreaVideo{}}
+	if n := len(ForRun(all, false, false)); n != 2 {
+		t.Errorf("Ben's run: %d connections", n)
+	}
+	for _, c := range [][2]bool{{true, false}, {false, true}} {
+		got := ForRun(all, c[0], c[1])
+		if len(got) != 1 || got[0].Name() != "polyhaven" {
+			t.Errorf("visitor=%v observer=%v: %v", c[0], c[1], got)
+		}
+	}
+}

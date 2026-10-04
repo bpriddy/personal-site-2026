@@ -138,7 +138,7 @@ func (g *GCS) Open(ctx context.Context, name string) (*File, error) {
 // media. Asset names are media names under assets/, plus these extensions.
 const AssetPrefix = "assets/"
 
-var assetExts = map[string]bool{".glb": true, ".woff2": true, ".jpg": true, ".jpeg": true, ".png": true, ".webp": true}
+var assetExts = map[string]bool{".glb": true, ".woff2": true, ".mp4": true, ".jpg": true, ".jpeg": true, ".png": true, ".webp": true}
 
 // ServableName reports whether name can be served at /media/<name>: a
 // content media name (content.MediaName), or an imported asset.

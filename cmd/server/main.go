@@ -168,7 +168,7 @@ func connections(src media.Source, publicOrigin string, log *slog.Logger) []conn
 		log.Warn("builder: the media store isn't writable; no connections")
 		return nil
 	}
-	want := map[string]bool{"sketchfab": true, "polyhaven": true, "googlefonts": true, "krea": true}
+	want := map[string]bool{"sketchfab": true, "polyhaven": true, "googlefonts": true, "krea": true, "kreavideo": true}
 	if v, set := os.LookupEnv("BUILDER_CONNECTIONS"); set {
 		want = map[string]bool{}
 		for _, n := range strings.Split(v, ",") {
@@ -186,6 +186,11 @@ func connections(src media.Source, publicOrigin string, log *slog.Logger) []conn
 	if want["krea"] {
 		if tok := os.Getenv("KREA_API_KEY"); tok != "" {
 			out = append(out, &connect.Krea{Token: tok, Store: st, Public: publicOrigin})
+			if want["kreavideo"] {
+				// Ben's runs only, under a daily cap (KREA_VIDEO_DAILY_USD, default 15)
+				capUSD, _ := strconv.ParseFloat(os.Getenv("KREA_VIDEO_DAILY_USD"), 64)
+				out = append(out, &connect.KreaVideo{Token: tok, Store: st, Public: publicOrigin, DailyCap: capUSD})
+			}
 		} else {
 			log.Warn("builder: KREA_API_KEY unset; no generated images")
 		}

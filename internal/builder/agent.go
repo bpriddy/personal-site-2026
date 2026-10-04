@@ -119,8 +119,10 @@ var ErrRefused = errors.New("the model declined this request")
 // when the model calls finish with valid files, or fails.
 func (b *Builder) Run(ctx context.Context, req Request, emit func(Event)) (*Result, error) {
 	ctx = connect.WithBudget(ctx) // import limits are per run
+	// some connections (paid video) are only for Ben's own runs
+	conns := connect.ForRun(b.cfg.Connections, req.Visitor, req.Observer)
 	ws := &workspace{ctx: ctx, files: clone(req.Parent), conns: map[string]connect.Connection{}}
-	for _, c := range b.cfg.Connections {
+	for _, c := range conns {
 		for _, t := range c.Tools() {
 			ws.conns[t.Name] = c
 		}
@@ -136,9 +138,9 @@ func (b *Builder) Run(ctx context.Context, req Request, emit func(Event)) (*Resu
 		System: []anthropic.BetaTextBlockParam{
 			{Text: SystemPrompt},
 			{Text: QualityBrief},
-			{Text: ToolsBrief(b.cfg.Connections), CacheControl: anthropic.NewBetaCacheControlEphemeralParam()},
+			{Text: ToolsBrief(conns), CacheControl: anthropic.NewBetaCacheControlEphemeralParam()},
 		},
-		Tools:        toolDefs(b.cfg.Connections),
+		Tools:        toolDefs(conns),
 		OutputConfig: anthropic.BetaOutputConfigParam{Effort: b.cfg.Effort},
 		Thinking: anthropic.BetaThinkingConfigParamUnion{OfAdaptive: &anthropic.BetaThinkingConfigAdaptiveParam{
 			Display: anthropic.BetaThinkingConfigAdaptiveDisplaySummarized,

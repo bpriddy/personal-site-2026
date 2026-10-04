@@ -57,6 +57,26 @@ type Connection interface {
 	Call(ctx context.Context, tool string, input json.RawMessage) (Output, error)
 }
 
+// BenOnly is implemented by connections offered only on Ben's own builder
+// runs: not on visitors' runs, and not on the observer's automatic rebuilds
+// (e.g. paid video generation).
+type BenOnly interface{ BenOnly() bool }
+
+// ForRun returns the connections a run may use.
+func ForRun(conns []Connection, visitor, observer bool) []Connection {
+	if !visitor && !observer {
+		return conns
+	}
+	var out []Connection
+	for _, c := range conns {
+		if b, ok := c.(BenOnly); ok && b.BenOnly() {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
 // Store is where imports go: the site's media store (read and write).
 type Store interface {
 	media.Source

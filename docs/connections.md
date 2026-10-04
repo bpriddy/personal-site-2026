@@ -36,6 +36,7 @@ carries technique guides when it needs them.
 | `polyhaven` | `polyhaven_search_textures`, `polyhaven_import_texture` | nothing | CC0 |
 | `googlefonts` | `google_fonts_import` | nothing | OFL / Apache; latin and latin-ext woff2 only |
 | `krea` | `krea_generate_image` | `KREA_API_KEY` (secret `krea-api-key`) | the generated image is the site's; one model only (Krea 2 medium, 1K, about $0.03), 4 per run, copied to `/media/assets/images/krea/` and shown back to the model |
+| `kreavideo` | `krea_generate_video` | `KREA_API_KEY`; Ben's runs only (`connect.BenOnly`: not visitors', not the observer's) | Seedance 2.5 (720p) or MiniMax H3, 4-12 s; 2 clips a run; an estimated-spend cap per UTC day (`KREA_VIDEO_DAILY_USD`, default 15; per instance, in memory), refunded when a job fails; MP4 copied to `/media/assets/videos/krea/` |
 
 `BUILDER_CONNECTIONS` (comma list) limits which are on; by default all are,
 Sketchfab and Krea only when their keys are set.
@@ -59,7 +60,7 @@ there are none.
 ## Skills
 
 `internal/builder/skills/<name>.md`, first line `description: ...`. Current:
-`3d-models`, `generated-images`, `textures`, `typography`, `webgpu-starter`. Code in a skill must
+`3d-models`, `generated-images`, `generated-video`, `textures`, `typography`, `webgpu-starter`. Code in a skill must
 work as written: the 3d-models shader is compiled and rendered against the
 Khronos sample models when it changes (see the live tests).
 

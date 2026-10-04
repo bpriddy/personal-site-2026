@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bpriddy/personal-site-2026/internal/media"
 )
@@ -80,5 +81,26 @@ func TestLiveKrea(t *testing.T) {
 		m := regexp.MustCompile(`/media/(\S+)`).FindStringSubmatch(out.Text)
 		b, _ := os.ReadFile(dir + "/" + strings.TrimRight(m[1], " (,"))
 		os.WriteFile(os.Getenv("KEEP_TO"), b, 0o644)
+	}
+}
+
+func TestLiveKreaVideo(t *testing.T) {
+	tok := os.Getenv("KREA_API_KEY")
+	if tok == "" || os.Getenv("LIVE_VIDEO") == "" {
+		t.Skip("KREA_API_KEY and LIVE_VIDEO=1 needed (costs money)")
+	}
+	dir := t.TempDir()
+	k := &KreaVideo{Token: tok, Store: media.Dir{Root: dir}}
+	start := time.Now()
+	out, err := k.Call(WithBudget(context.Background()), "krea_generate_video",
+		json.RawMessage(`{"prompt":"a wedge-shaped grey capital starship glides slowly from right to left past a ringed planet, matte painting style, slow camera drift, calm","model":"minimax-h3","aspect_ratio":"16:9","seconds":5,"start_image":""}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("%s (%s)", out.Text, time.Since(start).Round(time.Second))
+	if p := os.Getenv("KEEP_TO"); p != "" {
+		m := regexp.MustCompile(`/media/(\S+\.mp4)`).FindStringSubmatch(out.Text)
+		b, _ := os.ReadFile(dir + "/" + m[1])
+		os.WriteFile(p, b, 0o644)
 	}
 }
