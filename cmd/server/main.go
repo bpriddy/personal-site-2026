@@ -74,7 +74,7 @@ func main() {
 		os.Exit(1)
 	}
 	// the builder's connections to outside services (internal/connect)
-	conns := connections(mediaSrc, log)
+	conns := connections(mediaSrc, cfg.UsercontentOrigin, log)
 	var agent *builder.Builder
 	if cfg.Dev() && os.Getenv("BUILDER_DEMO_MODEL") == "1" {
 		// offline: a canned model for local work and the e2e tests (never in prod)
@@ -160,15 +160,15 @@ func newObserver(cfg config.Config, st store.Store, obsStore store.ObserverStore
 }
 
 // connections are the builder's outside services. BUILDER_CONNECTIONS lists
-// them (default: all); Sketchfab also needs SKETCHFAB_API_TOKEN. They import
+// them (default: all); Sketchfab needs SKETCHFAB_API_TOKEN, Krea KREA_API_KEY. They import
 // into the media store, so it must be writable.
-func connections(src media.Source, log *slog.Logger) []connect.Connection {
+func connections(src media.Source, publicOrigin string, log *slog.Logger) []connect.Connection {
 	st, ok := src.(connect.Store)
 	if !ok {
 		log.Warn("builder: the media store isn't writable; no connections")
 		return nil
 	}
-	want := map[string]bool{"sketchfab": true, "polyhaven": true, "googlefonts": true}
+	want := map[string]bool{"sketchfab": true, "polyhaven": true, "googlefonts": true, "krea": true}
 	if v, set := os.LookupEnv("BUILDER_CONNECTIONS"); set {
 		want = map[string]bool{}
 		for _, n := range strings.Split(v, ",") {
@@ -181,6 +181,13 @@ func connections(src media.Source, log *slog.Logger) []connect.Connection {
 			out = append(out, &connect.Sketchfab{Token: tok, Store: st})
 		} else {
 			log.Warn("builder: SKETCHFAB_API_TOKEN unset; no Sketchfab models")
+		}
+	}
+	if want["krea"] {
+		if tok := os.Getenv("KREA_API_KEY"); tok != "" {
+			out = append(out, &connect.Krea{Token: tok, Store: st, Public: publicOrigin})
+		} else {
+			log.Warn("builder: KREA_API_KEY unset; no generated images")
 		}
 	}
 	if want["polyhaven"] {

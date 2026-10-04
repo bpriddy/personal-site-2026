@@ -35,9 +35,16 @@ carries technique guides when it needs them.
 | `sketchfab` | `sketchfab_search`, `sketchfab_import` | `SKETCHFAB_API_TOKEN` (Sketchfab → Settings → Password & API) | only CC0, CC BY, CC BY-SA, downloadable, ≤ 15 MB, ≤ 300k faces; the .glb must be self-contained and not Draco/meshopt/Basis compressed (`connect.InspectGLB`) |
 | `polyhaven` | `polyhaven_search_textures`, `polyhaven_import_texture` | nothing | CC0 |
 | `googlefonts` | `google_fonts_import` | nothing | OFL / Apache; latin and latin-ext woff2 only |
+| `krea` | `krea_generate_image` | `KREA_API_KEY` (secret `krea-api-key`) | the generated image is the site's; one model only (Krea 2 medium, 1K, about $0.03), 4 per run, copied to `/media/assets/images/krea/` and shown back to the model |
 
 `BUILDER_CONNECTIONS` (comma list) limits which are on; by default all are,
-and Sketchfab only when its token is set. Without a writable media store
+Sketchfab and Krea only when their keys are set.
+
+**MCP vs a connection.** Krea also runs a hosted MCP server (all its image and
+video models). The builder uses a plain connection instead, because builder
+runs (visitors' included) need a fixed, cheap model and a per-run cap, and the
+result must be copied into the media store before a front end can load it.
+The MCP server is for interactive work (Claude Code, Claude), not runs. Without a writable media store
 there are none.
 
 ## Front-end side
@@ -52,7 +59,7 @@ there are none.
 ## Skills
 
 `internal/builder/skills/<name>.md`, first line `description: ...`. Current:
-`3d-models`, `textures`, `typography`, `webgpu-starter`. Code in a skill must
+`3d-models`, `generated-images`, `textures`, `typography`, `webgpu-starter`. Code in a skill must
 work as written: the 3d-models shader is compiled and rendered against the
 Khronos sample models when it changes (see the live tests).
 

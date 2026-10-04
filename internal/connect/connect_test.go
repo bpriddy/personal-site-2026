@@ -308,3 +308,53 @@ func TestGoogleFonts(t *testing.T) {
 		t.Error("an unknown axis spec should be refused with a message")
 	}
 }
+
+func TestKrea(t *testing.T) {
+	png := []byte("\x89PNG\r\n\x1a\n" + strings.Repeat("x", 64))
+	polls := 0
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Test-Host") == "api.krea.ai" && r.Header.Get("Authorization") != "Bearer k" {
+			w.WriteHeader(401)
+			return
+		}
+		switch {
+		case r.Method == "POST" && r.URL.Path == "/generate/image/krea/krea-2/medium":
+			json.NewDecoder(r.Body).Decode(&got)
+			json.NewEncoder(w).Encode(map[string]any{"job_id": "550e8400-e29b-41d4-a716-446655440000", "status": "queued"})
+		case r.URL.Path == "/jobs/550e8400-e29b-41d4-a716-446655440000":
+			polls++
+			if polls < 2 {
+				json.NewEncoder(w).Encode(map[string]any{"status": "processing"})
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]any{"status": "completed", "result": map[string]any{"urls": []string{"https://app-uploads.krea.ai/public/x-image.png"}}})
+		case r.URL.Path == "/public/x-image.png":
+			w.Write(png)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	routeAll(t, srv)
+	st := newMemStore()
+	k := &Krea{Token: "k", Store: st, Public: "https://uc.example", API: "https://api.krea.ai", Poll: time.Millisecond}
+	ctx := WithBudget(context.Background())
+	out, err := k.Call(ctx, "krea_generate_image", json.RawMessage(`{"prompt":"a matte painting of a wedge-shaped ship","aspect_ratio":"16:9"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := "assets/images/krea/550e8400-e29b-41d4-a716-446655440000.png"
+	if !bytes.Equal(st.files[name], png) || got["aspect_ratio"] != "16:9" || got["resolution"] != "1K" || polls != 2 {
+		t.Fatalf("stored %d bytes, request %v, polls %d", len(st.files[name]), got, polls)
+	}
+	if len(out.Images) != 1 || out.Images[0] != "https://uc.example/media/"+name || !strings.Contains(out.Text, "/media/"+name) {
+		t.Fatalf("output %+v", out)
+	}
+	for range 3 {
+		k.Call(ctx, "krea_generate_image", json.RawMessage(`{"prompt":"another image prompt here","aspect_ratio":"1:1"}`))
+	}
+	if _, err := k.Call(ctx, "krea_generate_image", json.RawMessage(`{"prompt":"one too many images now","aspect_ratio":"1:1"}`)); err == nil {
+		t.Fatal("a fifth image in one run was allowed")
+	}
+}

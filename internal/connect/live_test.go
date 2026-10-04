@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"os"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/bpriddy/personal-site-2026/internal/media"
@@ -60,4 +61,24 @@ func TestLive(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("google fonts:\n%.900s", out.Text)
+}
+
+func TestLiveKrea(t *testing.T) {
+	tok := os.Getenv("KREA_API_KEY")
+	if tok == "" {
+		t.Skip("KREA_API_KEY unset")
+	}
+	dir := t.TempDir()
+	k := &Krea{Token: tok, Store: media.Dir{Root: dir}}
+	out, err := k.Call(WithBudget(context.Background()), "krea_generate_image",
+		json.RawMessage(`{"prompt":"a wedge-shaped grey capital starship drifting past a ringed planet, 1977 matte painting, gouache on board, hard key light from the left, deep shadows, ship in the right third, empty dark sky on the left","aspect_ratio":"16:9"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("%s\nstored in %s", out.Text, dir)
+	if os.Getenv("KEEP_TO") != "" {
+		m := regexp.MustCompile(`/media/(\S+)`).FindStringSubmatch(out.Text)
+		b, _ := os.ReadFile(dir + "/" + strings.TrimRight(m[1], " (,"))
+		os.WriteFile(os.Getenv("KEEP_TO"), b, 0o644)
+	}
 }
