@@ -17,9 +17,10 @@ type Memory struct {
 	pages       map[string]content.Page
 	experiments map[string]content.Experiment
 	frontends   map[string]content.Frontend
-	builder     memBuilder                 // builder_memory.go
-	visitors    memVisitors                // visitor_memory.go
-	projects    map[string]content.Project // projects_memory.go
+	builder     memBuilder                    // builder_memory.go
+	visitors    memVisitors                   // visitor_memory.go
+	projects    map[string]content.Project    // projects_memory.go
+	experience  map[string]content.Experience // experience_memory.go
 }
 
 func NewMemory() *Memory {

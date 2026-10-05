@@ -112,7 +112,7 @@ func TestBuildShapeAndOrder(t *testing.T) {
 	}
 	var top map[string]json.RawMessage
 	_ = json.Unmarshal(b, &top)
-	if len(top) != 4 || top["projects"] == nil || top["contractVersion"] == nil || top["pages"] == nil || top["experiments"] == nil {
+	if len(top) != 5 || top["projects"] == nil || top["experience"] == nil || top["contractVersion"] == nil || top["pages"] == nil || top["experiments"] == nil {
 		t.Errorf("top-level keys: %s", b)
 	}
 	about := string(mustJSON(t, find(t, site.Pages, "about")))
@@ -136,7 +136,7 @@ func TestBuildEmptyCollections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := string(mustJSON(t, site)); got != `{"contractVersion":1,"pages":[],"experiments":[],"projects":[]}` {
+	if got := string(mustJSON(t, site)); got != `{"contractVersion":1,"pages":[],"experiments":[],"projects":[],"experience":[]}` {
 		t.Errorf("empty site: %s", got)
 	}
 }

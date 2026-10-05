@@ -121,6 +121,17 @@ body.public::after {
 }
 .index-summary { grid-column: 9 / 13; color: var(--fg-2); max-width: 40ch; text-wrap: pretty; }
 
+/* experience (v1.8): dates, role, company; one line under it at most */
+.xp-row { padding: var(--s-5) 0; }
+.xp-dates { grid-column: 1 / 4; color: var(--fg-2); }
+.xp-role {
+  grid-column: 4 / 10; margin: 0;
+  font-family: var(--font-display); font-weight: 340; font-size: var(--t-lede, 1.5rem);
+  line-height: 1.1; letter-spacing: -.01em; text-wrap: balance;
+}
+.xp-company { grid-column: 10 / 13; margin: 0; color: var(--fg-2); }
+.xp-note { grid-column: 4 / 13; margin: var(--s-2) 0 0; color: var(--fg-2); max-width: 60ch; }
+
 /* an experiment's loop: a strip at the row's right edge */
 .index-row.has-media .index-title { grid-column: 3 / 7; }
 .index-row.has-media .index-summary { grid-column: 7 / 10; }
@@ -306,6 +317,10 @@ body.public::after {
 
 /* tablet: 6 columns */
 @media (max-width: 1023px) {
+  .xp-dates { grid-column: 1 / 7; margin-bottom: var(--s-2); }
+  .xp-role { grid-column: 1 / 5; }
+  .xp-company { grid-column: 5 / 7; }
+  .xp-note { grid-column: 1 / 7; }
   .grid, .site-header, .hero, .bio, .index-row, .page-head, .site-footer { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   .brand { grid-column: 1 / 3; }
   .role { grid-column: 3 / 5; }
@@ -342,6 +357,8 @@ body.public::after {
 }
 /* phone: 4 columns, recomposed (docs/design-pov.md, 5.2) */
 @media (max-width: 599px) {
+  .xp-role, .xp-company, .xp-note { grid-column: 1 / -1; }
+  .xp-company { margin-top: var(--s-1); }
   .grid, .site-header, .hero, .bio, .index-row, .page-head, .site-footer { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .site-header { row-gap: var(--s-2); }
   .brand { grid-column: 1 / 3; }

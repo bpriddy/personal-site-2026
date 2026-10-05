@@ -1,5 +1,7 @@
 {{define "title"}}{{.Project.Title}} · Ben Priddy{{end}}
-{{define "description"}}{{.Project.Title}}{{with .Project.Client}} for {{.}}{{end}}{{with .Project.Year}} ({{.}}){{end}}: a project by Ben Priddy.{{end}}
+{{define "description"}}{{with excerpt .Project.Summary 160}}{{.}}{{else}}{{.Project.Title}}{{with .Project.Client}} for {{.}}{{end}}{{with .Project.Year}} ({{.}}){{end}}: a project by Ben Priddy.{{end}}{{end}}
+{{define "ogtitle"}}{{template "title" .}}{{end}}
+{{define "ogimage"}}{{with .Project.Hero}}<meta property="og:image" content="{{$.SiteURL}}{{.Src}}">{{with .Width}}<meta property="og:image:width" content="{{.}}">{{end}}{{with .Height}}<meta property="og:image:height" content="{{.}}">{{end}}{{end}}{{end}}
 {{define "main"}}{{with .Project}}
 <article class="project" aria-labelledby="project-h">
   <section class="page-head project-head">

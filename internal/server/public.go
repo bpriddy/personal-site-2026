@@ -28,7 +28,21 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, "projects", err)
 		return
 	}
-	data := map[string]any{"Page": page, "Experiments": exps, "WorkCount": len(projects)}
+	experience, err := s.publishedExperience(r.Context())
+	if err != nil {
+		s.fail(w, "experience", err)
+		return
+	}
+	data := map[string]any{"Page": page, "Experiments": exps, "WorkCount": len(projects), "Experience": experience}
+	var current *experienceView
+	for i := range experience {
+		if experience[i].Current {
+			current = &experience[i]
+			break
+		}
+	}
+	data["Current"] = current
+	data["PersonLD"] = personLD(page.Title, strings.TrimRight(s.cfg.MainOrigin, "/")+"/", page.Body, current)
 	if len(projects) > selectedWork {
 		projects = projects[:selectedWork]
 	}

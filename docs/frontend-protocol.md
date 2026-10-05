@@ -685,3 +685,28 @@ inside every front end.
   max, center, radius}, triangles}`; node transforms applied, textures as
   ImageBitmaps (base colour, sRGB), rest pose only. It rejects anything that
   isn't a `/media/....glb` path.
+
+# v1.8 (2026-10-04): experience, and search basics
+
+- **Experience** (`experience` in the contract, `site.experience()` in the
+  host API): Ben's roles, newest first, minimal by design: `{slug, role,
+  company, start, end, current, note, _generated}`. `start`/`end` are
+  `"YYYY-MM"` or `"YYYY"` (`""` if unknown); the current role has `current:
+  true` and `end: ""`; `note` is one short line or `""`. All factual: never
+  generated (`contract.Bools` introduces boolean fields; `current` is the
+  first). Additive to v1: the snapshot gate passes.
+- Stored in the `experience` table (migration 0007); edited in the admin
+  (`/admin/#experience`, `/admin/experience/<slug>`) and imported with the
+  projects (`POST /admin/import/projects` takes `experience: [...]`, upserted
+  whole by slug, all or nothing).
+- The transcript's home page lists published roles after the bio ("Mar 2026
+  to present", "Jun 2023 to Mar 2026": dates with "to", never dashes); the
+  default front end does the same; the builder's prompt describes it.
+- **Search basics:** `GET /robots.txt` (allow all, disallow /admin/, /build/,
+  /api/, point at the sitemap) and `GET /sitemap.xml` (home, pages, work,
+  each project, experiments). Every public page has a canonical link and Open
+  Graph tags; descriptions come from the content (`excerpt` of the bio, a
+  project's summary, a page's body). The home title adds the current role
+  ("Ben Priddy · Global Head of AI Technology, Anomaly") once it's published,
+  and the home page carries a schema.org `Person` (name, site, bio excerpt,
+  current role and company) built only from published content.

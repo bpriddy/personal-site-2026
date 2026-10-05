@@ -1,4 +1,7 @@
-{{define "title"}}{{.Page.Title}}{{end}}
+{{define "title"}}{{.Page.Title}}{{with .Current}} · {{.Role}}, {{.Company}}{{end}}{{end}}
+{{define "ogtitle"}}{{template "title" .}}{{end}}
+{{define "description"}}{{with excerpt .Page.Body 160}}{{.}}{{else}}{{.Page.Title}}{{end}}{{end}}
+{{define "head"}}<script type="application/ld+json">{{.PersonLD}}</script>{{end}}
 {{define "main"}}
 <section class="hero">
   <p class="kicker">This site is re-imagined by its visitors</p>
@@ -9,6 +12,20 @@
 <section class="bio" aria-labelledby="about-h">
   <h2 class="label" id="about-h">( About )</h2>
   <div class="bio-text">{{template "prose" $.Page.Body}}</div>
+</section>
+{{end}}
+{{if .Experience}}
+<section class="index experience" aria-labelledby="xp-h">
+  <h2 class="label" id="xp-h">( Experience )</h2>
+  <ol class="index-list">
+    {{range .Experience}}<li class="index-row xp-row">
+      <p class="xp-dates label">{{if .StartLabel}}<time datetime="{{.Start}}">{{.StartLabel}}</time>{{end}}{{if .Current}} to present{{else}}{{if .EndLabel}} to <time datetime="{{.End}}">{{.EndLabel}}</time>{{end}}{{end}}</p>
+      <h3 class="xp-role">{{.Role}}</h3>
+      <p class="xp-company">{{.Company}}</p>
+      {{with .Note}}<p class="xp-note">{{.}}</p>{{end}}
+    </li>
+    {{end}}
+  </ol>
 </section>
 {{end}}
 {{if .Work}}

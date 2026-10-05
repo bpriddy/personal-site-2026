@@ -5,6 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <title>{{block "title" .}}Ben Priddy{{end}}</title>
   <meta name="description" content="{{block "description" .}}Ben Priddy{{end}}">
+  {{/* search and sharing: canonical, Open Graph, and per-page extras (home: a schema.org Person) */}}
+  {{with .Canonical}}<link rel="canonical" href="{{.}}">
+  <meta property="og:url" content="{{.}}">{{end}}
+  <meta property="og:site_name" content="Ben Priddy">
+  <meta property="og:title" content="{{block "ogtitle" .}}Ben Priddy{{end}}">
+  <meta property="og:description" content="{{template "description" .}}">
+  <meta property="og:type" content="website">
+  {{block "ogimage" .}}{{end}}
+  <meta name="twitter:card" content="summary_large_image">
+  {{block "head" .}}{{end}}
   <meta name="theme-color" content="#0F0F0D" media="(prefers-color-scheme: dark)">
   <meta name="theme-color" content="#F1EEE7" media="(prefers-color-scheme: light)">
   {{/* the house fonts (docs/design-pov.md, section 8): the two on the critical path */}}

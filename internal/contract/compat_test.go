@@ -161,7 +161,7 @@ func TestSchemaMatchesDeclared(t *testing.T) {
 			continue
 		}
 		sent := append(slices.Clone(fields), GeneratedKey)
-		sent = append(append(sent, Lists[coll]...), MediaFields[coll]...)
+		sent = append(append(append(sent, Lists[coll]...), MediaFields[coll]...), Bools[coll]...)
 		for _, r := range def.Required {
 			if !slices.Contains(sent, r) {
 				t.Errorf("%s: schema requires %q, which the server doesn't always send", coll, r)
@@ -178,6 +178,11 @@ func TestSchemaMatchesDeclared(t *testing.T) {
 		for _, f := range fields {
 			if def.Properties[f].Type != "string" {
 				t.Errorf("%s.%s: schema type %v, want string", coll, f, def.Properties[f].Type)
+			}
+		}
+		for _, f := range Bools[coll] {
+			if def.Properties[f].Type != "boolean" {
+				t.Errorf("%s.%s: schema type %v, want boolean", coll, f, def.Properties[f].Type)
 			}
 		}
 		for _, f := range Lists[coll] {

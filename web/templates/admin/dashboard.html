@@ -27,6 +27,27 @@
     </tr>{{end}}
   </table>
 </section>
+<section id="experience">
+  <h2>Experience</h2>
+  <p class="muted">The home page's experience list: role, company, dates, one line at most. Newest first (lowest order). Also imported with <code>POST /admin/import/projects</code> (<code>experience: [...]</code>).</p>
+  <table>
+    <tr><th class="num">Order</th><th>Slug</th><th>Role</th><th>Company</th><th>Dates</th><th>Published</th></tr>
+    {{range .Experience}}<tr>
+      <td class="num"><code>{{.Order}}</code></td>
+      <td><a href="/admin/experience/{{.Slug}}"><code>{{.Slug}}</code></a></td>
+      <td>{{.Role}}</td><td>{{.Company}}</td>
+      <td><code>{{or .Start "?"}} → {{if .Current}}present{{else}}{{or .End "?"}}{{end}}</code></td>
+      <td><form method="post" action="/admin/experience/{{.Slug}}/publish" class="toggle">
+        {{if .Published}}<input type="hidden" name="published" value="0"><span>yes</span> <button>Unpublish</button>
+        {{else}}<input type="hidden" name="published" value="1"><span class="muted">no</span> <button>Publish</button>{{end}}
+      </form></td>
+    </tr>{{else}}<tr><td colspan="6" class="muted">No roles yet.</td></tr>{{end}}
+  </table>
+  <form method="get" action="/admin/experience/" class="inline" id="new-experience">
+    <input name="slug" placeholder="new-role-slug" required pattern="[a-z0-9][a-z0-9-]*" aria-label="New role slug">
+    <button>New role</button>
+  </form>
+</section>
 <section id="projects">
   <h2>Projects</h2>
   <p class="muted">Client work at <code>/work/&lt;slug&gt;</code>, in order (lowest first). Import the media and fields with <code>POST /admin/import/projects</code>; edit the text here.</p>

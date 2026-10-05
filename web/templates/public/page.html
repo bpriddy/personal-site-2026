@@ -1,4 +1,6 @@
 {{define "title"}}{{.Page.Title}} · Ben Priddy{{end}}
+{{define "ogtitle"}}{{template "title" .}}{{end}}
+{{define "description"}}{{with excerpt .Page.Body 160}}{{.}}{{else}}{{.Page.Title}}{{end}}{{end}}
 {{define "main"}}
 <section class="page-head">
   <h1 class="display">{{.Page.Title}}</h1>

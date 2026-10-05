@@ -201,6 +201,18 @@ type importFile struct {
 		Order     *int            `json:"order"`
 		Published *bool           `json:"published"`
 	} `json:"experiments"`
+	// Experience (v1.8): roles for the home page, upserted whole by slug.
+	Experience []struct {
+		Slug      string `json:"slug"`
+		Role      string `json:"role"`
+		Company   string `json:"company"`
+		Start     string `json:"start"`
+		End       string `json:"end"`
+		Current   bool   `json:"current"`
+		Note      string `json:"note"`
+		Order     int    `json:"order"`
+		Published bool   `json:"published"`
+	} `json:"experience"`
 }
 
 // importCounts is what an import did to one collection.
@@ -303,6 +315,23 @@ func (s *Server) adminImportProjects(w http.ResponseWriter, r *http.Request) {
 		}
 		exps = append(exps, e)
 	}
+	var roles []content.Experience
+	seenRole := map[string]bool{}
+	for _, ix := range in.Experience {
+		e := content.Experience{Slug: ix.Slug, Role: strings.TrimSpace(ix.Role), Company: strings.TrimSpace(ix.Company),
+			Start: strings.TrimSpace(ix.Start), End: strings.TrimSpace(ix.End), Current: ix.Current,
+			Note: strings.TrimSpace(ix.Note), Order: ix.Order, Published: ix.Published}
+		if seenRole[e.Slug] {
+			problems = append(problems, fmt.Sprintf("experience %q appears twice", e.Slug))
+		}
+		seenRole[e.Slug] = true
+		problems = append(problems, validateExperience(e)...)
+		roles = append(roles, e)
+	}
+	es := store.ExperienceOf(s.store)
+	if len(roles) > 0 && es == nil {
+		problems = append(problems, "this store has no experience list")
+	}
 	if len(problems) > 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "nothing imported", "problems": problems})
 		return
@@ -312,7 +341,9 @@ func (s *Server) adminImportProjects(w http.ResponseWriter, r *http.Request) {
 	var res struct {
 		Projects    importCounts `json:"projects"`
 		Experiments importCounts `json:"experiments"`
+		Experience  importCounts `json:"experience"`
 	}
+	res.Experience = importCounts{Created: []string{}, Updated: []string{}, Unchanged: []string{}}
 	res.Projects = importCounts{Created: []string{}, Updated: []string{}, Unchanged: []string{}}
 	res.Experiments = importCounts{Created: []string{}, Updated: []string{}, Unchanged: []string{}}
 	for _, p := range projects {
@@ -373,6 +404,27 @@ func (s *Server) adminImportProjects(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		res.Experiments.Updated = append(res.Experiments.Updated, e.Slug)
+	}
+	for _, e := range roles {
+		cur, err := es.ExperienceItem(ctx, e.Slug)
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			res.Experience.Created = append(res.Experience.Created, e.Slug)
+		case err != nil:
+			s.fail(w, "import: experience", err)
+			return
+		default:
+			e.UpdatedAt = cur.UpdatedAt
+			if cur == e {
+				res.Experience.Unchanged = append(res.Experience.Unchanged, e.Slug)
+				continue
+			}
+			res.Experience.Updated = append(res.Experience.Updated, e.Slug)
+		}
+		if err := es.SaveExperience(ctx, e); err != nil {
+			s.fail(w, "import: save experience", err)
+			return
+		}
 	}
 	s.contentChanged()
 	writeJSON(w, http.StatusOK, res)

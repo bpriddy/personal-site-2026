@@ -1,0 +1,24 @@
+{{define "title"}}{{if .New}}New role{{else}}Edit role{{end}} · Admin{{end}}
+{{define "main"}}
+<p><a href="/admin/#experience">← Admin</a></p>
+<h1>{{if .New}}New role{{else}}{{.Item.Role}}{{end}} <code>{{.Item.Slug}}</code></h1>
+{{if .Error}}<p class="notice problem" role="alert">{{.Error}}</p>{{end}}
+<form method="post" action="/admin/experience/{{.Item.Slug}}" class="stack">
+  <div class="cols">
+    <label>Role <input name="role" value="{{.Item.Role}}" required></label>
+    <label>Company <input name="company" value="{{.Item.Company}}" required></label>
+  </div>
+  <div class="cols">
+    <label>Start (YYYY-MM or YYYY) <input name="start" value="{{.Item.Start}}" pattern="(19|20)[0-9]{2}(-(0[1-9]|1[0-2]))?" placeholder="2023-06"></label>
+    <label>End (YYYY-MM or YYYY; empty if current) <input name="end" value="{{.Item.End}}" pattern="(19|20)[0-9]{2}(-(0[1-9]|1[0-2]))?" placeholder="2026-03"></label>
+  </div>
+  <label class="check"><input type="checkbox" name="current" {{if .Item.Current}}checked{{end}}> Current role (shown as "to present")</label>
+  <label>Note (one short line, optional) <input name="note" value="{{.Item.Note}}" maxlength="160"></label>
+  <label>Order (lower first: newest role first) <input name="order" type="number" value="{{.Item.Order}}"></label>
+  <label class="check"><input type="checkbox" name="published" {{if .Item.Published}}checked{{end}}> Published</label>
+  <button class="b-primary">Save</button>
+</form>
+{{if not .New}}<form method="post" action="/admin/experience/{{.Item.Slug}}/delete" class="inline">
+  <button>Delete this role</button>
+</form>{{end}}
+{{end}}

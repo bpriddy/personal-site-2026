@@ -123,6 +123,8 @@ func (s *Server) routes() {
 
 	s.mux.HandleFunc("GET /{$}", s.home)
 	// both spellings: front ends navigate by slug ("experiments" → /experiments)
+	s.mux.HandleFunc("GET /robots.txt", s.robots)
+	s.mux.HandleFunc("GET /sitemap.xml", s.sitemap)
 	s.mux.HandleFunc("GET /experiments", s.experiments)
 	s.mux.HandleFunc("GET /experiments/{$}", s.experiments)
 	s.mux.HandleFunc("GET /work", s.work)
@@ -142,6 +144,11 @@ func (s *Server) routes() {
 	admin.HandleFunc("POST /admin/projects/{slug}", s.adminProjectSave)
 	admin.HandleFunc("POST /admin/projects/{slug}/publish", s.adminProjectPublish)
 	admin.HandleFunc("POST /admin/import/projects", s.adminImportProjects)
+	admin.HandleFunc("GET /admin/experience/{$}", s.adminExperienceNew)
+	admin.HandleFunc("GET /admin/experience/{slug}", s.adminExperienceForm)
+	admin.HandleFunc("POST /admin/experience/{slug}", s.adminExperienceSave)
+	admin.HandleFunc("POST /admin/experience/{slug}/publish", s.adminExperiencePublish)
+	admin.HandleFunc("POST /admin/experience/{slug}/delete", s.adminExperienceDelete)
 	// basic auth credentials ride along on cross-site requests, so reject those
 	guarded := http.NewCrossOriginProtection().Handler(admin)
 	s.builderRoutes(admin)
@@ -198,6 +205,8 @@ func (s *Server) render(w http.ResponseWriter, name string, status int, data any
 func (s *Server) renderPublic(w http.ResponseWriter, r *http.Request, name string, status int, data map[string]any) {
 	w.Header().Set("Content-Security-Policy", s.publicCSP)
 	data["Nav"] = s.publicNav(r)
+	data["SiteURL"] = strings.TrimRight(s.cfg.MainOrigin, "/")
+	data["Canonical"] = data["SiteURL"].(string) + r.URL.Path
 	data["Year"] = s.now().Year()
 	s.render(w, "public/"+name, status, data)
 }
@@ -258,6 +267,8 @@ var templateFuncs = template.FuncMap{
 		}
 		return out
 	},
+	// excerpt: a description from content (search and sharing)
+	"excerpt": excerpt,
 	// two pads a number to two digits, like the site's indices (01, 02)
 	"two": func(n int) string { return fmt.Sprintf("%02d", n) },
 	"inc": func(n int) int { return n + 1 },

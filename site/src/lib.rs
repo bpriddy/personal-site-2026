@@ -48,6 +48,19 @@ pub struct SiteData {
     pub pages: Vec<Page>,
     pub experiments: Vec<Experiment>,
     pub projects: Vec<Project>,
+    pub experience: Vec<Role>,
+}
+
+/// One role in Ben's career (v1.8): the home page's experience list.
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(default)]
+pub struct Role {
+    pub role: String,
+    pub company: String,
+    pub start: String,
+    pub end: String,
+    pub current: bool,
+    pub note: String,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -229,7 +242,63 @@ fn read_content() -> SiteData {
                 media: media_field(p, "media"),
             })
             .collect(),
+        // a host without site.experience (before v1.8) gives none
+        experience: items("experience")
+            .iter()
+            .map(|e| Role {
+                role: optional_text(e, "role"),
+                company: optional_text(e, "company"),
+                start: optional_text(e, "start"),
+                end: optional_text(e, "end"),
+                current: js_sys::Reflect::get(e, &"current".into()).ok().and_then(|v| v.as_bool()).unwrap_or(false),
+                note: optional_text(e, "note"),
+            })
+            .filter(|r| !r.role.is_empty())
+            .collect(),
     }
+}
+
+/// "2026-03" → "Mar 2026", "2019" → "2019", anything else → "".
+fn month_label(s: &str) -> String {
+    const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    match s.split_once('-') {
+        None if s.len() == 4 && s.chars().all(|c| c.is_ascii_digit()) => s.to_string(),
+        Some((y, m)) if y.len() == 4 && y.chars().all(|c| c.is_ascii_digit()) => match m.parse::<usize>() {
+            Ok(n) if (1..=12).contains(&n) => format!("{} {}", MONTHS[n - 1], y),
+            _ => String::new(),
+        },
+        _ => String::new(),
+    }
+}
+
+/// The experience list (role, company, dates, at most one note), as the
+/// transcript renders it.
+fn append_experience(doc: &Document, main: &Element, roles: &[Role]) -> Result<(), JsValue> {
+    let idx = el(doc, "section", "index experience", None)?;
+    add(&idx, &el(doc, "h2", "label", Some("( Experience )"))?)?;
+    let list = el(doc, "ol", "index-list", None)?;
+    for r in roles {
+        let li = el(doc, "li", "index-row xp-row", None)?;
+        let (start, end) = (month_label(&r.start), month_label(&r.end));
+        let dates = match (start.is_empty(), r.current, end.is_empty()) {
+            (false, true, _) => format!("{start} to present"),
+            (false, false, false) => format!("{start} to {end}"),
+            (false, false, true) => start,
+            (true, true, _) => "Present".to_string(),
+            (true, false, false) => format!("To {end}"),
+            (true, false, true) => String::new(),
+        };
+        add(&li, &el(doc, "p", "xp-dates label", Some(&dates))?)?;
+        add(&li, &el(doc, "h3", "xp-role", Some(&r.role))?)?;
+        add(&li, &el(doc, "p", "xp-company", Some(&r.company))?)?;
+        if !r.note.is_empty() {
+            add(&li, &el(doc, "p", "xp-note", Some(&r.note))?)?;
+        }
+        list.append_child(&li)?;
+    }
+    idx.append_child(&list)?;
+    main.append_child(&idx)?;
+    Ok(())
 }
 
 /// `site.field(item, name, {expect, fallback, optional})`.
@@ -329,6 +398,7 @@ fn placeholder() -> Loaded {
                 summary: "Projects arrive through window.site inside the site.".into(),
                 ..Default::default()
             }],
+            experience: vec![],
         },
         route: String::new(),
     }
@@ -767,6 +837,9 @@ fn render_route(doc: &Document, main: &Element, data: &SiteData, route: &str) ->
             append_prose(doc, &text, &h.body)?;
             bio.append_child(&text)?;
             main.append_child(&bio)?;
+        }
+        if !data.experience.is_empty() {
+            append_experience(doc, main, &data.experience)?;
         }
         if !data.projects.is_empty() {
             let idx = el(doc, "section", "index work-index", None)?;

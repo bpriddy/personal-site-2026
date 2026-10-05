@@ -21,7 +21,8 @@ const Version = 1
 const (
 	Pages       = "pages"
 	Experiments = "experiments"
-	Projects    = "projects" // since v1.4
+	Projects    = "projects"   // since v1.4
+	Experience  = "experience" // since v1.8
 )
 
 // GeneratedKey is the per-item field listing which fields hold
@@ -35,12 +36,19 @@ var Declared = map[string][]string{
 	Pages:       {"slug", "title", "body"},
 	Experiments: {"slug", "title", "summary", "link"},
 	Projects:    {"slug", "title", "client", "agency", "year", "summary", "contribution", "body", "link", "youtube"},
+	Experience:  {"slug", "role", "company", "start", "end", "note"},
 }
 
 // Lists are each collection's list-of-strings fields, always present ([] by
 // default; blank entries dropped).
 var Lists = map[string][]string{
 	Projects: {"tags", "roles", "palette"},
+}
+
+// Bools are each collection's boolean fields, always present (false by
+// default). Never generated.
+var Bools = map[string][]string{
+	Experience: {"current"},
 }
 
 // MediaFields are each collection's lists of media items (MediaItem), always
@@ -57,13 +65,15 @@ var factual = map[string]map[string]bool{
 	Experiments: {"link": true},
 	Projects: {"client": true, "agency": true, "year": true, "contribution": true, "body": true,
 		"link": true, "youtube": true},
+	// all of it: a role, a company, a date or a line about a job is a fact
+	Experience: {"role": true, "company": true, "start": true, "end": true, "current": true, "note": true},
 }
 
 // Factual reports whether name, in collection, is a field generated values
 // may never fill (a link, a date, a client, a list, media...). The observer
 // asks for review instead of generating one.
 func Factual(collection, name string) bool {
-	return factual[collection][name] || slices.Contains(Lists[collection], name) ||
+	return factual[collection][name] || slices.Contains(Lists[collection], name) || slices.Contains(Bools[collection], name) ||
 		slices.Contains(MediaFields[collection], name)
 }
 
@@ -88,6 +98,7 @@ type Site struct {
 	Pages           []Item `json:"pages"`
 	Experiments     []Item `json:"experiments"`
 	Projects        []Item `json:"projects"`
+	Experience      []Item `json:"experience"` // since v1.8
 
 	// GeneratedErr is the error from Generated, if any. Build still succeeds
 	// (without generated values); it's exposed for callers and tests.
@@ -111,7 +122,7 @@ type Site struct {
 // panic) is logged and the payload is built without generated values; store
 // errors are returned.
 func Build(ctx context.Context, st store.Store, gen Generated) (Site, error) {
-	site := Site{ContractVersion: Version, Pages: []Item{}, Experiments: []Item{}, Projects: []Item{}}
+	site := Site{ContractVersion: Version, Pages: []Item{}, Experiments: []Item{}, Projects: []Item{}, Experience: []Item{}}
 
 	pages, err := st.Pages(ctx)
 	if err != nil {
@@ -125,6 +136,13 @@ func Build(ctx context.Context, st store.Store, gen Generated) (Site, error) {
 	if ps := store.ProjectsOf(st); ps != nil {
 		if projects, err = ps.Projects(ctx); err != nil {
 			return Site{}, fmt.Errorf("projects: %w", err)
+		}
+	}
+
+	var experience []content.Experience
+	if es := store.ExperienceOf(st); es != nil {
+		if experience, err = es.Experience(ctx); err != nil {
+			return Site{}, fmt.Errorf("experience: %w", err)
 		}
 	}
 
@@ -180,7 +198,31 @@ func Build(ctx context.Context, st store.Store, gen Generated) (Site, error) {
 		it["media"] = Media(p.Media)
 		site.Projects = append(site.Projects, it)
 	}
+	experience = slices.Clone(experience)
+	slices.SortStableFunc(experience, func(a, b content.Experience) int {
+		return cmp.Or(cmp.Compare(a.Order, b.Order), strings.Compare(a.Slug, b.Slug))
+	})
+	for _, e := range experience {
+		if !e.Published {
+			continue
+		}
+		start, end := month(e.Start), month(e.End)
+		if e.Current {
+			end = ""
+		}
+		it := merge(Experience, []string{e.Slug, e.Role, e.Company, start, end, e.Note}, generated)
+		it["current"] = e.Current
+		site.Experience = append(site.Experience, it)
+	}
 	return site, nil
+}
+
+// month is s if it's "YYYY-MM" or "YYYY", else "".
+func month(s string) string {
+	if s = strings.TrimSpace(s); content.ValidMonth(s) {
+		return s
+	}
+	return ""
 }
 
 // link is u if it's an http(s) URL, else "".

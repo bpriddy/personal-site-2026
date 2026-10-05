@@ -53,8 +53,11 @@
   var DECLARED = {
     pages: ["slug", "title", "body"],
     experiments: ["slug", "title", "summary", "link"],
-    projects: ["slug", "title", "client", "agency", "year", "summary", "contribution", "body", "link", "youtube"]
+    projects: ["slug", "title", "client", "agency", "year", "summary", "contribution", "body", "link", "youtube"],
+    experience: ["slug", "role", "company", "start", "end", "note"] // v1.8
   };
+  // boolean fields (v1.8): always true or false
+  var BOOLS = { experience: ["current"] };
   // list-of-text fields (v1.4): always arrays of strings
   var LISTS = { projects: ["tags", "roles", "palette"] };
   // media lists (v1.4): always arrays of {kind, src, poster, width, height, alt}
@@ -146,6 +149,8 @@
       }
       item[media[m]] = normalizeMedia(mv);
     }
+    var bools = BOOLS[collection] || [];
+    for (var bi = 0; bi < bools.length; bi++) item[bools[bi]] = item[bools[bi]] === true;
     var gen = item._generated;
     var list = [];
     if (Array.isArray(gen)) {
@@ -457,6 +462,9 @@
     pages: function () { return collection("pages"); },
     experiments: function () { return collection("experiments"); },
     projects: function () { return collection("projects"); },
+    // experience (v1.8): Ben's roles, newest first: {slug, role, company,
+    // start ("YYYY-MM" or "YYYY"), end ("" for the current role), current, note}
+    experience: function () { return collection("experience"); },
 
     // collection: site.content[name] if it is an array, else []. Never throws.
     collection: function (name) {

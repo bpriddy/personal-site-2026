@@ -86,7 +86,7 @@ type NamedItems struct {
 
 // Collections returns the payload's collections by name, in a fixed order.
 func (s Site) Collections() []NamedItems {
-	return []NamedItems{{Pages, s.Pages}, {Experiments, s.Experiments}, {Projects, s.Projects}}
+	return []NamedItems{{Pages, s.Pages}, {Experiments, s.Experiments}, {Projects, s.Projects}, {Experience, s.Experience}}
 }
 
 // ShapeOf computes a payload's published shape. Structural keys (the slug,

@@ -25,10 +25,31 @@
       "description": "Since v1.4. Published projects (client work, shown at the route \"work/<slug>\"), in their featured order. Keyed by slug. Always sent; optional here only because v1 didn't have it.",
       "type": "array",
       "items": { "$ref": "#/$defs/project" }
+    },
+    "experience": {
+      "description": "Since v1.8. Published roles in Ben's career, for the home page's experience list, in their CMS order (newest first). Keyed by slug. Minimal by design: a role, a company, dates and at most one short line. Always sent; optional here only because v1 didn't have it.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/experience" }
     }
   },
   "additionalProperties": true,
   "$defs": {
+    "experience": {
+      "description": "Since v1.8. One role. Every key is always sent. All of it is factual: none of it is ever generated.",
+      "type": "object",
+      "required": ["slug", "role", "company", "start", "end", "current", "note", "_generated"],
+      "properties": {
+        "slug": { "description": "Stable id.", "type": "string" },
+        "role": { "description": "The title, e.g. \"Global Head of AI Technology\". Plain text.", "type": "string" },
+        "company": { "description": "e.g. \"Anomaly\". Plain text.", "type": "string" },
+        "start": { "description": "\"YYYY-MM\" or \"YYYY\", or \"\" if unknown.", "type": "string" },
+        "end": { "description": "\"YYYY-MM\" or \"YYYY\"; \"\" for the current role (or if unknown).", "type": "string" },
+        "current": { "description": "true for the role he holds now (show it as \"to present\").", "type": "boolean" },
+        "note": { "description": "One short line, or \"\". Plain text.", "type": "string" },
+        "_generated": { "$ref": "#/$defs/generated" }
+      },
+      "additionalProperties": { "$ref": "#/$defs/extra" }
+    },
     "page": {
       "type": "object",
       "required": ["slug", "title", "body", "_generated"],

@@ -47,6 +47,7 @@ It is a classic script that defines window.site:
 | site.get(path, fallback) | dotted path into site.content ("pages.0.title"); never throws. |
 | site.pages(), site.page(slug), site.experiments() | always an array (pages, experiments) or an object (page; {} if not found). Never undefined. |
 | site.projects(), site.project(slug) | Ben's work: always an array, or an object ({} if not found). |
+| site.experience() | Ben's roles, newest first: always an array (empty when none are published). |
 | site.collection(name) | any collection by name ("pages", "experiments", "projects"); always an array. |
 | site.openExternal(url) | ask the parent to open an http(s) URL in a new tab (call it from a click handler; anything else is refused). Use it for a project's link and its film: "https://www.youtube.com/watch?v=" + youtube. |
 | site.field(item, name, {expect, fallback, optional}) | returns item[name] if it matches expect; otherwise returns fallback AND reports the gap to Ben's site observer, which then fills in the missing content. expect is "text" (a non-empty string; the default), "list", "number" or "bool"; fallback defaults to "", [], 0 or false to match. optional: true means empty is a legitimate value (no link, no film, no agency): it returns the fallback without reporting. Never throws. Works on items from site.pages(), site.page(), site.experiments(), site.projects() and site.project() (they carry a hidden _collection tag; a spread copy {...item} keeps it). |
@@ -62,12 +63,15 @@ site.content has this shape (see Ben's current content in his first message; it 
       "experiments": [{ "slug": "...", "title": "...", "summary": "...", "link": "", "media": [], "_generated": [] }],
       "projects":    [{ "slug": "...", "title": "...", "client": "...", "agency": "", "year": "2020",
                         "tags": ["..."], "roles": ["..."], "summary": "...", "contribution": "...", "body": "",
-                        "link": "", "palette": ["#001d48"], "youtube": "", "media": [], "_generated": [] }] }
+                        "link": "", "palette": ["#001d48"], "youtube": "", "media": [], "_generated": [] }],
+      "experience":  [{ "slug": "...", "role": "...", "company": "...", "start": "2023-06", "end": "2026-03",
+                        "current": false, "note": "", "_generated": [] }] }
 
   A media item is { "kind": "image" | "loop", "src": "/media/...", "poster": "/media/..." | "", "width": 735, "height": 413, "alt": "" }. To draw media into a canvas or a WebGPU/WebGL texture, set crossOrigin = "anonymous" on the img or video before setting src (the frame's origin is opaque; without it the image is tainted and the copy fails).
 
 - Routes are slugs. site.route "" is the home page, which is the page with slug "". "experiments" is the list of experiments. "work" is the index of Ben's projects and "work/<slug>" is one project's page. Any other route is the page with that slug. Experiments have no pages of their own: list them (title, summary, their media, their link via site.openExternal) on the "experiments" route, and feel free to feature them elsewhere, but don't link to individual experiments.
 - Projects are Ben's client work, in his featured order. On "work" list them (title, client, year, a still or loop); on "work/<slug>" show the title, client, agency, year, roles and tags, the media, the summary, his contribution (what he did) and the body, plus the link and the film when they exist (site.openExternal). Featuring a few projects on the home page is welcome. The tags, roles and palette are lists of strings; the palette is the project's own colours.
+- Experience is Ben's career, newest first: role, company and dates ("YYYY-MM" or "YYYY"; the current role has current: true and no end), and at most one short note. Show it on the home page as a compact list, never as a CV with bullets: the role, the company, and "Mar 2026 to present" / "Jun 2023 to Mar 2026" style dates (write dates with "to", not dashes). It may be empty: then show nothing.
 - Media: use only the src and poster paths the content gives (they are on the front end's own origin, so img-src/media-src 'self' allow them); never hotlink or invent media. Always set width and height (from the item) or an aspect-ratio, so nothing shifts as media loads. Show a loop as <video muted loop playsinline autoplay preload="metadata" poster=...> (set video.muted = true in script too: browsers only autoplay muted video); under prefers-reduced-motion don't autoplay: show the poster. Show images with <img loading="lazy" decoding="async" alt=...> (alt: the item's alt, else the project title). Lazy-load media below the fold (e.g. start loops with an IntersectionObserver). Skip media kinds you don't know.
 - For a route that matches no page, show a simple "Not found" state with a way home.
 - A page body is plain text. Paragraphs are separated by blank lines ("\n\n"). Render text with textContent (or site.textCanvas), never as HTML.
