@@ -502,9 +502,8 @@ fn nav_items(data: &SiteData) -> Vec<(String, String)> {
     if !data.projects.is_empty() {
         out.push(("work".into(), "Work".into()));
     }
-    if !data.experiments.is_empty() {
-        out.push(("experiments".into(), "Experiments".into()));
-    }
+    // always: with nothing published the route says "Coming soon"
+    out.push(("experiments".into(), "Experiments".into()));
     out
 }
 
@@ -853,11 +852,16 @@ fn render_route(doc: &Document, main: &Element, data: &SiteData, route: &str) ->
             idx.append_child(&more)?;
             main.append_child(&idx)?;
         }
-        if !data.experiments.is_empty() {
+        {
             let idx = el(doc, "section", "index", None)?;
-            let label = format!("( Experiments \u{2014} {} )", two(data.experiments.len()));
-            add(&idx, &el(doc, "h2", "label", Some(&label))?)?;
-            append_index(doc, &idx, data)?;
+            if data.experiments.is_empty() {
+                add(&idx, &el(doc, "h2", "label", Some("( Experiments )"))?)?;
+                add(&idx, &el(doc, "p", "prose-aside", Some("Coming soon."))?)?;
+            } else {
+                let label = format!("( Experiments \u{2014} {} )", two(data.experiments.len()));
+                add(&idx, &el(doc, "h2", "label", Some(&label))?)?;
+                append_index(doc, &idx, data)?;
+            }
             main.append_child(&idx)?;
         }
         return Ok(());
@@ -882,11 +886,13 @@ fn render_route(doc: &Document, main: &Element, data: &SiteData, route: &str) ->
         main.append_child(&idx)?;
     } else if route == "experiments" {
         add(&head, &el(doc, "h1", "display", Some("Experiments"))?)?;
-        let n = format!("( {} published )", two(data.experiments.len()));
-        add(&head, &el(doc, "p", "label", Some(&n))?)?;
+        if !data.experiments.is_empty() {
+            let n = format!("( {} published )", two(data.experiments.len()));
+            add(&head, &el(doc, "p", "label", Some(&n))?)?;
+        }
         let idx = el(doc, "section", "index index-page", None)?;
         if data.experiments.is_empty() {
-            add(&idx, &el(doc, "p", "prose-aside", Some("Nothing published yet."))?)?;
+            add(&idx, &el(doc, "p", "prose-aside", Some("Coming soon."))?)?;
         } else {
             append_index(doc, &idx, data)?;
         }

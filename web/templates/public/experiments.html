@@ -2,9 +2,9 @@
 {{define "main"}}
 <section class="page-head">
   <h1 class="display">Experiments</h1>
-  <p class="label">( {{two (len .Experiments)}} published )</p>
+  {{if .Experiments}}<p class="label">( {{two (len .Experiments)}} published )</p>{{end}}
 </section>
 <section class="index index-page">
-  {{if .Experiments}}{{template "experiment-list" .Experiments}}{{else}}<p class="prose-aside">Nothing published yet.</p>{{end}}
+  {{if .Experiments}}{{template "experiment-list" .Experiments}}{{else}}<p class="prose-aside">Coming soon.</p>{{end}}
 </section>
 {{end}}

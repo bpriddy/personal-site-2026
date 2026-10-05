@@ -35,10 +35,13 @@
   <p class="index-more"><a class="label" href="/work/">( All work )</a></p>
 </section>
 {{end}}
-{{if .Experiments}}
 <section class="index" aria-labelledby="exp-h">
+{{if .Experiments}}
   <h2 class="label" id="exp-h">( Experiments <span aria-hidden="true">&mdash;</span> {{two (len .Experiments)}} )</h2>
   {{template "experiment-list" .Experiments}}
-</section>
+{{else}}
+  <h2 class="label" id="exp-h">( Experiments )</h2>
+  <p class="prose-aside">Coming soon.</p>
 {{end}}
+</section>
 {{end}}

@@ -146,3 +146,26 @@ func TestSearchBasics(t *testing.T) {
 		}
 	}
 }
+
+// With no experiments published, Experiments stays in the nav and says
+// "Coming soon" (home section and its page).
+func TestExperimentsComingSoon(t *testing.T) {
+	s := newTestServer(t)
+	ctx := context.Background()
+	exps, _ := s.store.Experiments(ctx)
+	for _, e := range exps {
+		e.Published = false
+		s.store.SaveExperiment(ctx, e)
+	}
+	for _, path := range []string{"/", "/experiments/"} {
+		rec := httptest.NewRecorder()
+		s.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		body := rec.Body.String()
+		if !strings.Contains(body, "Coming soon.") || !strings.Contains(body, `href="/experiments/"`) {
+			t.Errorf("%s: want Coming soon and the Experiments nav link", path)
+		}
+		if strings.Contains(body, "Nothing published yet") {
+			t.Errorf("%s: old empty state", path)
+		}
+	}
+}

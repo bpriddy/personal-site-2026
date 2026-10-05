@@ -141,8 +141,7 @@ func (s *Server) publicNav(r *http.Request) []navItem {
 	if projects, err := s.publishedProjects(r.Context()); err == nil && len(projects) > 0 {
 		add("/work/", "Work", "work")
 	}
-	if exps, err := s.publishedExperiments(r); err == nil && len(exps) > 0 {
-		add("/experiments/", "Experiments", "experiments")
-	}
+	// always: with nothing published the page says "Coming soon"
+	add("/experiments/", "Experiments", "experiments")
 	return out
 }
