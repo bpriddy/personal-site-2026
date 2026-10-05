@@ -187,6 +187,9 @@ func (m *Memory) Submissions(_ context.Context, limit int) ([]Submission, error)
 	defer m.mu.RUnlock()
 	var pending, reviewed []Submission
 	for _, s := range m.visitors.subs {
+		if s.Status == submissionDeleted {
+			continue
+		}
 		if s.Status == SubmissionPending {
 			pending = append(pending, m.withDisplay(s))
 		} else {
@@ -253,3 +256,6 @@ func (m *Memory) ReviewSubmission(_ context.Context, id int64, approve bool) (Su
 	s.ReviewedAt = now
 	return m.withDisplay(*s), nil
 }
+
+// submissionDeleted marks a Memory submission whose revision was deleted.
+const submissionDeleted = "deleted"

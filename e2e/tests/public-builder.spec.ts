@@ -151,6 +151,9 @@ test("a visitor builds in the modal and sees it live; picks versions; nobody els
   // open "Your creations" (folded by default) to pick a version
   await dialog.locator(".bm-mine-sum").click();
   await expect(dialog.locator(".bm-mine")).toHaveAttribute("open", /.*/);
+  // each creation's versions are folded too (v1.9)
+  await expect(card.locator(".bm-versions")).not.toHaveAttribute("open", /.*/);
+  await card.locator(".bm-versions-sum").click();
   await card.locator(`.bm-rev[data-rev="${r1}"]`).click();
   await expect(card.locator(`.bm-rev[data-rev="${r1}"]`)).toHaveAttribute("aria-pressed", "true");
   await expect(card.locator(`.bm-rev[data-rev="${r2}"]`)).toHaveAttribute("aria-pressed", "false");

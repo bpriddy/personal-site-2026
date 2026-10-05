@@ -60,3 +60,9 @@
   }
   if (best) best.setAttribute("aria-current", "page");
 })();
+
+// forms with data-confirm ask first (e.g. deleting a revision)
+document.addEventListener("submit", function (e) {
+  var msg = e.target instanceof HTMLFormElement ? e.target.getAttribute("data-confirm") : null;
+  if (msg && !window.confirm(msg)) e.preventDefault();
+}, true);

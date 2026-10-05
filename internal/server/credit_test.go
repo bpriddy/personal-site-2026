@@ -2,6 +2,8 @@ package server
 
 import (
 	"net/url"
+
+	"github.com/bpriddy/personal-site-2026/internal/builder"
 	"strings"
 	"testing"
 )
@@ -74,5 +76,30 @@ func TestBuilderCredit(t *testing.T) {
 	}
 	if rec := e.form("/admin/builder/fe/nope/credit", url.Values{"credit": {"x"}}); rec.Code != 404 {
 		t.Errorf("unknown front end: %d", rec.Code)
+	}
+}
+
+func TestBuilderDeleteRevision(t *testing.T) {
+	e := newBuilderServer(t, true)
+	e.form("/admin/builder/new", url.Values{"slug": {"del"}, "title": {"Del"}})
+	r1 := eventOf(func() []builder.Event { e.script(); return e.chat(t, "del", "one", "") }(), "revision")
+	r2 := eventOf(func() []builder.Event { e.script(); return e.chat(t, "del", "two", r1.Revision) }(), "revision")
+	e.form("/admin/builder/fe/del/activate", url.Values{"rev": {r2.Revision}})
+
+	rec := e.form("/admin/builder/fe/del/delete-revision", url.Values{"rev": {r2.Revision}})
+	if rec.Code != 303 || !strings.Contains(rec.Header().Get("Location"), "error=") {
+		t.Fatalf("deleting the active revision: %d %s", rec.Code, rec.Header().Get("Location"))
+	}
+	if page := adminDo(e, "GET", rec.Header().Get("Location")).Body.String(); !strings.Contains(page, "make another one active first") {
+		t.Error("the refusal isn't shown on the page")
+	}
+	if rec := e.form("/admin/builder/fe/del/delete-revision", url.Values{"rev": {r1.Revision}}); rec.Code != 303 || rec.Header().Get("Location") != "/admin/builder/fe/del" {
+		t.Fatalf("delete r1: %d %s", rec.Code, rec.Header().Get("Location"))
+	}
+	if revs, _ := e.st.Revisions(t.Context(), "fe/del"); len(revs) != 1 || revs[0].ID != r2.Revision || revs[0].ParentID != "" {
+		t.Fatalf("revisions = %+v", revs)
+	}
+	if rec := e.form("/admin/builder/fe/del/delete-revision", url.Values{"rev": {r1.Revision}}); rec.Code != 404 {
+		t.Errorf("deleting it again: %d", rec.Code)
 	}
 }

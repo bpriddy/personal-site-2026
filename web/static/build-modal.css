@@ -377,3 +377,19 @@ html.bm-open #frontend { transform: scale(.985); }
 }
 .bm-credit-input::placeholder { color: var(--bm-faint); }
 .bm-credit-input:focus { outline: none; border-color: var(--bm-fg); }
+
+/* a creation's versions: folded away by default */
+.bm-versions { margin-top: var(--s-2); }
+.bm-versions-sum {
+  display: inline-flex; align-items: center; gap: var(--s-2); min-height: 36px; cursor: pointer; list-style: none;
+  color: var(--bm-muted); font-family: var(--font-mono); font-size: var(--t-meta); letter-spacing: .06em; text-transform: uppercase;
+  transition: color var(--d-2) var(--ease-quint);
+}
+.bm-versions-sum::-webkit-details-marker { display: none; }
+.bm-versions-sum::after {
+  content: ""; width: 6px; height: 6px; border: solid currentColor; border-width: 0 1.5px 1.5px 0;
+  transform: translateY(-2px) rotate(45deg); transition: transform var(--d-2) var(--ease-quint);
+}
+.bm-versions[open] > .bm-versions-sum::after { transform: translateY(1px) rotate(-135deg); }
+.bm-versions-sum:hover, .bm-versions[open] > .bm-versions-sum { color: var(--bm-fg); }
+.bm-versions-sum:focus-visible { outline: 2px solid var(--bm-accent); outline-offset: 2px; }

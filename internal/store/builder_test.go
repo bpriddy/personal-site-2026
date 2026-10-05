@@ -35,6 +35,64 @@ func builderConformance(t *testing.T, newStore func(t *testing.T) Builder) {
 		}
 	})
 
+	t.Run("delete revision", func(t *testing.T) {
+		st := newStore(t)
+		must(t, st.CreatePromptedFrontend(ctx, "fe/d", "D"))
+		must(t, st.CreatePromptedFrontend(ctx, "fe/other", "O"))
+		add := func(id, parent string) {
+			t.Helper()
+			_, err := st.AddRevision(ctx, Revision{ID: id, FrontendID: "fe/d", ParentID: parent, Author: "ben"})
+			must(t, err)
+		}
+		add("dddddddd1", "")
+		add("dddddddd2", "dddddddd1")
+		add("dddddddd3", "dddddddd2")
+		must(t, st.SetActiveRevision(ctx, "fe/d", "dddddddd3"))
+		runID, err := st.StartRun(ctx, Run{FrontendID: "fe/d", ParentID: "dddddddd2"})
+		must(t, err)
+
+		if err := st.DeleteRevision(ctx, "fe/d", "dddddddd3"); !errors.Is(err, ErrActiveRevision) {
+			t.Fatalf("delete active: %v", err)
+		}
+		if err := st.DeleteRevision(ctx, "fe/other", "dddddddd2"); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("delete another front end's: %v", err)
+		}
+		if err := st.DeleteRevision(ctx, "fe/d", "nopenope1"); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("delete unknown: %v", err)
+		}
+		must(t, st.DeleteRevision(ctx, "fe/d", "dddddddd2"))
+		if _, err := st.Revision(ctx, "dddddddd2"); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("deleted revision still there: %v", err)
+		}
+		if r3, _ := st.Revision(ctx, "dddddddd3"); r3.ParentID != "dddddddd1" {
+			t.Fatalf("child not re-parented: %+v", r3)
+		}
+		if runs, _ := st.Runs(ctx, "fe/d", 5); len(runs) != 1 || runs[0].ID != runID || runs[0].ParentID != "" {
+			t.Fatalf("run = %+v", runs)
+		}
+		if revs, _ := st.Revisions(ctx, "fe/d"); len(revs) != 2 {
+			t.Fatalf("revisions = %+v", revs)
+		}
+
+		// a revision waiting for review stays; once reviewed it can go
+		if v, ok := st.(Visitors); ok {
+			sub, err := v.Submit(ctx, "fe/d", "dddddddd1")
+			must(t, err)
+			if err := st.DeleteRevision(ctx, "fe/d", "dddddddd1"); !errors.Is(err, ErrPendingRevision) {
+				t.Fatalf("delete pending: %v", err)
+			}
+			_, err = v.ReviewSubmission(ctx, sub.ID, false)
+			must(t, err)
+			must(t, st.DeleteRevision(ctx, "fe/d", "dddddddd1"))
+			if subs, _ := v.Submissions(ctx, 10); len(subs) != 0 {
+				t.Fatalf("submissions after delete = %+v", subs)
+			}
+			if r3, _ := st.Revision(ctx, "dddddddd3"); r3.ParentID != "" {
+				t.Fatalf("r3 parent = %q", r3.ParentID)
+			}
+		}
+	})
+
 	t.Run("credit", func(t *testing.T) {
 		st := newStore(t)
 		must(t, st.CreatePromptedFrontend(ctx, "fe/c", "C"))

@@ -93,3 +93,7 @@
 .b-credit { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); margin: var(--s-4) 0; }
 .b-credit input { flex: 1 1 260px; max-width: 420px; }
 .b-credit .b-muted { flex-basis: 100%; }
+
+/* destructive actions (delete a revision) */
+.admin button.b-danger { color: var(--accent); border-color: color-mix(in oklab, var(--accent) 45%, transparent); }
+.admin button.b-danger:hover:not(:disabled) { border-color: var(--accent); }

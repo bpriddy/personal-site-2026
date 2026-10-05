@@ -22,6 +22,7 @@
   </div>
 </header>
 {{if .RotationOverridden}}<p class="b-notice"><strong>FRONTEND_ROTATION is set:</strong> it overrides the rotation.</p>{{end}}
+{{with .Error}}<p class="b-error" role="alert">{{.}}</p>{{end}}
 {{if not .Builtin}}<form method="post" action="/admin/builder/fe/{{.Slug}}/credit" class="b-credit">
   <label for="credit">Credit in the site bar</label>
   <input id="credit" name="credit" value="{{.FE.Credit}}" maxlength="80" placeholder="e.g. a visitor's name or handle; empty for none">
@@ -96,11 +97,15 @@
         {{if not .Active}}<form method="post" action="/admin/builder/fe/{{$.Slug}}/activate">
           <input type="hidden" name="rev" value="{{.ID}}">
           <button>{{if $.FE.ActiveRevision}}Make active{{else}}Make active (publish){{end}}</button>
+        </form>
+        <form method="post" action="/admin/builder/fe/{{$.Slug}}/delete-revision" data-confirm="Delete r{{.Number}}? This can't be undone.">
+          <input type="hidden" name="rev" value="{{.ID}}">
+          <button class="b-danger">Delete</button>
         </form>{{end}}
       </td>
     </tr>{{end}}
   </table>
-  <p class="b-muted">Make active publishes a revision (visitors get it once the front end is in the rotation). Making an older revision active is a rollback; nothing is ever deleted.</p>
+  <p class="b-muted">Make active publishes a revision (visitors get it once the front end is in the rotation). Making an older revision active is a rollback. Delete removes a revision for good (not the active one, nor one waiting for review); revisions made from it then count as made from its parent.</p>
   {{else}}<p class="b-muted">None yet.</p>{{end}}
 </section>
 {{end}}

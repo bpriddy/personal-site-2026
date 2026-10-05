@@ -40,6 +40,13 @@ type Builder interface {
 	// SetActiveRevision makes revID the front end's active (served) revision;
 	// ErrNotFound unless revID is a revision of frontendID.
 	SetActiveRevision(ctx context.Context, frontendID, revID string) error
+	// DeleteRevision removes a revision of frontendID. Its children are
+	// re-parented to its parent; runs that started from or produced it forget
+	// it; its reviewed submissions go with it. ErrNotFound unless revID is a
+	// revision of frontendID; ErrActiveRevision if it's the active one;
+	// ErrPendingRevision if a pending submission is for it. The revision's
+	// files are left in storage (unreachable).
+	DeleteRevision(ctx context.Context, frontendID, revID string) error
 
 	// StartRun records a builder run as running and returns its ID.
 	StartRun(ctx context.Context, run Run) (int64, error)
@@ -51,6 +58,12 @@ type Builder interface {
 
 // ErrExists is returned when creating something whose ID is already taken.
 var ErrExists = errors.New("already exists")
+
+// ErrActiveRevision: the active revision can't be deleted.
+var ErrActiveRevision = errors.New("the active revision can't be deleted")
+
+// ErrPendingRevision: a revision waiting for review can't be deleted.
+var ErrPendingRevision = errors.New("the revision has a pending submission")
 
 // Front-end kinds.
 const (

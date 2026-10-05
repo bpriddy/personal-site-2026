@@ -207,3 +207,41 @@ func (p *Postgres) Runs(ctx context.Context, frontendID string, limit int) ([]Ru
 		return run, err
 	})
 }
+
+func (p *Postgres) DeleteRevision(ctx context.Context, frontendID, revID string) error {
+	return pgx.BeginFunc(ctx, p.pool, func(tx pgx.Tx) error {
+		var active, parent string
+		err := tx.QueryRow(ctx, `
+			SELECT coalesce(f.active_revision, ''), coalesce(r.parent_id, '')
+			FROM frontend_revisions r JOIN frontends f ON f.ref = r.frontend_id
+			WHERE r.id = $1 AND r.frontend_id = $2 FOR UPDATE OF f`, revID, frontendID).Scan(&active, &parent)
+		if err != nil {
+			return notFound(err)
+		}
+		if active == revID {
+			return ErrActiveRevision
+		}
+		var pending bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM frontend_submissions WHERE revision_id = $1 AND status = 'pending')`,
+			revID).Scan(&pending); err != nil {
+			return err
+		}
+		if pending {
+			return ErrPendingRevision
+		}
+		if _, err := tx.Exec(ctx, `UPDATE frontend_revisions SET parent_id = nullif($2, '') WHERE parent_id = $1`, revID, parent); err != nil {
+			return err
+		}
+		for _, q := range []string{
+			`UPDATE builder_runs SET parent_id = NULL WHERE parent_id = $1`,
+			`UPDATE builder_runs SET revision_id = NULL WHERE revision_id = $1`,
+			`DELETE FROM frontend_submissions WHERE revision_id = $1`,
+		} {
+			if _, err := tx.Exec(ctx, q, revID); err != nil {
+				return err
+			}
+		}
+		_, err = tx.Exec(ctx, `DELETE FROM frontend_revisions WHERE id = $1`, revID)
+		return err
+	})
+}

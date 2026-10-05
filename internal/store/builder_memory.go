@@ -209,3 +209,43 @@ func (m *Memory) SetCreditRequested(_ context.Context, id, credit string) error 
 	m.builder.asked[id] = credit
 	return nil
 }
+
+func (m *Memory) DeleteRevision(_ context.Context, frontendID, revID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.builder.init()
+	r, ok := m.builder.revs[revID]
+	if !ok || r.FrontendID != frontendID {
+		return ErrNotFound
+	}
+	if m.builder.active[frontendID] == revID {
+		return ErrActiveRevision
+	}
+	for _, s := range m.visitors.subs {
+		if s.RevisionID == revID && s.Status == SubmissionPending {
+			return ErrPendingRevision
+		}
+	}
+	for id, c := range m.builder.revs {
+		if c.ParentID == revID {
+			c.ParentID = r.ParentID
+			m.builder.revs[id] = c
+		}
+	}
+	for i := range m.builder.runs {
+		if m.builder.runs[i].ParentID == revID {
+			m.builder.runs[i].ParentID = ""
+		}
+		if m.builder.runs[i].RevisionID == revID {
+			m.builder.runs[i].RevisionID = ""
+		}
+	}
+	// submissions keep their index-based IDs: a deleted one becomes a tombstone
+	for i := range m.visitors.subs {
+		if m.visitors.subs[i].RevisionID == revID {
+			m.visitors.subs[i] = Submission{ID: m.visitors.subs[i].ID, Status: submissionDeleted}
+		}
+	}
+	delete(m.builder.revs, revID)
+	return nil
+}

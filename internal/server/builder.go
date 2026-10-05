@@ -91,6 +91,7 @@ func (s *Server) builderRoutes(admin *http.ServeMux) {
 	admin.HandleFunc("POST /admin/builder/fe/{slug}/chat", s.builderChat)
 	admin.HandleFunc("POST /admin/builder/fe/{slug}/activate", s.builderActivate)
 	admin.HandleFunc("POST /admin/builder/fe/{slug}/credit", s.builderCredit)
+	admin.HandleFunc("POST /admin/builder/fe/{slug}/delete-revision", s.builderDeleteRevision)
 	admin.HandleFunc("POST /admin/builder/fe/{slug}/import", s.builderImport)
 	admin.HandleFunc("GET /admin/builder/rev/{id}/{path...}", s.builderSource)
 }
@@ -474,8 +475,33 @@ func (s *Server) builderFrontend(w http.ResponseWriter, r *http.Request) {
 		"FE": f, "Slug": r.PathValue("slug"), "Revisions": rows, "Selected": selected,
 		"Conversation": conv, "PreviewRef": previewRef, "Runs": failed, "Running": running,
 		"Disabled": s.builderDisabledReason(), "Self": r.URL.Path, "Visitor": s.isVisitorFrontend(r, f.ID),
-		"RotationOverridden": s.rotationOverride != nil,
+		"RotationOverridden": s.rotationOverride != nil, "Error": r.URL.Query().Get("error"),
 	})
+}
+
+// builderDeleteRevision deletes one revision (form: rev=<id>). The active
+// one and one waiting for review are refused, with a message on the page.
+func (s *Server) builderDeleteRevision(w http.ResponseWriter, r *http.Request) {
+	b := s.needBuilderStore(w)
+	if b == nil {
+		return
+	}
+	slug := r.PathValue("slug")
+	page := "/admin/builder/fe/" + slug
+	err := b.DeleteRevision(r.Context(), frontend.PromptedID(slug), r.FormValue("rev"))
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		http.NotFound(w, r)
+	case errors.Is(err, store.ErrActiveRevision):
+		http.Redirect(w, r, page+"?error="+urlQuery("That's the active revision: make another one active first."), http.StatusSeeOther)
+	case errors.Is(err, store.ErrPendingRevision):
+		http.Redirect(w, r, page+"?error="+urlQuery("That revision is waiting for review: approve or reject it first."), http.StatusSeeOther)
+	case err != nil:
+		s.fail(w, "builder: delete revision", err)
+	default:
+		s.contentChanged()
+		http.Redirect(w, r, page, http.StatusSeeOther)
+	}
 }
 
 // builderActivate makes a revision the front end's active one (publish, or

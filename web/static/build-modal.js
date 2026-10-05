@@ -44,6 +44,9 @@
     if (text != null) e.textContent = text;
     return e;
   }
+  var versionsOpen = {}; // slug → the visitor opened its versions (kept across re-renders)
+  var creditDraft = {}; // slug → what the visitor typed in "Credit me as", across re-renders
+
   function keyed(e, key) {
     e.setAttribute("data-key", key);
     return e;
@@ -419,7 +422,14 @@
         item.append(b);
         revs.append(item);
       });
-      li.append(revs);
+      // the versions fold away (closed unless the visitor opened them)
+      var vers = el("details", "bm-versions");
+      vers.open = !!versionsOpen[f.slug];
+      var vsum = el("summary", "bm-versions-sum", f.revisions.length === 1 ? "1 version" : f.revisions.length + " versions");
+      keyed(vsum, "versions:" + f.slug);
+      vers.addEventListener("toggle", function () { versionsOpen[f.slug] = vers.open; });
+      vers.append(vsum, revs);
+      li.append(vers);
 
       // the actions act on the version on the site, else the newest
       selected = selected || f.revisions[0];
@@ -497,7 +507,6 @@
     });
   }
 
-  var creditDraft = {}; // slug → what the visitor typed in "Credit me as", across re-renders
 
   function submit(f, rv, btn, credit) {
     btn.disabled = true;
