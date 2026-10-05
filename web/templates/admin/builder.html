@@ -1,6 +1,8 @@
 {{define "title"}}Builder · Admin{{end}}
 {{define "main"}}
 <link rel="stylesheet" href="/static/builder.css">
+<script src="/static/attach.js" defer></script>
+<script src="/static/builder-create.js" defer></script>
 <div class="builder">
 <h1>Front-end builder</h1>
 {{if .Error}}<p class="b-error" role="alert">{{.Error}}</p>{{end}}
@@ -10,6 +12,8 @@
   <label for="new-prompt"><strong>Describe a new front end</strong></label>
   <textarea id="new-prompt" name="prompt" rows="4" required maxlength="8000" {{if .Disabled}}disabled{{end}}
     placeholder="e.g. A minimal, elegant dark page with my name large and my pages listed; a subtle animated WebGPU background if available"></textarea>
+  <input type="hidden" name="images" value="">
+  <div class="attach-bar" id="new-attach"></div>
   <details class="b-muted"><summary>Name it yourself (optional)</summary>
     <input name="title" placeholder="Name, e.g. Night sky" maxlength="200" aria-label="Name">
   </details>

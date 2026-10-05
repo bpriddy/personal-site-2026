@@ -85,7 +85,7 @@
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: o.prompt, parent: o.parent || "", images: o.images || [] })
+      body: JSON.stringify({ prompt: o.prompt, parent: o.parent || "", images: o.images || [], attached: o.attached || [] })
     }).then(function (r) {
       if (r.ok) streaming = true;
       if (!r.ok) {

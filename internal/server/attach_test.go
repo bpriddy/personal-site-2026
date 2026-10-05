@@ -96,3 +96,50 @@ func TestBuilderChatAttachments(t *testing.T) {
 		t.Errorf("visitor with two images: %v", err)
 	}
 }
+
+// The create form uploads its images first, the redirect carries their
+// paths to the new chat, and the chat sends them by path.
+func TestBuilderCreateWithImages(t *testing.T) {
+	e := newBuilderServer(t, true)
+	e.s.media = media.Dir{Root: t.TempDir()}
+	img := tinyPNG(t, 4, 4)
+
+	body, _ := json.Marshal(map[string]any{"images": []string{img}})
+	rec := e.admin("POST", "/admin/builder/uploads", strings.NewReader(string(body)), "Content-Type", "application/json", "Sec-Fetch-Site", "same-origin")
+	var up struct{ Paths []string }
+	if rec.Code != 200 || json.Unmarshal(rec.Body.Bytes(), &up) != nil || len(up.Paths) != 1 || !uploadPath(up.Paths[0]) {
+		t.Fatalf("uploads: %d %s", rec.Code, rec.Body)
+	}
+
+	rec = e.form("/admin/builder/new", url.Values{"prompt": {"animate my picture"}, "images": {up.Paths[0] + ",/media/../secret.png"}})
+	loc := rec.Header().Get("Location")
+	if want := "#start=animate+my+picture&images=" + url.QueryEscape(up.Paths[0]); rec.Code != 303 || !strings.HasSuffix(loc, want) {
+		t.Fatalf("new: %d %q, want suffix %q", rec.Code, loc, want)
+	}
+	slug := strings.TrimPrefix(strings.SplitN(loc, "#", 2)[0], "/admin/builder/fe/")
+
+	e.model.Responses = []string{
+		builder.ToolUse("1", "write_file", map[string]any{"path": "index.html", "content": fixtureIndex}),
+		builder.ToolUse("2", "finish", map[string]any{"summary": "ok"}),
+		builder.ToolUse("3", "finish", map[string]any{"summary": "ok"}),
+	}
+	body, _ = json.Marshal(map[string]any{"prompt": "animate my picture", "attached": up.Paths})
+	rec = e.admin("POST", "/admin/builder/fe/"+slug+"/chat", strings.NewReader(string(body)), "Content-Type", "application/json", "Sec-Fetch-Site", "same-origin")
+	if eventOf(sseEvents(t, rec.Body.String()), "revision") == nil {
+		t.Fatalf("chat: %d %s", rec.Code, rec.Body)
+	}
+	var sawImage bool
+	for _, c := range e.model.Requests[0].Messages[len(e.model.Requests[0].Messages)-1].Content {
+		sawImage = sawImage || (c.OfImage != nil && c.OfImage.Source.OfBase64.Data == img)
+	}
+	if !sawImage {
+		t.Error("the uploaded image didn't reach the model")
+	}
+
+	// a path outside the uploads isn't read
+	body, _ = json.Marshal(map[string]any{"prompt": "x", "attached": []string{"/media/projects/q/hero.jpg"}})
+	rec = e.admin("POST", "/admin/builder/fe/"+slug+"/chat", strings.NewReader(string(body)), "Content-Type", "application/json", "Sec-Fetch-Site", "same-origin")
+	if rec.Code != 400 {
+		t.Errorf("foreign path: %d %s", rec.Code, rec.Body)
+	}
+}

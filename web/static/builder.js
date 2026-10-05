@@ -29,6 +29,8 @@
     onError: function (msg) { statusEl.textContent = msg; statusEl.className = "b-error"; streamBox.hidden = false; }
   }) : null;
 
+  var startImages = []; // /media/ paths from the create form (#start=...&images=...)
+
   function addTurn(role, text, images) {
     var li = document.createElement("li");
     li.className = "b-turn b-" + role;
@@ -55,7 +57,9 @@
     if (!prompt) return;
     ta.disabled = btn.disabled = true;
     var images = attach ? attach.images() : [];
-    addTurn("user", prompt, attach ? attach.urls() : []);
+    var attached = startImages;
+    startImages = [];
+    addTurn("user", prompt, (attach ? attach.urls() : []).concat(attached));
     if (attach) attach.setDisabled(true);
     streamBox.hidden = false;
     thinkingEl.textContent = textEl.textContent = "";
@@ -66,6 +70,7 @@
       prompt: prompt,
       parent: form.getAttribute("data-parent") || "",
       images: images,
+      attached: attached,
       assistantLabel: assistantLabel,
       onStatus: function (text, isError) {
         statusEl.textContent = text;
@@ -96,12 +101,15 @@
 
   // prompt-first creation lands here with #start=<prompt>: send it once
   (function () {
-    var m = /^#start=(.*)$/.exec(location.hash);
+    var m = /^#start=([^&]*)(?:&images=(.*))?$/.exec(location.hash);
     if (!m) return;
     history.replaceState(null, "", location.pathname + location.search);
     var ta = form.querySelector("textarea");
     if (!ta || ta.disabled) return;
-    try { ta.value = decodeURIComponent(m[1].replace(/\+/g, " ")); } catch (e) { return; }
+    try {
+      ta.value = decodeURIComponent(m[1].replace(/\+/g, " "));
+      if (m[2]) startImages = decodeURIComponent(m[2].replace(/\+/g, " ")).split(",").filter(function (p) { return /^\/media\/assets\/uploads\/[0-9a-f]+\.(png|jpg|webp|gif)$/.test(p); });
+    } catch (e) { return; }
     if (ta.value.trim()) form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event("submit", { cancelable: true }));
   })();
 })();

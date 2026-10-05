@@ -6,12 +6,16 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
 	_ "image/gif" // DecodeConfig for attached images
 	_ "image/jpeg"
 	_ "image/png"
+	"io"
+	"net/http"
+	"strings"
 
 	_ "golang.org/x/image/webp"
 
@@ -89,4 +93,76 @@ func (s *Server) storeAttachments(ctx context.Context, encoded []string, visitor
 		out = append(out, builder.Attachment{Path: "/media/" + name, MediaType: t.mime, Data: data, Width: cfg.Width, Height: cfg.Height})
 	}
 	return out, nil
+}
+
+// uploadPath reports whether p is the /media/ path of an uploaded image.
+func uploadPath(p string) bool {
+	name, ok := strings.CutPrefix(p, "/media/"+uploadsDir)
+	if !ok || name == "" || strings.ContainsAny(name, "/\\") || strings.Contains(name, "..") {
+		return false
+	}
+	for _, t := range attachTypes {
+		if strings.HasSuffix(name, t.ext) {
+			return true
+		}
+	}
+	return false
+}
+
+// loadAttachments reads images uploaded earlier (by their /media/ paths) for
+// a prompt; have is how many images the prompt already carries.
+func (s *Server) loadAttachments(ctx context.Context, paths []string, visitor bool, have int) ([]builder.Attachment, error) {
+	max := maxAttachBen
+	if visitor {
+		max = maxAttachVisitor
+	}
+	if have+len(paths) > max {
+		return nil, errAttach{fmt.Sprintf("Attach at most %d image(s).", max)}
+	}
+	var out []builder.Attachment
+	for _, p := range paths {
+		if !uploadPath(p) {
+			return nil, errAttach{"An attached image couldn't be found."}
+		}
+		f, err := s.media.Open(ctx, strings.TrimPrefix(p, "/media/"))
+		if err != nil {
+			return nil, errAttach{"An attached image couldn't be found."}
+		}
+		data, err := io.ReadAll(io.LimitReader(f.Body, maxAttachBytes+1))
+		f.Close()
+		if err != nil {
+			return nil, fmt.Errorf("read upload: %w", err)
+		}
+		cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
+		t, known := attachTypes[format]
+		if err != nil || !known || len(data) > maxAttachBytes {
+			return nil, errAttach{"An attached image couldn't be read."}
+		}
+		out = append(out, builder.Attachment{Path: p, MediaType: t.mime, Data: data, Width: cfg.Width, Height: cfg.Height})
+	}
+	return out, nil
+}
+
+// builderUploads stores images for a prompt that is sent later (the create
+// form uploads them, then the new front end's chat sends them by path).
+// Request: JSON {"images": ["<base64>", ...]}; answer: {"paths": [...]}.
+func (s *Server) builderUploads(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Images []string `json:"images"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10+maxAttachBen*(maxAttachBytes*4/3+4))
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || len(in.Images) == 0 {
+		http.Error(w, `send JSON {"images": ["<base64>"]}`, http.StatusBadRequest)
+		return
+	}
+	images, err := s.storeAttachments(r.Context(), in.Images, false)
+	var ae errAttach
+	if errors.As(err, &ae) {
+		http.Error(w, ae.msg, http.StatusBadRequest)
+		return
+	} else if err != nil {
+		s.fail(w, "builder: uploads", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string][]string{"paths": attachmentPaths(images)})
 }

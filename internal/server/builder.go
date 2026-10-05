@@ -83,6 +83,7 @@ func (s *Server) builderRoutes(admin *http.ServeMux) {
 	s.builder.running = map[string]bool{}
 	admin.HandleFunc("GET /admin/builder/{$}", s.builderIndex)
 	admin.HandleFunc("POST /admin/builder/new", s.builderNew)
+	admin.HandleFunc("POST /admin/builder/uploads", s.builderUploads)
 	admin.HandleFunc("POST /admin/builder/rotation", s.builderRotation)
 	admin.HandleFunc("GET /admin/builder/preview", s.builderPreview)
 	admin.HandleFunc("GET /admin/builder/builtin/{name}", s.builderBuiltin)
@@ -221,8 +222,18 @@ func (s *Server) builderNew(w http.ResponseWriter, r *http.Request) {
 	}
 	dest := "/admin/builder/fe/" + slug
 	if prompt != "" {
-		// builder.js reads #start=, fills the chat and sends it
+		// builder.js reads #start=, fills the chat and sends it, with the
+		// images the create form uploaded first (/admin/builder/uploads)
 		dest += "#start=" + url.QueryEscape(prompt)
+		var imgs []string
+		for p := range strings.SplitSeq(r.FormValue("images"), ",") {
+			if p = strings.TrimSpace(p); uploadPath(p) {
+				imgs = append(imgs, p)
+			}
+		}
+		if len(imgs) > 0 && len(imgs) <= maxAttachBen {
+			dest += "&images=" + url.QueryEscape(strings.Join(imgs, ","))
+		}
 	}
 	http.Redirect(w, r, dest, http.StatusSeeOther)
 }
@@ -632,6 +643,8 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, f store.Fronten
 		Prompt string   `json:"prompt"`
 		Parent string   `json:"parent"`
 		Images []string `json:"images"`
+		// images already uploaded (/admin/builder/uploads): their /media/ paths
+		Attached []string `json:"attached"`
 	}
 	// room for the attached images, base64-encoded
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10+maxAttachBen*(maxAttachBytes*4/3+4))
@@ -646,6 +659,11 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, f store.Fronten
 	}
 
 	images, err := s.storeAttachments(r.Context(), in.Images, c.visitor)
+	if err == nil && len(in.Attached) > 0 {
+		var more []builder.Attachment
+		more, err = s.loadAttachments(r.Context(), in.Attached, c.visitor, len(images))
+		images = append(images, more...)
+	}
 	var ae errAttach
 	if errors.As(err, &ae) {
 		say(http.StatusBadRequest, ae.msg, ae.msg)
