@@ -18,9 +18,9 @@
     {{with .Palette}}<div class="pm-palette"><dt>Palette</dt><dd><svg class="swatches" viewBox="0 0 {{mul (len .) 3}} 2" width="{{mul (len .) 18}}" height="12" role="img" aria-label="{{join .}}">{{range $i, $c := .}}<rect x="{{mul $i 3}}" width="2" height="2" fill="{{$c}}"/>{{end}}</svg></dd></div>{{end}}
   </dl>
 
-  {{with .Hero}}<figure class="project-hero">
-    <img src="{{.Src}}" width="{{.Width}}" height="{{.Height}}" alt="{{or .Alt $.Project.Title}}" decoding="async" fetchpriority="high">
-  </figure>{{end}}
+  {{if .Hero}}{{with .Hero}}<figure class="project-hero"{{with $.Project.Tint}} data-tint="{{.}}"{{end}}>
+    <img src="{{.Src}}" width="{{.Width}}" height="{{.Height}}" alt="{{or .Alt $.Project.Title}}" decoding="async" fetchpriority="high"{{if .Width}} data-max="{{heroMax .Width}}"{{end}}>
+  </figure>{{end}}{{else}}<figure class="project-hero project-hero-plate"{{with .Tint}} data-tint="{{.}}"{{end}}>{{template "plate" dict "P" . "Class" "plate plate-hero"}}</figure>{{end}}
 
   {{with paragraphs .Summary}}<section class="project-text" aria-label="Brief">
     <h2 class="label">( Brief )</h2>

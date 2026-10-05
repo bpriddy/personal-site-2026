@@ -273,6 +273,18 @@ var templateFuncs = template.FuncMap{
 	"two": func(n int) string { return fmt.Sprintf("%02d", n) },
 	"inc": func(n int) int { return n + 1 },
 	"mul": func(a, b int) int { return a * b },
+	// heroMax: a still is never shown past 1.25x its width (the old ones are small)
+	"heroMax": func(w int) int { return w * 5 / 4 },
+	// dict builds a map for passing several values to a template
+	"dict": func(kv ...any) map[string]any {
+		m := map[string]any{}
+		for i := 0; i+1 < len(kv); i += 2 {
+			if k, ok := kv[i].(string); ok {
+				m[k] = kv[i+1]
+			}
+		}
+		return m
+	},
 	// extLink is u if it is an http(s) URL, else ""
 	"extLink": func(u string) string {
 		if u = strings.TrimSpace(u); content.ValidLink(u) {

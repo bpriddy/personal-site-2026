@@ -32,6 +32,13 @@ type projectView struct {
 	Watch  string               // the YouTube watch page, or ""
 	Href   string               // "/work/<slug>"
 	Link   string               // the live work, if it is an http(s) URL
+	// Tint is the first valid "#rrggbb" palette colour (the hero's stage and
+	// the plate take it; media.js sets it, since the CSP forbids inline
+	// styles), or "" for the accent.
+	Tint string
+	// a project without media gets a typographic plate: its client (else
+	// title) large, with "2023-2026 · Education" under it
+	PlateWord, PlateMeta string
 }
 
 func newProjectView(i int, p content.Project) projectView {
@@ -71,7 +78,38 @@ func newProjectView(i int, p content.Project) projectView {
 	if strings.TrimSpace(v.Title) == "" {
 		v.Title = p.Slug
 	}
+	for _, c := range p.Palette {
+		if hexColour(c) {
+			v.Tint = c
+			break
+		}
+	}
+	v.PlateWord = strings.TrimSpace(p.Client)
+	if v.PlateWord == "" {
+		v.PlateWord = v.Title
+	}
+	var pm []string
+	if y := strings.TrimSpace(p.Year); y != "" {
+		pm = append(pm, y)
+	}
+	if len(p.Tags) > 0 && strings.TrimSpace(p.Tags[0]) != "" {
+		pm = append(pm, strings.TrimSpace(p.Tags[0]))
+	}
+	v.PlateMeta = strings.Join(pm, " · ")
 	return v
+}
+
+// hexColour reports whether c is "#rrggbb".
+func hexColour(c string) bool {
+	if len(c) != 7 || c[0] != '#' {
+		return false
+	}
+	for _, h := range c[1:] {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", h) {
+			return false
+		}
+	}
+	return true
 }
 
 func twoDigits(n int) string { return fmt.Sprintf("%02d", n) }

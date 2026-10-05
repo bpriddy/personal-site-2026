@@ -77,10 +77,13 @@
       <span class="idx" aria-hidden="true">{{.Index}}</span>
       <h3 class="work-title">{{.Title}}</h3>
       {{with .Meta}}<span class="work-meta">{{.}}</span>{{end}}
-      {{with .Thumb}}<span class="work-thumb" aria-hidden="true">{{if eq .Kind "loop"}}<video src="{{.Src}}"{{with .Poster}} poster="{{.}}"{{end}} width="{{.Width}}" height="{{.Height}}" muted loop playsinline preload="none" data-loop="hover" tabindex="-1"></video>{{else}}<img src="{{.Src}}" width="{{.Width}}" height="{{.Height}}" alt="" loading="lazy" decoding="async">{{end}}</span>{{end}}
+      {{with .Thumb}}<span class="work-thumb" aria-hidden="true">{{if eq .Kind "loop"}}<video src="{{.Src}}"{{with .Poster}} poster="{{.}}"{{end}} width="{{.Width}}" height="{{.Height}}" muted loop playsinline preload="none" data-loop="hover" tabindex="-1"></video>{{else}}<img src="{{.Src}}" width="{{.Width}}" height="{{.Height}}" alt="" loading="lazy" decoding="async">{{end}}</span>{{else}}{{template "plate" dict "P" . "Class" "work-thumb plate"}}{{end}}
     </a>
   </li>{{end}}
 </ol>{{end}}
+
+{{/* a project without media: its client set large on its own colour */}}
+{{define "plate"}}<span class="{{.Class}}" aria-hidden="true"{{with .P.Tint}} data-tint="{{.}}"{{end}}><span class="plate-word">{{.P.PlateWord}}</span>{{with .P.PlateMeta}}<span class="plate-meta">{{.}}</span>{{end}}</span>{{end}}
 
 {{define "prose"}}{{range prose .}}<p class="prose-{{.Kind}}">{{.Text}}</p>
 {{end}}{{end}}

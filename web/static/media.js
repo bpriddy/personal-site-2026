@@ -11,6 +11,19 @@
 (function () {
   "use strict";
 
+  // a project's colour and a still's largest size, from data attributes (the
+  // CSP forbids inline styles; CSSOM is allowed)
+  var tinted = document.querySelectorAll("[data-tint]");
+  for (var i = 0; i < tinted.length; i++) {
+    var c = tinted[i].getAttribute("data-tint");
+    if (/^#[0-9a-fA-F]{6}$/.test(c)) tinted[i].style.setProperty("--c", c);
+  }
+  var capped = document.querySelectorAll("img[data-max]");
+  for (var j = 0; j < capped.length; j++) {
+    var n = parseInt(capped[j].getAttribute("data-max"), 10);
+    if (n > 0) capped[j].style.maxWidth = "min(100%, " + n + "px)";
+  }
+
   if (typeof IntersectionObserver !== "function") return; // posters only
 
   var root = document.documentElement;

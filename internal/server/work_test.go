@@ -230,6 +230,7 @@ func TestWorkTranscript(t *testing.T) {
 		`data-loop aria-label="QLEDecode, loop 1"`,
 		`<a class="next-title" href="/work/second">Second</a>`,
 		`<title>QLEDecode · Ben Priddy</title>`,
+		`<figure class="project-hero" data-tint="#001d48">`, `data-max="918"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("/work/qledecode: missing %s", want)
@@ -374,5 +375,21 @@ func TestAdminProjects(t *testing.T) {
 	}
 	if rec := workAdmin(s, "GET", "/admin/projects/Bad%20Slug", "", "", nil); rec.Code != http.StatusNotFound {
 		t.Errorf("bad slug form: %d", rec.Code)
+	}
+}
+
+// A project without media gets a typographic plate (client, year, first
+// tag) on the index and as its page's hero, never an empty frame.
+func TestWorkPlate(t *testing.T) {
+	s, _ := newWorkServer(t)
+	importProjects(t, s, `{"projects": [{"slug": "ai-education", "title": "AI Education", "client": "Anomaly", "year": "2023-2026",
+		"tags": ["Education", "Applied AI"], "palette": ["#ff5b1f"], "published": true}]}`)
+	for path, want := range map[string]string{
+		"/work/":             `<span class="work-thumb plate" aria-hidden="true" data-tint="#ff5b1f"><span class="plate-word">Anomaly</span><span class="plate-meta">2023-2026 · Education</span></span>`,
+		"/work/ai-education": `<figure class="project-hero project-hero-plate" data-tint="#ff5b1f"><span class="plate plate-hero" aria-hidden="true" data-tint="#ff5b1f"><span class="plate-word">Anomaly</span>`,
+	} {
+		if body := get(s, path).Body.String(); !strings.Contains(body, want) {
+			t.Errorf("%s: missing %s", path, want)
+		}
 	}
 }
