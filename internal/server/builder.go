@@ -614,7 +614,8 @@ type chatCaller struct {
 
 // runChat runs one chat turn: a prompt applied to a parent revision of f by
 // the model, streamed to the browser as server-sent events, ending in a new
-// revision. Request: JSON {"prompt": "...", "parent": "<rev id or empty>"}.
+// revision. Request: JSON {"prompt": "...", "parent": "<rev id or empty>",
+// "images": ["<base64 PNG/JPEG/WebP/GIF>", ...]} (images optional).
 // The caller has checked that the chat is enabled and that the caller may
 // chat with f.
 func (s *Server) runChat(w http.ResponseWriter, r *http.Request, f store.FrontendInfo, c chatCaller) {
@@ -628,10 +629,12 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, f store.Fronten
 		http.Error(w, admin, status)
 	}
 	var in struct {
-		Prompt string `json:"prompt"`
-		Parent string `json:"parent"`
+		Prompt string   `json:"prompt"`
+		Parent string   `json:"parent"`
+		Images []string `json:"images"`
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+	// room for the attached images, base64-encoded
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10+maxAttachBen*(maxAttachBytes*4/3+4))
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || strings.TrimSpace(in.Prompt) == "" {
 		say(http.StatusBadRequest, "send JSON {\"prompt\": \"...\", \"parent\": \"<revision id>\"}", buildMessage(msgEmpty, s.limits))
 		return
@@ -642,7 +645,16 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, f store.Fronten
 		return
 	}
 
-	req := builder.Request{FrontendID: id, Title: f.Title, Prompt: in.Prompt, Visitor: c.visitor}
+	images, err := s.storeAttachments(r.Context(), in.Images, c.visitor)
+	var ae errAttach
+	if errors.As(err, &ae) {
+		say(http.StatusBadRequest, ae.msg, ae.msg)
+		return
+	} else if err != nil {
+		s.fail(w, "builder: attachments", err)
+		return
+	}
+	req := builder.Request{FrontendID: id, Title: f.Title, Prompt: in.Prompt, Visitor: c.visitor, Images: images}
 	var history []builder.Turn
 	if in.Parent != "" {
 		parent, err := b.Revision(r.Context(), in.Parent)
@@ -678,7 +690,6 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, f store.Fronten
 
 	run := store.Run{FrontendID: id, ParentID: in.Parent, Prompt: in.Prompt}
 	var runID int64
-	var err error
 	if c.visitor {
 		runID, err = s.visitorStore().StartVisitorRun(ctx, run, c.session, c.ipHash, s.runQuota())
 		var qe *store.QuotaError
@@ -716,7 +727,7 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, f store.Fronten
 	var rev store.Revision
 	if err == nil {
 		turns := append(slices.Clone(history),
-			builder.Turn{Role: "user", Text: in.Prompt, At: started},
+			builder.Turn{Role: "user", Text: in.Prompt, At: started, Images: attachmentPaths(images)},
 			builder.Turn{Role: "assistant", Text: res.Summary, At: s.now(), Actions: res.Actions})
 		conv, _ := json.Marshal(turns)
 		rev, err = s.saveRevision(ctx, store.Revision{FrontendID: id, ParentID: in.Parent, Author: c.author,
@@ -826,4 +837,13 @@ func (s *Server) ensureActiveRevision(ctx context.Context, b store.Builder, f st
 		}
 	}
 	return b.SetActiveRevision(ctx, f.ID, latest.ID)
+}
+
+// attachmentPaths lists the /media/ paths of attached images.
+func attachmentPaths(images []builder.Attachment) []string {
+	var out []string
+	for _, a := range images {
+		out = append(out, a.Path)
+	}
+	return out
 }

@@ -347,3 +347,23 @@ html.bm-open #frontend { transform: scale(.985); }
   .bm-busy .bm-runline::before { animation: none; width: 100%; transform: none; }
   .bm-pill-dot, .bm-busy .bm-state::before, .bm-working::before, .bm-busy .bm-step:last-child::after { animation: none; }
 }
+
+/* attached images (attach.js): an "Image" button and thumbnails, left of the keys */
+.bm-attach { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+.bm-attach .attach-btn {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 var(--s-3);
+  border: 1px solid var(--bm-rule-strong); border-radius: 999px; background: none; color: var(--bm-fg);
+  font: inherit; cursor: pointer;
+}
+.bm-attach .attach-btn:hover:not(:disabled) { border-color: var(--bm-fg); }
+.bm-attach .attach-btn:disabled { opacity: .45; cursor: default; }
+.bm-attach .attach-btn:focus-visible { outline: 2px solid var(--bm-accent); outline-offset: 2px; }
+.attach-thumbs { display: flex; gap: var(--s-2); margin: 0; padding: 0; list-style: none; }
+.attach-thumbs li { position: relative; }
+.attach-thumbs img { display: block; width: 40px; height: 40px; object-fit: cover; border-radius: 6px; border: 1px solid var(--bm-rule-strong, var(--rule-strong)); }
+.attach-remove {
+  position: absolute; top: -7px; right: -7px; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%;
+  background: var(--bm-fg, var(--fg)); color: var(--bm-bg, var(--bg)); font: 600 13px/20px var(--font-text); cursor: pointer;
+}
+.bm-input.attach-over { border-color: var(--bm-accent); border-style: dashed; }
+@media (max-width: 599px) { .bm-row .bm-attach { grid-column: 1 / -1; } }

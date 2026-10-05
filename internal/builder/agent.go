@@ -6,6 +6,7 @@ package builder
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,6 +28,7 @@ type Turn struct {
 	Revision string    `json:"revision,omitempty"` // assistant: the revision it produced
 	Actions  []string  `json:"actions,omitempty"`  // assistant: file operations, e.g. "write index.html"
 	By       string    `json:"by,omitempty"`       // user: "observer" when the site observer wrote it
+	Images   []string  `json:"images,omitempty"`   // user: /media/ paths of the images attached to the prompt
 }
 
 // ParseConversation decodes a stored conversation; bad or empty JSON is an
@@ -64,6 +66,7 @@ type Request struct {
 	Parent     revfiles.Files  // the files being changed; empty for a new front end
 	History    []Turn          // the parent revision's conversation
 	Prompt     string          // Ben's message
+	Images     []Attachment    // images attached to the prompt (already in the media store)
 	Content    json.RawMessage // the site's current content (/api/site.json), for reference
 	// Visitor: the prompt comes from an anonymous visitor (the public
 	// builder), not Ben. The model is told so (VisitorNote); the prompt itself
@@ -73,6 +76,16 @@ type Request struct {
 	// rebuild), on Ben's behalf. Only the label of the request in the first
 	// message changes; the system prompt stays the same (cached).
 	Observer bool
+}
+
+// An Attachment is an image sent with a prompt: the model sees it, and can
+// use it by its /media/ path (in the page, or as a start frame for video).
+type Attachment struct {
+	Path      string // "/media/assets/uploads/<hash>.png"
+	MediaType string // "image/png", "image/jpeg", "image/webp" or "image/gif"
+	Data      []byte
+	Width     int
+	Height    int
 }
 
 // Result is a finished run.
@@ -128,7 +141,12 @@ func (b *Builder) Run(ctx context.Context, req Request, emit func(Event)) (*Resu
 		}
 	}
 	msgs := historyMessages(req.History)
-	msgs = append(msgs, anthropic.NewBetaUserMessage(anthropic.NewBetaTextBlock(firstMessage(req))))
+	first := []anthropic.BetaContentBlockParamUnion{anthropic.NewBetaTextBlock(firstMessage(req))}
+	for _, a := range req.Images {
+		first = append(first, anthropic.NewBetaImageBlock(anthropic.BetaBase64ImageSourceParam{
+			Data: base64.StdEncoding.EncodeToString(a.Data), MediaType: anthropic.BetaBase64ImageSourceMediaType(a.MediaType)}))
+	}
+	msgs = append(msgs, anthropic.NewBetaUserMessage(first...))
 
 	params := anthropic.BetaMessageNewParams{
 		Model:     anthropic.Model(b.cfg.Model),
@@ -230,6 +248,9 @@ func historyMessages(history []Turn) []anthropic.BetaMessageParam {
 		if text == "" {
 			continue
 		}
+		if len(t.Images) > 0 {
+			text += "\n\n(Attached images: " + strings.Join(t.Images, ", ") + ")"
+		}
 		if t.Role == "assistant" {
 			if len(t.Actions) > 0 {
 				text += "\n\n(Files changed: " + strings.Join(t.Actions, ", ") + ")"
@@ -298,6 +319,16 @@ func firstMessage(req Request) string {
 		sb.WriteString("Ben's request:\n\n")
 	}
 	sb.WriteString(req.Prompt)
+	if len(req.Images) > 0 {
+		who := "Ben"
+		if req.Visitor {
+			who = "The visitor"
+		}
+		fmt.Fprintf(&sb, "\n\n%s attached %d image(s), shown below. Each is already in the media store, so you can use it by its path: in the page (<img>, a CSS background, a WebGPU texture), as a reference for the look, or as the start_image of a generated video when that tool is available.\n", who, len(req.Images))
+		for _, a := range req.Images {
+			fmt.Fprintf(&sb, "- %s (%dx%d)\n", a.Path, a.Width, a.Height)
+		}
+	}
 	return sb.String()
 }
 

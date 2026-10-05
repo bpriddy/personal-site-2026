@@ -64,3 +64,21 @@
 .b-rev-actions { white-space: nowrap; }
 .b-rev-actions form { margin-top: var(--s-1); }
 .b-rev-actions > a + form, .b-rev-actions > form + form { margin-left: var(--s-1); }
+
+/* attached images (attach.js) */
+.attach-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+.attach-btn {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--rule-strong);
+  border-radius: 999px; background: none; color: inherit; font: inherit; cursor: pointer;
+}
+.attach-btn:disabled { opacity: .45; cursor: default; }
+.attach-thumbs { display: flex; gap: var(--s-2); margin: 0; padding: 0; list-style: none; }
+.attach-thumbs li { position: relative; }
+.attach-thumbs img { display: block; width: 48px; height: 48px; object-fit: cover; border-radius: 4px; border: 1px solid var(--rule-strong); }
+.attach-remove {
+  position: absolute; top: -7px; right: -7px; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%;
+  background: var(--fg); color: var(--bg); font: 600 13px/20px var(--font-text); cursor: pointer;
+}
+.b-chat-col textarea.attach-over { outline: 2px dashed var(--accent); }
+.b-attached { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-top: var(--s-2); }
+.b-attached img { display: block; width: 96px; height: 96px; object-fit: cover; border-radius: 4px; border: 1px solid var(--rule); }

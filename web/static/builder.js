@@ -20,8 +20,16 @@
   var userLabel = form.getAttribute("data-user-label") || "Ben";
   var assistantLabel = form.getAttribute("data-assistant-label") || "Claude";
   var statusClass = statusEl.className;
+  var ta0 = form.querySelector("textarea");
+  var attachBar = document.createElement("div");
+  attachBar.className = "attach-bar";
+  ta0.closest("label").after(attachBar);
+  var attach = window.BuilderAttach ? window.BuilderAttach.mount({
+    textarea: ta0, bar: attachBar, max: 4,
+    onError: function (msg) { statusEl.textContent = msg; statusEl.className = "b-error"; streamBox.hidden = false; }
+  }) : null;
 
-  function addTurn(role, text) {
+  function addTurn(role, text, images) {
     var li = document.createElement("li");
     li.className = "b-turn b-" + role;
     var who = document.createElement("div");
@@ -30,17 +38,25 @@
     var p = document.createElement("p");
     p.textContent = text;
     li.append(who, p);
+    if (images && images.length) {
+      var box = document.createElement("div");
+      box.className = "b-attached";
+      images.forEach(function (u) { var img = document.createElement("img"); img.src = u; img.alt = ""; box.appendChild(img); });
+      li.appendChild(box);
+    }
     chat.appendChild(li);
   }
 
   form.addEventListener("submit", function (e) {
     e.preventDefault();
     var ta = form.querySelector("textarea");
-    var btn = form.querySelector("button");
+    var btn = form.querySelector("button:not([type=button])");
     var prompt = ta.value.trim();
     if (!prompt) return;
     ta.disabled = btn.disabled = true;
-    addTurn("user", prompt);
+    var images = attach ? attach.images() : [];
+    addTurn("user", prompt, attach ? attach.urls() : []);
+    if (attach) attach.setDisabled(true);
     streamBox.hidden = false;
     thinkingEl.textContent = textEl.textContent = "";
     toolsEl.replaceChildren();
@@ -49,6 +65,7 @@
       url: form.getAttribute("data-action"),
       prompt: prompt,
       parent: form.getAttribute("data-parent") || "",
+      images: images,
       assistantLabel: assistantLabel,
       onStatus: function (text, isError) {
         statusEl.textContent = text;
@@ -73,6 +90,7 @@
         return;
       }
       ta.disabled = btn.disabled = false;
+      if (attach) attach.setDisabled(false);
     });
   });
 

@@ -136,8 +136,13 @@
     setMode({ kind: "new", slug: "", rev: "" });
     ta.focus();
   });
-  row.append(keys, newBtn, buildBtn);
+  var attachBar = el("div", "bm-attach");
+  row.append(attachBar, keys, newBtn, buildBtn);
   form.append(label, ta, hint, row);
+  var attach = window.BuilderAttach ? window.BuilderAttach.mount({
+    textarea: ta, bar: attachBar, max: 1,
+    onError: function (msg) { showNotice(msg); }
+  }) : null;
   // Enter sends; Shift+Enter (or an IME composition) stays in the text
   ta.addEventListener("keydown", function (e) {
     if (e.key !== "Enter" || e.shiftKey || e.isComposing || e.altKey) return;
@@ -309,6 +314,7 @@
   function renderForm() {
     var enabled = !!(state && state.enabled);
     form.hidden = !enabled;
+    if (attach) attach.setDisabled(!!busy);
     if (state && state.maxPrompt) ta.maxLength = state.maxPrompt;
     var f = mode.kind === "change" ? findFrontend(mode.slug) : null;
     if (mode.kind === "change" && !f) mode = { kind: "new", slug: "", rev: "" };
@@ -550,6 +556,7 @@
         url: API + "/fe/" + encodeURIComponent(target.slug) + "/chat",
         prompt: prompt,
         parent: target.parent,
+        images: attach ? attach.images() : [],
         friendly: true,
         onStatus: function (text, isError) {
           pStatus.textContent = text;
@@ -569,6 +576,7 @@
         return finish(false);
       }
       ta.value = "";
+      if (attach) attach.clear();
       logStep("Live version " + res.number);
       pStatus.textContent = "Version " + res.number + " is ready. Showing it on the site\u2026";
       // switch the site to it right away

@@ -3,6 +3,7 @@
 <link rel="stylesheet" href="/static/builder.css">
 <script src="/static/builder-preview.js" defer></script>
 {{if not .Builtin}}<script src="/static/builder-stream.js" defer></script>
+<script src="/static/attach.js" defer></script>
 <script src="/static/builder.js" defer></script>{{end}}
 <div class="builder builder-wide">
 <p><a href="/admin/builder/">← Builder</a></p>
@@ -49,6 +50,7 @@
       {{range .Conversation}}<li class="b-turn b-{{.Role}}">
         <div class="b-who">{{if eq .Role "user"}}{{if eq .By "observer"}}Site observer{{else if $.Visitor}}Visitor{{else}}Ben{{end}}{{else}}Claude{{end}}</div>
         {{range paragraphs .Text}}<p>{{.}}</p>{{end}}
+        {{if .Images}}<div class="b-attached">{{range .Images}}<a href="{{.}}" target="_blank" rel="noopener"><img src="{{.}}" alt="Attached image" loading="lazy"></a>{{end}}</div>{{end}}
         {{if .Actions}}<div class="b-actions">{{range .Actions}}<code>{{.}}</code> {{end}}</div>{{end}}
       </li>{{end}}
     </ol>
