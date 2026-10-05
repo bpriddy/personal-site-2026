@@ -645,6 +645,34 @@ fn shape(m: &MediaItem) -> &'static str {
     }
 }
 
+/// The project's valid "#rrggbb" colours.
+fn colours(p: &Project) -> Vec<&String> {
+    p.palette.iter().filter(|c| c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|h| h.is_ascii_hexdigit())).collect()
+}
+
+/// `--c:<first colour>` for a project's tinted plates, or "" (the accent).
+fn tint(p: &Project) -> String {
+    colours(p).first().map(|c| format!("--c:{c}")).unwrap_or_default()
+}
+
+/// A project with no media gets a typographic plate instead: its client
+/// (or title) set large on its own colour, with the year and first tag.
+fn plate(doc: &Document, p: &Project, class: &str) -> Result<Element, JsValue> {
+    let e = el(doc, "span", class, None)?;
+    e.set_attribute("aria-hidden", "true")?;
+    let style = tint(p);
+    if !style.is_empty() {
+        e.set_attribute("style", &style)?;
+    }
+    let big = if p.client.trim().is_empty() { project_title(p) } else { p.client.trim() };
+    add(&e, &el(doc, "span", "plate-word", Some(big))?)?;
+    let small = [p.year.trim(), p.tags.first().map(|t| t.trim()).unwrap_or("")].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" \u{b7} ");
+    if !small.is_empty() {
+        add(&e, &el(doc, "span", "plate-meta", Some(&small))?)?;
+    }
+    Ok(e)
+}
+
 fn project_title(p: &Project) -> &str {
     if p.title.trim().is_empty() { p.slug.as_str() } else { p.title.trim() }
 }
@@ -676,6 +704,8 @@ fn append_work(doc: &Document, parent: &Element, projects: &[Project], limit: us
             t.set_attribute("aria-hidden", "true")?;
             add(&t, &media_el(doc, m, "", false)?)?;
             a.append_child(&t)?;
+        } else {
+            add(&a, &plate(doc, p, "work-thumb plate")?)?;
         }
         row.append_child(&a)?;
         list.append_child(&row)?;
@@ -730,7 +760,7 @@ fn render_project(doc: &Document, main: &Element, data: &SiteData, i: usize) -> 
         add(&d, &el(doc, "dd", "", Some(value))?)?;
         dl.append_child(&d)?;
     }
-    let colours: Vec<&String> = p.palette.iter().filter(|c| c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|h| h.is_ascii_hexdigit())).collect();
+    let colours = colours(p);
     if !colours.is_empty() {
         let d = el(doc, "div", "pm-palette", None)?;
         add(&d, &el(doc, "dt", "", Some("Palette"))?)?;
@@ -746,11 +776,24 @@ fn render_project(doc: &Document, main: &Element, data: &SiteData, i: usize) -> 
     }
     art.append_child(&dl)?;
 
-    if let Some(hero) = p.media.iter().find(|m| m.kind == "image") {
-        let fig = el(doc, "figure", "project-hero", None)?;
-        add(&fig, &media_el(doc, hero, title, true)?)?;
-        art.append_child(&fig)?;
+    // the hero sits on a full-bleed stage in the project's colour, at its
+    // native size (the old stills are small: never upscaled past 1.25x)
+    let fig = el(doc, "figure", "project-hero", None)?;
+    let style = tint(p);
+    if !style.is_empty() {
+        fig.set_attribute("style", &style)?;
     }
+    if let Some(hero) = p.media.iter().find(|m| m.kind == "image") {
+        let img = media_el(doc, hero, title, true)?;
+        if hero.width > 0 {
+            img.set_attribute("style", &format!("max-width:min(100%,{}px)", hero.width * 5 / 4))?;
+        }
+        add(&fig, &img)?;
+    } else {
+        fig.set_class_name("project-hero project-hero-plate");
+        add(&fig, &plate(doc, p, "plate plate-hero")?)?;
+    }
+    art.append_child(&fig)?;
     text_section(doc, &art, "( Brief )", &p.summary, false)?;
     text_section(doc, &art, "( Role )", &p.contribution, true)?;
     text_section(doc, &art, "( Notes )", &p.body, true)?;

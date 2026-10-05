@@ -275,12 +275,51 @@
       .project-meta dd { margin: 0; font-weight: 500; font-size: var(--t-ui); font-stretch: 90%; line-height: 1.35; }
       .swatches { display: flex; gap: 6px; }
       .swatches .sw { width: 12px; height: 12px; border-radius: 2px; }
+      /* the hero: a full-bleed stage tinted with the project's first colour
+         (the accent if it has none); the still sits centred at its native
+         size, since the old stills are small (735px) and never upscale well */
       .project-hero {
-        display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--g);
-        margin-top: var(--s-7);
+        --c: var(--accent);
+        display: grid; place-items: center; position: relative; overflow: clip;
+        margin: var(--s-7) calc(var(--m) * -1) 0; padding: clamp(32px, 7vw, 120px) var(--m);
+        background:
+          radial-gradient(120% 90% at 50% 100%, color-mix(in oklab, var(--c) 34%, transparent), transparent 70%),
+          color-mix(in oklab, var(--c) 10%, var(--bg-raised));
+        border-block: 1px solid var(--rule);
       }
-      /* the old stills are small (735px): never wider than about 1.25x */
-      .project-hero img { grid-column: 1 / 9; max-width: min(100%, 920px); }
+      .project-hero img {
+        width: 100%; box-shadow: 0 40px 80px -30px rgb(0 0 0 / .6), 0 0 0 1px var(--rule);
+        animation: hero-wipe var(--d-5) var(--ease-out) 200ms backwards;
+      }
+      @keyframes hero-wipe { from { clip-path: inset(0 0 100% 0); transform: translateY(24px) scale(1.02); } }
+      /* a project without media: a typographic plate in its colour */
+      .plate {
+        --c: var(--accent);
+        display: flex; flex-direction: column; justify-content: space-between; gap: var(--s-2);
+        aspect-ratio: 4 / 1; padding: var(--s-3) var(--s-4); overflow: clip; container-type: inline-size;
+        background:
+          linear-gradient(135deg, color-mix(in oklab, var(--c) 46%, var(--bg)), color-mix(in oklab, var(--c) 12%, var(--bg)) 70%);
+        color: var(--fg); box-shadow: inset 0 0 0 1px var(--rule);
+      }
+      .plate-word {
+        font-family: var(--font-display); font-weight: 320; font-style: italic; line-height: .9; letter-spacing: -.03em;
+        font-size: clamp(1.25rem, 15cqi, 4rem); white-space: nowrap;
+      }
+      .plate-meta { font-family: var(--font-mono); font-size: var(--t-meta); letter-spacing: .06em; text-transform: uppercase; color: var(--fg-2); }
+      .work-thumb.plate { opacity: .82; transition: opacity var(--d-2) var(--ease-quint); }
+      @media (hover: hover) and (pointer: fine) {
+        .work-row:hover .work-thumb.plate, .work-row:focus-within .work-thumb.plate { opacity: 1; }
+        .work-thumb { overflow: clip; }
+        .work-thumb > *, .plate-word { transition: transform var(--d-4) var(--ease-out); }
+        .work-row:hover .work-thumb > video, .work-row:hover .work-thumb > img { transform: scale(1.06); }
+        .work-row:hover .plate-word { transform: translateX(-.15em); }
+      }
+      .project-hero-plate { padding: 0; place-items: stretch; }
+      .plate-hero { aspect-ratio: 21 / 9; padding: var(--m); background: none; box-shadow: none; animation: fade-in var(--d-5) var(--ease-out) 150ms backwards; }
+      .plate-hero .plate-word { font-size: clamp(3rem, 16cqi, 14rem); align-self: start; }
+      .plate-hero .plate-meta { align-self: end; }
+      /* "Coming soon": said at display size, not as a footnote */
+      .index-page > .prose-aside:only-child { font-size: var(--t-display); max-width: none; line-height: 1; letter-spacing: -.03em; }
       .project-text, .project-media {
         display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--g);
         margin-top: var(--s-9); align-items: start;
@@ -334,7 +373,7 @@
         .site-footer p:first-child { grid-column: 1 / 3; } .site-footer p:last-child { grid-column: 3 / 7; }
         .index-row.has-media .index-title, .index-row.has-media .index-summary { grid-column: 2 / 7; }
         .index-thumb { grid-column: 2 / 7; margin-top: var(--s-4); }
-        .work-link, .project-meta, .project-hero, .project-text, .project-media, .project-next { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+        .work-link, .project-meta, .project-text, .project-media, .project-next { grid-template-columns: repeat(6, minmax(0, 1fr)); }
         .work-link { row-gap: var(--s-3); align-items: baseline; }
         .work-link .idx { grid-column: 1 / 2; }
         .work-title { grid-column: 2 / 7; }
@@ -343,7 +382,6 @@
         .project-meta > div, .project-meta .pm-year { grid-column: span 2; }
         .project-meta .pm-roles, .project-meta .pm-tags { grid-column: span 4; }
         .project-meta .pm-palette { grid-column: span 2; }
-        .project-hero img { grid-column: 1 / 7; }
         .project-text > .label, .project-media > .label { grid-column: 1 / 7; padding: 0 0 var(--s-4); }
         .project-prose, .project-loops, .film { grid-column: 1 / 7; }
         .project-links { padding-left: 0; }
@@ -372,7 +410,7 @@
         .site-footer p:first-child, .site-footer p:last-child { grid-column: 1 / 5; }
         .index-row.has-media .index-title, .index-row.has-media .index-summary, .index-thumb { grid-column: 2 / 5; }
         .index-thumb { margin-top: 0; }
-        .work-link, .project-meta, .project-hero, .project-text, .project-media, .project-next { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        .work-link, .project-meta, .project-text, .project-media, .project-next { grid-template-columns: repeat(4, minmax(0, 1fr)); }
         .work-link { padding: var(--s-5) 0; }
         .work-title { grid-column: 2 / 5; }
         .work-meta { grid-column: 2 / 5; }
@@ -381,9 +419,8 @@
         .project-meta { margin-top: var(--s-7); grid-auto-flow: row dense; }
         .project-meta > div, .project-meta .pm-year, .project-meta .pm-palette { grid-column: span 2; }
         .project-meta .pm-roles, .project-meta .pm-tags { grid-column: 1 / 5; }
-        .project-hero img { grid-column: 1 / 5; }
-        .project-hero { margin-left: calc(var(--m) * -1); margin-right: calc(var(--m) * -1); }
-        .project-hero img { max-width: none; width: 100%; }
+        .project-hero { padding: var(--s-6) 0; }
+        .plate-hero { aspect-ratio: 4 / 3; }
         .project-text > .label, .project-media > .label { grid-column: 1 / 5; }
         .project-prose, .project-loops, .film { grid-column: 1 / 5; }
         .project-text, .project-media { margin-top: var(--s-8); }
