@@ -25,7 +25,7 @@ const FieldThreshold = 0.25
 // code is in the repo (Rust/WASM), so it can't be scanned here; one missing
 // from this table is taken to render none. Keep it in step with the code.
 var builtinReads = map[string][]string{
-	"builtin/site": {contract.Pages, contract.Experiments, contract.Projects},
+	"builtin/site": {contract.Pages, contract.Experiments, contract.Projects, contract.Experience},
 }
 
 // oneAccessor names the host API's one-item accessor for a collection.
