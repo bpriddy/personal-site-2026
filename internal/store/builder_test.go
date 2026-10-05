@@ -35,6 +35,26 @@ func builderConformance(t *testing.T, newStore func(t *testing.T) Builder) {
 		}
 	})
 
+	t.Run("credit", func(t *testing.T) {
+		st := newStore(t)
+		must(t, st.CreatePromptedFrontend(ctx, "fe/c", "C"))
+		must(t, st.SetCreditRequested(ctx, "fe/c", "Jo Smith"))
+		f, _ := st.BuilderFrontend(ctx, "fe/c")
+		if f.Credit != "" || f.CreditRequested != "Jo Smith" {
+			t.Fatalf("after request = %+v", f)
+		}
+		must(t, st.SetCredit(ctx, "fe/c", "Jo"))
+		if fes, _ := st.BuilderFrontends(ctx); fes[len(fes)-1].Credit != "Jo" {
+			t.Fatalf("list = %+v", fes)
+		}
+		if err := st.SetCredit(ctx, "fe/nope", "x"); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("SetCredit on a missing front end: %v", err)
+		}
+		if err := st.SetCreditRequested(ctx, "fe/nope", "x"); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("SetCreditRequested on a missing front end: %v", err)
+		}
+	})
+
 	t.Run("prompted lifecycle", func(t *testing.T) {
 		st := newStore(t)
 		must(t, st.CreatePromptedFrontend(ctx, "fe/dark", "Dark"))

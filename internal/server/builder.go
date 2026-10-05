@@ -90,6 +90,7 @@ func (s *Server) builderRoutes(admin *http.ServeMux) {
 	admin.HandleFunc("GET /admin/builder/fe/{slug}", s.builderFrontend)
 	admin.HandleFunc("POST /admin/builder/fe/{slug}/chat", s.builderChat)
 	admin.HandleFunc("POST /admin/builder/fe/{slug}/activate", s.builderActivate)
+	admin.HandleFunc("POST /admin/builder/fe/{slug}/credit", s.builderCredit)
 	admin.HandleFunc("POST /admin/builder/fe/{slug}/import", s.builderImport)
 	admin.HandleFunc("GET /admin/builder/rev/{id}/{path...}", s.builderSource)
 }
@@ -141,8 +142,12 @@ func (s *Server) builderIndex(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, "builder: submissions", err)
 			return
 		}
+		credits := map[string]string{} // what each visitor asked to be credited as
+		for _, f := range fes {
+			credits[f.ID] = f.CreditRequested
+		}
 		for _, sub := range all {
-			subs = append(subs, submissionRow{Submission: sub, Slug: strings.TrimPrefix(sub.FrontendID, "fe/")})
+			subs = append(subs, submissionRow{Submission: sub, Slug: strings.TrimPrefix(sub.FrontendID, "fe/"), Credit: credits[sub.FrontendID]})
 		}
 	}
 	for _, f := range fes {

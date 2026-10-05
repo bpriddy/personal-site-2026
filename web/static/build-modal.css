@@ -367,3 +367,13 @@ html.bm-open #frontend { transform: scale(.985); }
 }
 .bm-input.attach-over { border-color: var(--bm-accent); border-style: dashed; }
 @media (max-width: 599px) { .bm-row .bm-attach { grid-column: 1 / -1; } }
+
+/* "Credit me as": how the visitor is credited in the site bar if Ben approves */
+.bm-credit { display: grid; gap: var(--s-1); padding-top: var(--s-3); }
+.bm-credit-label { color: var(--bm-muted); font-family: var(--font-mono); font-size: var(--t-meta); letter-spacing: .06em; text-transform: uppercase; }
+.bm-credit-input {
+  width: 100%; min-height: 40px; padding: 0 var(--s-3); border: 1px solid var(--bm-rule-strong); border-radius: 6px;
+  background: transparent; color: var(--bm-fg); font: inherit;
+}
+.bm-credit-input::placeholder { color: var(--bm-faint); }
+.bm-credit-input:focus { outline: none; border-color: var(--bm-fg); }

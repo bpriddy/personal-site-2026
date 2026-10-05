@@ -27,7 +27,8 @@
   <table class="b-table">
     <tr><th>Front end</th><th>Version</th><th>Status</th><th></th></tr>
     {{range .Submissions}}<tr>
-      <td><a href="/admin/builder/fe/{{.Slug}}?rev={{.RevisionID}}">{{.Title}}</a><br><code>{{.FrontendID}}</code></td>
+      <td><a href="/admin/builder/fe/{{.Slug}}?rev={{.RevisionID}}">{{.Title}}</a><br><code>{{.FrontendID}}</code>
+        {{with .Credit}}<br><span class="b-muted">Credit: “{{.}}”</span>{{end}}</td>
       <td>r{{.RevisionNumber}}<br><span class="b-muted">submitted {{.SubmittedAt.Format "Jan 2 15:04"}}</span></td>
       <td>{{if eq .Status "pending"}}<span class="b-badge">pending</span>{{else if eq .Status "approved"}}<span class="b-badge b-on">approved</span>{{else}}<span class="b-badge">rejected</span>{{end}}
         {{if not .ReviewedAt.IsZero}}<br><span class="b-muted">{{.ReviewedAt.Format "Jan 2 15:04"}}</span>{{end}}</td>

@@ -22,6 +22,14 @@
   </div>
 </header>
 {{if .RotationOverridden}}<p class="b-notice"><strong>FRONTEND_ROTATION is set:</strong> it overrides the rotation.</p>{{end}}
+{{if not .Builtin}}<form method="post" action="/admin/builder/fe/{{.Slug}}/credit" class="b-credit">
+  <label for="credit">Credit in the site bar</label>
+  <input id="credit" name="credit" value="{{.FE.Credit}}" maxlength="80" placeholder="e.g. a visitor's name or handle; empty for none">
+  {{with .Selected}}<input type="hidden" name="rev" value="{{.ID}}">{{end}}
+  <button>Save credit</button>
+  {{if and .FE.CreditRequested (ne .FE.CreditRequested .FE.Credit)}}<span class="b-muted">The visitor asked for “{{.FE.CreditRequested}}” (approving their submission uses it).</span>{{end}}
+  <span class="b-muted">Shown as “by …” after the concept line while this front end is in the rotation.</span>
+</form>{{end}}
 
 <div class="b-grid">
   <section class="b-preview-col">

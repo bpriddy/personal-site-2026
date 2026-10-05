@@ -40,7 +40,14 @@ func (s *Server) adminReview(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	_, err = v.ReviewSubmission(r.Context(), id, action == "approve")
+	sub, err := v.ReviewSubmission(r.Context(), id, action == "approve")
+	if err == nil && action == "approve" {
+		// the credit the visitor asked for goes public with the approval
+		var f store.FrontendInfo
+		if f, err = s.builderStore().BuilderFrontend(r.Context(), sub.FrontendID); err == nil && f.Credit != f.CreditRequested {
+			err = s.builderStore().SetCredit(r.Context(), f.ID, f.CreditRequested)
+		}
+	}
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		http.NotFound(w, r)
@@ -69,5 +76,6 @@ func (s *Server) isVisitorFrontend(r *http.Request, id string) bool {
 // submissionRow is a submission as the admin lists it.
 type submissionRow struct {
 	store.Submission
-	Slug string
+	Slug   string
+	Credit string // the credit the visitor asked for (their own words): approving makes it public
 }

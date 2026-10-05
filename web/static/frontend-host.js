@@ -187,6 +187,8 @@
             number: draft && typeof fe.number === "number" ? fe.number : 0,
             choices: typeof fe.choices === "number" ? fe.choices : 0
           };
+          currentCredit = !draft && typeof fe.credit === "string" ? fe.credit.trim().slice(0, 80) : "";
+          showCredit();
           updateShuffle();
           setBarTheme(""); // each front end picks its own (site.theme); until then, the system's
           if (draft) showDraftBanner(fe.exit, typeof fe.title === "string" ? fe.title : "", currentInfo.number);
@@ -410,7 +412,12 @@
     concept.type = "button";
     concept.className = "site-bar-line";
     concept.setAttribute("aria-haspopup", "dialog");
-    concept.textContent = "This site is re-imagined by its visitors";
+    concept.append(document.createTextNode("This site is re-imagined by its visitors"));
+    // who made the front end showing now (v1.9 credit): " · by …", plain text
+    creditEl = span("site-bar-credit");
+    creditEl.hidden = true;
+    concept.append(creditEl);
+    showCredit();
     concept.addEventListener("click", function () { openBuilder(concept); });
     var actions = span("site-bar-actions");
     actions.append(drawShuffle(), a);
@@ -460,6 +467,13 @@
     b.addEventListener("click", shuffleFrontend);
     shuffleBtn = b;
     return b;
+  }
+
+  var creditEl = null, currentCredit = "";
+  function showCredit() {
+    if (!creditEl) return;
+    creditEl.textContent = currentCredit ? " \u00b7 by " + currentCredit : "";
+    creditEl.hidden = !currentCredit;
   }
 
   function updateShuffle() {

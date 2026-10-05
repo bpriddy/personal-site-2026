@@ -21,11 +21,11 @@ func pgErrCode(err error) string {
 	return ""
 }
 
-const frontendInfoCols = `ref, title, kind, in_rotation, coalesce(active_revision, ''), updated_at`
+const frontendInfoCols = `ref, title, kind, in_rotation, coalesce(active_revision, ''), credit, credit_requested, updated_at`
 
 func scanFrontendInfo(r pgx.Row) (FrontendInfo, error) {
 	var f FrontendInfo
-	err := r.Scan(&f.ID, &f.Title, &f.Kind, &f.InRotation, &f.ActiveRevision, &f.UpdatedAt)
+	err := r.Scan(&f.ID, &f.Title, &f.Kind, &f.InRotation, &f.ActiveRevision, &f.Credit, &f.CreditRequested, &f.UpdatedAt)
 	return f, err
 }
 
@@ -47,6 +47,22 @@ func (p *Postgres) CreatePromptedFrontend(ctx context.Context, id, title string)
 		`INSERT INTO frontends (ref, title, kind, in_rotation) VALUES ($1, $2, 'prompted', false)`, id, title)
 	if pgErrCode(err) == "23505" { // unique_violation
 		return ErrExists
+	}
+	return err
+}
+
+func (p *Postgres) SetCredit(ctx context.Context, id, credit string) error {
+	return p.setCredit(ctx, `UPDATE frontends SET credit = $2 WHERE ref = $1`, id, credit)
+}
+
+func (p *Postgres) SetCreditRequested(ctx context.Context, id, credit string) error {
+	return p.setCredit(ctx, `UPDATE frontends SET credit_requested = $2 WHERE ref = $1`, id, credit)
+}
+
+func (p *Postgres) setCredit(ctx context.Context, sql, id, credit string) error {
+	tag, err := p.pool.Exec(ctx, sql, id, credit)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
 	}
 	return err
 }

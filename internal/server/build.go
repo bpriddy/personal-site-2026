@@ -166,6 +166,7 @@ type (
 		ID        string          `json:"id"`
 		Slug      string          `json:"slug"`
 		Title     string          `json:"title"`
+		Credit    string          `json:"credit"` // how the visitor asked to be credited
 		UpdatedAt time.Time       `json:"updatedAt"`
 		Running   bool            `json:"running"` // a run is in progress (on this instance)
 		Status    visitorStatus   `json:"status"`
@@ -216,7 +217,7 @@ func (s *Server) buildList(w http.ResponseWriter, r *http.Request) {
 		for _, rv := range revs {
 			numbers[rv.ID] = rv.Number
 		}
-		row := buildFrontend{ID: f.ID, Slug: strings.TrimPrefix(f.ID, "fe/"), Title: f.Title, UpdatedAt: f.UpdatedAt,
+		row := buildFrontend{ID: f.ID, Slug: strings.TrimPrefix(f.ID, "fe/"), Title: f.Title, Credit: f.CreditRequested, UpdatedAt: f.UpdatedAt,
 			Running: running, Status: st, Revisions: []buildRevision{}}
 		for _, rv := range revs {
 			row.Revisions = append(row.Revisions, buildRevision{ID: rv.ID, Number: rv.Number, ParentNumber: numbers[rv.ParentID],
@@ -449,11 +450,19 @@ func (s *Server) buildSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Rev string `json:"rev"`
+		Rev    string  `json:"rev"`
+		Credit *string `json:"credit"` // optional: how to credit the visitor ("" = none)
 	}
 	if err := readJSON(w, r, 4<<10, &in); err != nil || !frontend.ValidRevisionID(in.Rev) {
 		buildNotFound(w)
 		return
+	}
+	if in.Credit != nil {
+		// it goes public only when Ben approves the submission
+		if err := s.builderStore().SetCreditRequested(r.Context(), f.ID, cleanCredit(*in.Credit)); err != nil {
+			s.fail(w, "build: credit", err)
+			return
+		}
 	}
 	_, err := s.visitorStore().Submit(r.Context(), f.ID, in.Rev)
 	if errors.Is(err, store.ErrNotFound) {

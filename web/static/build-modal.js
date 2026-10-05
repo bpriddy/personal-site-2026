@@ -436,8 +436,23 @@
         if (st.revision === selected.id && st.key === "pending") sub = button("bm-btn bm-btn-outline", "Version " + selected.number + " is with Ben");
         else if (st.revision === selected.id && st.key === "approved") sub = button("bm-btn bm-btn-outline", "Version " + selected.number + " is approved");
         else if (st.revision === selected.id && st.key === "rejected") sub = button("bm-btn bm-btn-outline", "Change it to submit again");
+        var credit = null;
         if (sub) sub.disabled = true;
-        else sub = button("bm-btn bm-btn-outline bm-submit", "Submit version " + selected.number + " for review", function () { submit(f, selected, sub); });
+        else {
+          // how to credit the visitor in the site bar if Ben approves it (optional)
+          credit = el("label", "bm-credit");
+          credit.append(el("span", "bm-credit-label", "Credit me as"));
+          var ci = el("input", "bm-credit-input");
+          ci.type = "text";
+          ci.maxLength = 80;
+          ci.placeholder = "Your name or handle (optional)";
+          ci.autocomplete = "nickname";
+          ci.value = f.slug in creditDraft ? creditDraft[f.slug] : (f.credit || "");
+          ci.addEventListener("input", function () { creditDraft[f.slug] = ci.value; });
+          credit.append(keyed(ci, "credit:" + f.slug));
+          sub = button("bm-btn bm-btn-outline bm-submit", "Submit version " + selected.number + " for review", function () { submit(f, selected, sub, ci.value); });
+        }
+        if (credit) li.append(credit);
         acts.append(keyed(sub, "submit:" + f.slug));
         li.append(acts);
         li.append(el("p", "bm-hint", "Submitting sends version " + selected.number + " to Ben. If he approves it, visitors may see it."));
@@ -482,9 +497,13 @@
     });
   }
 
-  function submit(f, rv, btn) {
+  var creditDraft = {}; // slug → what the visitor typed in "Credit me as", across re-renders
+
+  function submit(f, rv, btn, credit) {
     btn.disabled = true;
-    api("/fe/" + encodeURIComponent(f.slug) + "/submit", { rev: rv.id }).then(function (res) {
+    api("/fe/" + encodeURIComponent(f.slug) + "/submit", { rev: rv.id, credit: (credit || "").trim() }).then(function (res) {
+      f.credit = (credit || "").trim();
+      delete creditDraft[f.slug];
       f.status = res.status;
       render();
       showNotice(res.message || "");

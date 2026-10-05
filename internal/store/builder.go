@@ -19,6 +19,13 @@ type Builder interface {
 	// CreatePromptedFrontend registers a new prompted front end ("fe/<slug>"),
 	// not in the rotation and with no revisions; ErrExists if the ID is taken.
 	CreatePromptedFrontend(ctx context.Context, id, title string) error
+	// SetCredit sets a front end's credit (see FrontendInfo.Credit; at most
+	// MaxCredit runes, already cleaned by the caller); ErrNotFound if
+	// unregistered.
+	SetCredit(ctx context.Context, id, credit string) error
+	// SetCreditRequested records the credit a visitor asks for (see
+	// FrontendInfo.CreditRequested); ErrNotFound if unregistered.
+	SetCreditRequested(ctx context.Context, id, credit string) error
 
 	// AddRevision stores a new revision of rev.FrontendID. It assigns
 	// rev.Number (the next number for that front end) and CreatedAt, and
@@ -58,7 +65,11 @@ type FrontendInfo struct {
 	Kind           string // KindBuiltin or KindPrompted
 	InRotation     bool
 	ActiveRevision string // prompted only; "" = none yet
-	UpdatedAt      time.Time
+	Credit         string // who made it, shown in the site bar while in the rotation; "" = none
+	// CreditRequested is the credit a visitor asked for when submitting; it
+	// becomes Credit when Ben approves the submission.
+	CreditRequested string
+	UpdatedAt       time.Time
 }
 
 // Revision is one immutable snapshot of a prompted front end. Its files live
@@ -101,3 +112,6 @@ type Run struct {
 	StartedAt  time.Time
 	FinishedAt time.Time // zero while running
 }
+
+// MaxCredit is the longest credit, in runes.
+const MaxCredit = 80

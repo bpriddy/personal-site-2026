@@ -710,3 +710,36 @@ inside every front end.
   ("Ben Priddy · Global Head of AI Technology, Anomaly") once it's published,
   and the home page carries a schema.org `Person` (name, site, bio excerpt,
   current role and company) built only from published content.
+
+# v1.9 (2026-10-05): builder attribution, images in prompts, a syntax gate
+
+- **Credit:** a front end can carry a credit, the maker's name or handle,
+  as one line of at most 80 characters. While it's in the rotation, the site
+  bar shows it after the concept line ("This site is re-imagined by its
+  visitors · by Jo Smith"). `/api/frontend` returns it as `credit` for
+  rotation picks only (never for a draft). It's plain text, cleaned
+  server-side: control and format characters are dropped and whitespace is
+  collapsed.
+  - A visitor can give one when submitting a version for review
+    (`POST /build/api/fe/<slug>/submit` with `{rev, credit}`). It's stored
+    as the requested credit and becomes the public one only when Ben approves
+    the submission, so nothing unreviewed goes public.
+  - Ben sees the requested credit in the submissions table, and can set any
+    front end's credit on its admin page (`POST /admin/builder/fe/<slug>/credit`).
+  - Stored in `frontends.credit` and `frontends.credit_requested`
+    (migration 0008).
+- **Images in prompts:** the admin chat, the admin create form and the
+  public builder modal take images (a button, paste or drop; downscaled in
+  the browser).
+  - The chat request takes `images` (base64 PNG, JPEG, WebP or GIF; at most
+    5 MB and 8000 px a side) and `attached` (the `/media/` paths of earlier
+    uploads, from `POST /admin/builder/uploads`). Ben can attach up to 4 and
+    a visitor 1.
+  - They're stored content-addressed under `/media/assets/uploads/`, shown
+    to the model with their paths, and recorded on the conversation (a
+    user turn's `images`). The model can use them in the page or as a
+    video's start frame.
+- **Syntax gate:** a revision whose scripts don't parse is refused at save:
+  `.js` and `.mjs` files and inline HTML scripts are parsed with esbuild.
+  The model gets the errors as `file:line:col`. A script that doesn't parse
+  runs none of its code, so the front end would never signal ready.

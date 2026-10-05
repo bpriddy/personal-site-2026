@@ -88,3 +88,8 @@
   background: var(--fg); color: var(--bg); font: 600 13px/20px var(--font-text); text-transform: none; letter-spacing: 0;
 }
 .admin .attach-thumbs .attach-remove:hover:not(:disabled) { border: 0; opacity: .8; }
+
+/* the front end's credit (site bar attribution) */
+.b-credit { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); margin: var(--s-4) 0; }
+.b-credit input { flex: 1 1 260px; max-width: 420px; }
+.b-credit .b-muted { flex-basis: 100%; }

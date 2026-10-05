@@ -16,6 +16,8 @@ import (
 type memBuilder struct {
 	prompted map[string]bool   // front-end ID → kind is prompted
 	active   map[string]string // front-end ID → active revision ID
+	credit   map[string]string // front-end ID → credit
+	asked    map[string]string // front-end ID → credit requested
 	revs     map[string]Revision
 	runs     []Run
 }
@@ -26,6 +28,8 @@ func (b *memBuilder) init() {
 	if b.prompted == nil {
 		b.prompted = map[string]bool{}
 		b.active = map[string]string{}
+		b.credit = map[string]string{}
+		b.asked = map[string]string{}
 		b.revs = map[string]Revision{}
 	}
 }
@@ -36,7 +40,7 @@ func (m *Memory) info(f content.Frontend) FrontendInfo {
 		kind = KindPrompted
 	}
 	return FrontendInfo{ID: f.Ref, Title: f.Title, Kind: kind, InRotation: f.InRotation,
-		ActiveRevision: m.builder.active[f.Ref], UpdatedAt: f.UpdatedAt}
+		ActiveRevision: m.builder.active[f.Ref], Credit: m.builder.credit[f.Ref], CreditRequested: m.builder.asked[f.Ref], UpdatedAt: f.UpdatedAt}
 }
 
 func (m *Memory) BuilderFrontends(_ context.Context) ([]FrontendInfo, error) {
@@ -182,4 +186,26 @@ func (m *Memory) Runs(_ context.Context, frontendID string, limit int) ([]Run, e
 		}
 	}
 	return out, nil
+}
+
+func (m *Memory) SetCredit(_ context.Context, id, credit string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.builder.init()
+	if _, ok := m.frontends[id]; !ok {
+		return ErrNotFound
+	}
+	m.builder.credit[id] = credit
+	return nil
+}
+
+func (m *Memory) SetCreditRequested(_ context.Context, id, credit string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.builder.init()
+	if _, ok := m.frontends[id]; !ok {
+		return ErrNotFound
+	}
+	m.builder.asked[id] = credit
+	return nil
 }

@@ -634,3 +634,6 @@ body.public::after {
   .draft-banner-short { display: inline; }
   .draft-banner-actions { gap: var(--s-4); }
 }
+/* the front end's credit (v1.9), after the concept line */
+.site-bar-credit { color: var(--fg-2); font-weight: 450; }
+.site-bar-credit[hidden] { display: none; }
