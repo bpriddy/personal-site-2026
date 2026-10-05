@@ -82,3 +82,9 @@
 .b-chat-col textarea.attach-over { outline: 2px dashed var(--accent); }
 .b-attached { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-top: var(--s-2); }
 .b-attached img { display: block; width: 96px; height: 96px; object-fit: cover; border-radius: 4px; border: 1px solid var(--rule); }
+/* over the admin's generic button style */
+.admin .attach-thumbs .attach-remove {
+  min-height: 0; min-width: 0; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%;
+  background: var(--fg); color: var(--bg); font: 600 13px/20px var(--font-text); text-transform: none; letter-spacing: 0;
+}
+.admin .attach-thumbs .attach-remove:hover:not(:disabled) { border: 0; opacity: .8; }
