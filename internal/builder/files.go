@@ -97,6 +97,9 @@ func Validate(files revfiles.Files) error {
 	if ok && !anyContains(files, "site.ready(") {
 		problems = append(problems, "no call to site.ready(): the parent replaces front ends that never signal ready")
 	}
+	if errs := SyntaxErrors(files); len(errs) > 0 {
+		problems = append(problems, "scripts that won't parse (a browser runs none of their code, so the site falls back): "+strings.Join(errs, "; "))
+	}
 	if len(problems) > 0 {
 		return errors.New(strings.Join(problems, "; "))
 	}
