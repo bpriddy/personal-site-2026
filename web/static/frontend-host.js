@@ -393,6 +393,9 @@
       line.append(span("make-own-long", "Re-imagine it"), span("make-own-short", "Re-imagine it"));
       roll.append(line);
     });
+    // while a build runs (and just after), the button says so (build-modal.js)
+    var status = span("make-own-status");
+    status.setAttribute("aria-live", "polite");
     var kbd = span("make-own-kbd", MAC ? "\u2318K" : "Ctrl K");
     kbd.setAttribute("aria-hidden", "true");
     // on phones the label gives way to a plus, so the concept line has room
@@ -404,7 +407,7 @@
     path.setAttribute("d", "M12 5v14M5 12h14");
     svg.appendChild(path);
     plus.appendChild(svg);
-    a.append(dot, roll, kbd, plus);
+    a.append(dot, roll, status, kbd, plus);
     bar = document.createElement("div");
     bar.id = "site-bar";
     bar.className = "site-bar";

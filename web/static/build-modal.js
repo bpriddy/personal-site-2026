@@ -360,11 +360,8 @@
     var tick = function () { genTime.textContent = g.startedAt ? elapsed(g.startedAt) : ""; };
     tick();
     if (!genTimer) genTimer = setInterval(function () { var c = genInfo(); if (c && c.startedAt) genTime.textContent = elapsed(c.startedAt); }, 1000);
-    // closed while building: the pill keeps it in view
-    if (!isOpen) {
-      pill.hidden = false;
-      if (!busy) setPill("Building\u2026 \u00b7 Open", false);
-    }
+    // the site bar's Re-imagine button says Building… (open or not)
+    setPill("Building\u2026", false);
   }
   function cancelGen() {
     var g = genInfo();
@@ -623,9 +620,26 @@
     pSteps.scrollTop = pSteps.scrollHeight;
   }
 
+  // setPill: what the site bar's Re-imagine button says about a build: while
+  // it runs, "Building…" on moving stripes (html.bm-generating); after,
+  // briefly how it went ("Version 3 is ready"), then back to Re-imagine it
+  var statusTimer = 0;
   function setPill(text, done) {
-    pillText.textContent = text;
-    pill.classList.toggle("bm-pill-done", !!done);
+    var btn = document.getElementById("make-own");
+    var st = btn && btn.querySelector(".make-own-status");
+    text = String(text || "").replace(/\s*\u00b7\s*Open$/, "");
+    if (!done) text = "Building\u2026";
+    if (st) st.textContent = text;
+    if (btn) btn.setAttribute("aria-label", done ? text + ". Open the builder" : "Building. Open the builder to follow it or cancel");
+    clearTimeout(statusTimer);
+    root.classList.toggle("bm-btn-status", !!done);
+    if (done) statusTimer = setTimeout(clearPill, 12000);
+  }
+  function clearPill() {
+    clearTimeout(statusTimer);
+    root.classList.remove("bm-btn-status");
+    var btn = document.getElementById("make-own");
+    if (btn && !genInfo()) btn.setAttribute("aria-label", "Re-imagine this site");
   }
 
   form.addEventListener("submit", function (e) {
@@ -752,6 +766,7 @@
     else if (!opener || !document.contains(opener)) opener = document.getElementById("make-own");
     pill.hidden = true;
     root.classList.remove("bm-minimized");
+    if (!genInfo()) clearPill();
     if (isOpen) return;
     isOpen = true;
     clearTimeout(hideTimer);
@@ -807,9 +822,8 @@
       return;
     }
     hide();
-    pill.hidden = false;
-    root.classList.add("bm-minimized");
-    pill.focus();
+    var btn = document.getElementById("make-own");
+    if (btn) btn.focus(); // the Re-imagine button now says Building…
   }
 
   backdrop.addEventListener("click", function () { close(); });

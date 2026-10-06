@@ -19,6 +19,7 @@ test("a build in progress: stripes, the prompt, a disabled box, survives a reloa
   const card = dialog.locator(".bm-gen");
   await expect(html).toHaveClass(/bm-generating/);
   await expect(card).toBeVisible();
+  await expect(page.locator("#make-own .make-own-status")).toHaveText("Building…");
   await expect(card.locator(".bm-gen-prompt")).toHaveText(`“${prompt}”`);
   await expect(dialog.locator("#bm-prompt")).toBeDisabled();
   await expect(card.getByRole("button", { name: "Cancel this build" })).toBeEnabled();
@@ -36,8 +37,19 @@ test("a build in progress: stripes, the prompt, a disabled box, survives a reloa
   await page.reload();
   await expect(html).toHaveClass(/bm-generating/, { timeout: 5_000 });
   expect(await stripes("#site-bar")).toContain("repeating-linear-gradient");
-  await expect(page.locator("#build-pill")).toBeVisible();
-  await page.locator("#build-pill").click();
+  // the Re-imagine button, in its place, now says Building… and opens the builder
+  const reimagine = page.locator("#make-own");
+  await expect(reimagine).toBeVisible();
+  await expect(reimagine.locator(".make-own-status")).toHaveText("Building…");
+  await expect(page.locator("#build-pill")).toBeHidden();
+  if (process.env.E2E_SHOT_DIR) {
+    await page.locator("#site-bar").screenshot({ path: `${process.env.E2E_SHOT_DIR}/bar-light.png` });
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.waitForTimeout(700); // the button's colour transition
+    await page.locator("#site-bar").screenshot({ path: `${process.env.E2E_SHOT_DIR}/bar-dark.png` });
+    await page.emulateMedia({ colorScheme: "light" });
+  }
+  await reimagine.click();
   await expect(card).toBeVisible();
   await expect(card.locator(".bm-gen-prompt")).toHaveText(`“${prompt}”`);
   await expect(dialog.locator("#bm-prompt")).toBeDisabled();
@@ -51,4 +63,38 @@ test("a build in progress: stripes, the prompt, a disabled box, survives a reloa
   expect(await stripes("#site-bar")).not.toContain("repeating-linear-gradient");
   const list = await page.evaluate(() => fetch("/build/api/frontends", { cache: "no-store" }).then((r) => r.json()));
   expect(list.frontends.every((f: any) => !f.running && f.revisions.length === 0)).toBe(true);
+});
+
+test("during a build the visitor can still switch between their versions", async ({ page }) => {
+  await page.goto("/");
+  await page.locator("#make-own").click();
+  const dialog = page.getByRole("dialog", { name: "Re-imagine this site" });
+  const prompt = `switching ${Date.now().toString(36)}`;
+  await dialog.locator("#bm-prompt").fill(prompt);
+  await dialog.getByRole("button", { name: "Build" }).click();
+  const card = dialog.locator(".bm-fe", { hasText: prompt.replace(/^s/, "S") });
+  await expect(card.locator(".bm-rev")).toHaveCount(1, { timeout: 20_000 });
+  await expect(dialog.locator(".bm-progress")).toContainText("Version 1 is on the site now", { timeout: 15_000 });
+  await dialog.locator("#bm-prompt").fill("make it warmer");
+  await dialog.getByRole("button", { name: "Make the change" }).click();
+  await expect(card.locator(".bm-rev")).toHaveCount(2, { timeout: 20_000 });
+  await expect(dialog.locator(".bm-progress")).toContainText("Version 2 is on the site now", { timeout: 15_000 });
+
+  // a third build, and while it runs: switch to version 1, then back to 2
+  await dialog.locator("#bm-prompt").fill("make it cooler");
+  await dialog.getByRole("button", { name: "Make the change" }).click();
+  await expect(page.locator("html")).toHaveClass(/bm-generating/);
+  await dialog.locator(".bm-mine-sum").click();
+  await card.locator(".bm-versions-sum").click();
+  const [v2, v1] = [card.locator(".bm-rev").nth(0), card.locator(".bm-rev").nth(1)];
+  await v1.click();
+  await expect(v1).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#draft-banner")).toContainText("version 1");
+  await expect(page.locator("html")).toHaveClass(/bm-generating/); // still building
+  await v2.click();
+  await expect(v2).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#draft-banner")).toContainText("version 2");
+  // the build finishes as version 3, on the site
+  await expect(card.locator(".bm-rev")).toHaveCount(3, { timeout: 20_000 });
+  await expect(page.locator("html")).not.toHaveClass(/bm-generating/);
 });

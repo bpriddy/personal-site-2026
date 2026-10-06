@@ -473,7 +473,7 @@ body.public::after {
   --font-text: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --bg: #0B0B0C; --bg-raised: #18181A; --fg: #F5F5F6; --fg-2: #A1A1A8;
-  --rule: rgb(255 255 255 / .12); --rule-strong: rgb(255 255 255 / .28); --accent: #FF5B1F;
+  --rule: rgb(255 255 255 / .12); --rule-strong: rgb(255 255 255 / .28); --accent: #FF5B1F; --accent-ink: #0B0B0C;
   font-family: var(--font-text);
   position: fixed; z-index: var(--z-cta); top: 0; left: 0; right: 0;
   display: flex; align-items: center; justify-content: space-between; gap: var(--s-4);
@@ -485,12 +485,12 @@ body.public::after {
 @media (prefers-color-scheme: light) {
   .site-bar:not([data-theme="dark"]) {
     --bg: #FFFFFF; --bg-raised: #F2F2F3; --fg: #111113; --fg-2: #5E5E66;
-    --rule: rgb(0 0 0 / .1); --rule-strong: rgb(0 0 0 / .26); --accent: #E5480F;
+    --rule: rgb(0 0 0 / .1); --rule-strong: rgb(0 0 0 / .26); --accent: #E5480F; --accent-ink: #FFFFFF;
   }
 }
 .site-bar[data-theme="light"] {
   --bg: #FFFFFF; --bg-raised: #F2F2F3; --fg: #111113; --fg-2: #5E5E66;
-  --rule: rgb(0 0 0 / .1); --rule-strong: rgb(0 0 0 / .26); --accent: #E5480F;
+  --rule: rgb(0 0 0 / .1); --rule-strong: rgb(0 0 0 / .26); --accent: #E5480F; --accent-ink: #FFFFFF;
 }
 .site-bar-line {
   margin: 0; padding: 6px 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left;
@@ -650,3 +650,24 @@ html.bm-generating .site-bar-line {
   background: color-mix(in oklab, var(--bg) 88%, transparent); border-radius: 4px; padding-inline: 8px; margin-inline: -8px;
 }
 @media (prefers-reduced-motion: reduce) { html.bm-generating .site-bar { animation: none; } }
+
+/* the Re-imagine button during a build (v1.11, build-modal.js): "Building…" on
+   moving accent stripes, in the same place; just after, how it went
+   ("Version 3 is ready"); both open the builder */
+.make-own-status { display: none; }
+html.bm-generating .site-bar .make-own-roll, html.bm-generating .site-bar .make-own-kbd,
+html.bm-btn-status .site-bar .make-own-roll, html.bm-btn-status .site-bar .make-own-kbd { display: none; }
+html.bm-generating .make-own-status, html.bm-btn-status .make-own-status { display: block; line-height: 1.2em; }
+/* solid accent, so it stands out on the striped bar */
+html.bm-generating .site-bar .make-own, html.bm-btn-status .site-bar .make-own {
+  background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600;
+}
+html.bm-generating .site-bar .make-own-dot { background: var(--accent-ink); animation: bm-blink-dot 1s steps(2, jump-none) infinite; }
+@keyframes bm-blink-dot { 50% { opacity: .15; } }
+html.bm-btn-status .site-bar .make-own-dot { background: var(--accent-ink); animation: none; }
+@media (max-width: 599px) {
+  /* the round button: stripes say it; the plus steps aside */
+  html.bm-generating .site-bar .make-own-plus, html.bm-generating .make-own-status { display: none; }
+  html.bm-btn-status .make-own-status { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { html.bm-generating .site-bar .make-own-dot { animation: none; } }
