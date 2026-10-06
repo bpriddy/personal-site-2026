@@ -185,7 +185,8 @@
             ref: currentRef, serve: currentServe, draft: draft,
             revision: draft && typeof fe.revision === "string" ? fe.revision : "",
             number: draft && typeof fe.number === "number" ? fe.number : 0,
-            choices: typeof fe.choices === "number" ? fe.choices : 0
+            choices: typeof fe.choices === "number" ? fe.choices : 0,
+            copy: fe.copy && typeof fe.copy === "object" ? fe.copy : {}
           };
           currentCredit = !draft && typeof fe.credit === "string" ? fe.credit.trim().slice(0, 80) : "";
           showCredit();
@@ -269,7 +270,7 @@
       case "site:hello":
         getContent().then(function (content) {
           if (my !== attempt) return;
-          post({ type: "site:init", content: content, route: currentRoute() });
+          post({ type: "site:init", content: content, route: currentRoute(), copy: currentInfo.copy || {} });
         }, function (err) { fail(my, err && err.message ? err.message : String(err)); });
         break;
       case "site:ready":
@@ -412,7 +413,9 @@
     concept.type = "button";
     concept.className = "site-bar-line";
     concept.setAttribute("aria-haspopup", "dialog");
-    concept.append(document.createTextNode("This site is re-imagined by its visitors"));
+    // the concept line is editable copy (v1.10): the server renders it into the transcript
+    var conceptSrc = document.querySelector("#transcript .concept");
+    concept.append(document.createTextNode((conceptSrc && conceptSrc.textContent.trim()) || "This site is re-imagined by its visitors"));
     // who made the front end showing now (v1.9 credit): " · by …", plain text
     creditEl = span("site-bar-credit");
     creditEl.hidden = true;

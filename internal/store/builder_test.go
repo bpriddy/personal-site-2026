@@ -136,6 +136,30 @@ func builderConformance(t *testing.T, newStore func(t *testing.T) Builder) {
 		must(t, st.CreatePromptedFrontend(ctx, "fe/gone", "Again"))
 	})
 
+	t.Run("copy", func(t *testing.T) {
+		st := newStore(t)
+		must(t, st.CreatePromptedFrontend(ctx, "fe/c", "C"))
+		if f, _ := st.BuilderFrontend(ctx, "fe/c"); len(f.Copy) != 0 {
+			t.Fatalf("new front end copy = %v", f.Copy)
+		}
+		must(t, st.SetFrontendCopy(ctx, "fe/c", map[string]string{"intro": "A long time ago"}))
+		if f, _ := st.BuilderFrontend(ctx, "fe/c"); f.Copy["intro"] != "A long time ago" {
+			t.Fatalf("copy = %v", f.Copy)
+		}
+		if err := st.SetFrontendCopy(ctx, "fe/nope", nil); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("missing front end: %v", err)
+		}
+		cs := CopyOf(st)
+		if cs == nil {
+			t.Fatal("no CopyStore")
+		}
+		must(t, cs.SetSiteCopy(ctx, map[string]string{"tagline": "Hello", "concept": "Built by you"}))
+		must(t, cs.SetSiteCopy(ctx, map[string]string{"concept": "", "tagline": "Hi"}))
+		if c, err := cs.SiteCopy(ctx); err != nil || len(c) != 1 || c["tagline"] != "Hi" {
+			t.Fatalf("site copy = %v, %v", c, err)
+		}
+	})
+
 	t.Run("credit", func(t *testing.T) {
 		st := newStore(t)
 		must(t, st.CreatePromptedFrontend(ctx, "fe/c", "C"))

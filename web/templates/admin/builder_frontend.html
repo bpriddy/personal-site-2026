@@ -46,7 +46,7 @@
       <span id="preview-state" class="b-muted">idle</span>
     </div>
     {{if .PreviewRef}}
-    <div id="preview" class="b-preview" data-ref="{{.PreviewRef}}" data-frontend="{{.FE.ID}}" data-state="idle"></div>
+    <div id="preview" class="b-preview" data-ref="{{.PreviewRef}}" data-frontend="{{.FE.ID}}" data-copy="{{json .FE.Copy}}" data-state="idle"></div>
     <ol id="preview-log" class="b-log" aria-live="polite"></ol>
     {{else}}
     <div class="b-preview b-empty"><p>No revisions yet. Describe the front end you want in the chat, and the first revision will appear here.</p></div>
@@ -83,6 +83,19 @@
   {{end}}
 </div>
 
+{{if and (not .Builtin) .CopyFields}}
+<section id="copy">
+  <h2>Copy</h2>
+  <p class="b-muted">This front end's own wording, as its active revision declares it. Leave a field empty to use its default (shown). Saving updates the live site right away; site-wide lines (tagline, site bar, Experiments when empty) are on the <a href="/admin/#site-copy">dashboard</a>.</p>
+  <form method="post" action="/admin/builder/fe/{{.Slug}}/copy" class="stack b-copy">
+    {{range .CopyFields}}<label>{{.Label}} <code class="b-muted">{{.Key}}</code>
+      {{if gt (len .Default) 90}}<textarea name="copy.{{.Key}}" rows="3" placeholder="{{.Default}}" maxlength="2000">{{.Value}}</textarea>
+      {{else}}<input name="copy.{{.Key}}" value="{{.Value}}" placeholder="{{.Default}}" maxlength="2000">{{end}}</label>
+    {{end}}
+    <button>Save copy</button>
+  </form>
+</section>
+{{end}}
 {{if not .Builtin}}
 <section>
   <h2>Revisions</h2>

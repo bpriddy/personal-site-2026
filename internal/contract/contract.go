@@ -99,6 +99,9 @@ type Site struct {
 	Experiments     []Item `json:"experiments"`
 	Projects        []Item `json:"projects"`
 	Experience      []Item `json:"experience"` // since v1.8
+	// Copy is the site-wide editable copy (since v1.10): tagline, concept,
+	// experimentsEmpty, each defaulted. Front ends read it with site.text.
+	Copy map[string]string `json:"copy"`
 
 	// GeneratedErr is the error from Generated, if any. Build still succeeds
 	// (without generated values); it's exposed for callers and tests.
@@ -123,6 +126,14 @@ type Site struct {
 // errors are returned.
 func Build(ctx context.Context, st store.Store, gen Generated) (Site, error) {
 	site := Site{ContractVersion: Version, Pages: []Item{}, Experiments: []Item{}, Projects: []Item{}, Experience: []Item{}}
+	var stored map[string]string
+	if cs := store.CopyOf(st); cs != nil {
+		var err error
+		if stored, err = cs.SiteCopy(ctx); err != nil {
+			return Site{}, fmt.Errorf("copy: %w", err)
+		}
+	}
+	site.Copy = content.ResolveSiteCopy(stored)
 
 	pages, err := st.Pages(ctx)
 	if err != nil {

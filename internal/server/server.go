@@ -4,6 +4,7 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -136,6 +137,7 @@ func (s *Server) routes() {
 	admin.HandleFunc("GET /admin/{$}", s.adminDashboard)
 	admin.HandleFunc("GET /admin/pages/edit", s.adminPageForm)
 	admin.HandleFunc("POST /admin/pages/edit", s.adminPageSave)
+	admin.HandleFunc("POST /admin/copy", s.adminSiteCopy)
 	admin.HandleFunc("GET /admin/experiments/{slug}", s.adminExperimentForm)
 	admin.HandleFunc("POST /admin/experiments/{slug}", s.adminExperimentSave)
 	admin.HandleFunc("POST /admin/frontends", s.adminFrontendRotation)
@@ -208,6 +210,7 @@ func (s *Server) renderPublic(w http.ResponseWriter, r *http.Request, name strin
 	data["SiteURL"] = strings.TrimRight(s.cfg.MainOrigin, "/")
 	data["Canonical"] = data["SiteURL"].(string) + r.URL.Path
 	data["Year"] = s.now().Year()
+	data["Copy"] = s.siteCopy(r.Context())
 	s.render(w, "public/"+name, status, data)
 }
 
@@ -276,6 +279,8 @@ var templateFuncs = template.FuncMap{
 	// heroMax: a still is never shown past 1.25x its width (the old ones are small)
 	"heroMax": func(w int) int { return w * 5 / 4 },
 	// dict builds a map for passing several values to a template
+	// json encodes v (for data attributes; the template escapes it)
+	"json": func(v any) string { b, _ := json.Marshal(v); return string(b) },
 	// slugOf is a prompted front end's slug ("fe/dark" → "dark")
 	"slugOf": func(id string) string { return strings.TrimPrefix(id, "fe/") },
 	"dict": func(kv ...any) map[string]any {

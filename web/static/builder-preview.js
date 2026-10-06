@@ -10,6 +10,12 @@
 //
 // #preview attributes: data-ref (required), data-frontend.
 (function () {
+  // Ben's copy edits for this front end (v1.10), from the page (data-copy JSON)
+  function previewCopy() {
+    var el = document.getElementById("preview");
+    try { var c = JSON.parse(el && el.getAttribute("data-copy") || "{}"); return c && typeof c === "object" ? c : {}; } catch (e) { return {}; }
+  }
+
   "use strict";
 
   var box = document.getElementById("preview");
@@ -147,7 +153,7 @@
       case "site:hello":
         getContent().then(function (content) {
           if (my !== attempt) return;
-          post({ type: "site:init", content: content, route: route });
+          post({ type: "site:init", content: content, route: route, copy: previewCopy() });
         }, function (err) { log("error", String(err)); });
         break;
       case "site:ready":

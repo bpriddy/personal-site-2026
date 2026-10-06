@@ -4,7 +4,7 @@
 {{define "head"}}<script type="application/ld+json">{{.PersonLD}}</script>{{end}}
 {{define "main"}}
 <section class="hero">
-  <p class="kicker">This site is re-imagined by its visitors</p>
+  <p class="kicker">{{.Copy.concept}}</p>
   <h1 class="name">{{range nameLines .Page.Title}}<span class="line"><span>{{.}}</span></span> {{end}}</h1>
   <p class="cue" aria-hidden="true">( Scroll )</p>
 </section>
@@ -41,7 +41,7 @@
   {{template "experiment-list" .Experiments}}
 {{else}}
   <h2 class="label" id="exp-h">( Experiments )</h2>
-  <p class="prose-aside">Coming soon.</p>
+  <p class="prose-aside">{{.Copy.experimentsEmpty}}</p>
 {{end}}
 </section>
 {{end}}

@@ -29,6 +29,9 @@ type frontendResponse struct {
 	// Credit (v1.9): who made the front end, for the site bar ("" = none).
 	// Only for rotation picks, whose credit Ben has reviewed; plain text.
 	Credit string `json:"credit,omitempty"`
+	// Copy (v1.10): Ben's edits to the front end's own wording, keyed as its
+	// copy.json declares; the parent passes them to site.text in site:init.
+	Copy map[string]string `json:"copy,omitempty"`
 	// Choices is how many front ends the rotation holds (v1.4): the parent
 	// shows its shuffle control only when there is something to shuffle to.
 	Choices int `json:"choices"`
@@ -44,6 +47,7 @@ func (s *Server) apiFrontend(w http.ResponseWriter, r *http.Request) {
 	id, serve := frontend.DefaultRef, frontend.DefaultRef
 	var resp frontendResponse
 	choices, credit := 0, ""
+	var copy map[string]string
 	if r.URL.Query().Get("fallback") != "1" { // fallback leaves the visit's pick (and fe_live) alone
 		rot := s.currentRotation(r.Context())
 		choices = len(rot.ids)
@@ -53,10 +57,11 @@ func (s *Server) apiFrontend(w http.ResponseWriter, r *http.Request) {
 			id = s.visitPick(w, r, rot.ids)
 			serve = rot.serve[id]
 			credit = rot.credit[id]
+			copy = rot.copy[id]
 		}
 	}
 	if resp.Ref == "" {
-		resp = frontendResponse{Ref: id, Serve: serve, URL: s.signedIndexURL(serve), Credit: credit}
+		resp = frontendResponse{Ref: id, Serve: serve, URL: s.signedIndexURL(serve), Credit: credit, Copy: copy}
 	}
 	resp.Choices = choices
 	w.Header().Set("Content-Type", "application/json")
@@ -131,6 +136,7 @@ type rotation struct {
 	ids    frontend.Rotation
 	serve  map[frontend.Ref]frontend.Ref
 	credit map[frontend.Ref]string // the front ends' credits, if any
+	copy   map[frontend.Ref]map[string]string
 }
 
 // builderStore is the store's builder side (prompted front ends and their
@@ -146,7 +152,7 @@ func (s *Server) builderStore() store.Builder {
 // nothing servable is in rotation, visitors get the default front end.
 func (s *Server) currentRotation(ctx context.Context) rotation {
 	def := rotation{ids: frontend.Rotation{frontend.DefaultRef}, serve: map[string]string{frontend.DefaultRef: frontend.DefaultRef}}
-	out := rotation{serve: map[string]string{}, credit: map[string]string{}}
+	out := rotation{serve: map[string]string{}, credit: map[string]string{}, copy: map[string]map[string]string{}}
 
 	// active revisions of prompted front ends (and, without an override, the
 	// store's rotation itself)
@@ -176,6 +182,9 @@ func (s *Server) currentRotation(ctx context.Context) rotation {
 		}
 		if f.Credit != "" {
 			out.credit[f.ID] = f.Credit
+		}
+		if len(f.Copy) > 0 {
+			out.copy[f.ID] = f.Copy
 		}
 	}
 	add := func(id string) {

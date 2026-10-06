@@ -41,7 +41,7 @@
   <div id="transcript">
     <header class="site-header">
       <a class="brand" href="/">Ben Priddy</a>
-      <p class="role">Creative technology <span aria-hidden="true">/</span> AI</p>
+      <p class="role">{{.Copy.tagline}}</p>
       <nav aria-label="Pages">
         {{range .Nav}}<a href="{{.Href}}"{{if .Current}} aria-current="page"{{end}}><span class="idx">{{.Index}}</span> {{.Label}}</a>
         {{end}}
@@ -54,7 +54,7 @@
     <main>{{block "main" .}}{{end}}</main>
     <footer class="site-footer">
       <p>&copy; {{.Year}} Ben Priddy</p>
-      <p class="concept">This site is re-imagined by its visitors</p>
+      <p class="concept">{{.Copy.concept}}</p>
     </footer>
   </div>
 </body>

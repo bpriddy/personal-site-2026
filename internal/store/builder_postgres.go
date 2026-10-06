@@ -21,11 +21,11 @@ func pgErrCode(err error) string {
 	return ""
 }
 
-const frontendInfoCols = `ref, title, kind, in_rotation, coalesce(active_revision, ''), credit, credit_requested, updated_at`
+const frontendInfoCols = `ref, title, kind, in_rotation, coalesce(active_revision, ''), credit, credit_requested, copy, updated_at`
 
 func scanFrontendInfo(r pgx.Row) (FrontendInfo, error) {
 	var f FrontendInfo
-	err := r.Scan(&f.ID, &f.Title, &f.Kind, &f.InRotation, &f.ActiveRevision, &f.Credit, &f.CreditRequested, &f.UpdatedAt)
+	err := r.Scan(&f.ID, &f.Title, &f.Kind, &f.InRotation, &f.ActiveRevision, &f.Credit, &f.CreditRequested, &f.Copy, &f.UpdatedAt)
 	return f, err
 }
 
@@ -57,6 +57,52 @@ func (p *Postgres) SetCredit(ctx context.Context, id, credit string) error {
 
 func (p *Postgres) SetCreditRequested(ctx context.Context, id, credit string) error {
 	return p.setCredit(ctx, `UPDATE frontends SET credit_requested = $2 WHERE ref = $1`, id, credit)
+}
+
+func (p *Postgres) SetFrontendCopy(ctx context.Context, id string, copy map[string]string) error {
+	if copy == nil {
+		copy = map[string]string{}
+	}
+	tag, err := p.pool.Exec(ctx, `UPDATE frontends SET copy = $2 WHERE ref = $1`, id, copy)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return err
+}
+
+func (p *Postgres) SiteCopy(ctx context.Context) (map[string]string, error) {
+	rows, err := p.pool.Query(ctx, `SELECT key, value FROM site_copy`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
+			return nil, err
+		}
+		out[k] = v
+	}
+	return out, rows.Err()
+}
+
+func (p *Postgres) SetSiteCopy(ctx context.Context, lines map[string]string) error {
+	return pgx.BeginFunc(ctx, p.pool, func(tx pgx.Tx) error {
+		for k, v := range lines {
+			var err error
+			if v == "" {
+				_, err = tx.Exec(ctx, `DELETE FROM site_copy WHERE key = $1`, k)
+			} else {
+				_, err = tx.Exec(ctx, `INSERT INTO site_copy (key, value) VALUES ($1, $2)
+					ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`, k, v)
+			}
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (p *Postgres) setCredit(ctx context.Context, sql, id, credit string) error {

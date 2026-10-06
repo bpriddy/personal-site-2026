@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -18,6 +19,8 @@ type memBuilder struct {
 	active   map[string]string // front-end ID → active revision ID
 	credit   map[string]string // front-end ID → credit
 	asked    map[string]string // front-end ID → credit requested
+	copy     map[string]map[string]string
+	siteCopy map[string]string
 	revs     map[string]Revision
 	runs     []Run
 }
@@ -30,6 +33,8 @@ func (b *memBuilder) init() {
 		b.active = map[string]string{}
 		b.credit = map[string]string{}
 		b.asked = map[string]string{}
+		b.copy = map[string]map[string]string{}
+		b.siteCopy = map[string]string{}
 		b.revs = map[string]Revision{}
 	}
 }
@@ -40,7 +45,7 @@ func (m *Memory) info(f content.Frontend) FrontendInfo {
 		kind = KindPrompted
 	}
 	return FrontendInfo{ID: f.Ref, Title: f.Title, Kind: kind, InRotation: f.InRotation,
-		ActiveRevision: m.builder.active[f.Ref], Credit: m.builder.credit[f.Ref], CreditRequested: m.builder.asked[f.Ref], UpdatedAt: f.UpdatedAt}
+		ActiveRevision: m.builder.active[f.Ref], Credit: m.builder.credit[f.Ref], CreditRequested: m.builder.asked[f.Ref], Copy: maps.Clone(m.builder.copy[f.Ref]), UpdatedAt: f.UpdatedAt}
 }
 
 func (m *Memory) BuilderFrontends(_ context.Context) ([]FrontendInfo, error) {
@@ -277,6 +282,42 @@ func (m *Memory) DeleteFrontend(_ context.Context, id string) error {
 	delete(m.builder.active, id)
 	delete(m.builder.credit, id)
 	delete(m.builder.asked, id)
+	delete(m.builder.copy, id)
 	delete(m.frontends, id)
+	return nil
+}
+
+func (m *Memory) SetFrontendCopy(_ context.Context, id string, copy map[string]string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.builder.init()
+	if _, ok := m.frontends[id]; !ok {
+		return ErrNotFound
+	}
+	m.builder.copy[id] = maps.Clone(copy)
+	return nil
+}
+
+func (m *Memory) SiteCopy(_ context.Context) (map[string]string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := maps.Clone(m.builder.siteCopy)
+	if out == nil {
+		out = map[string]string{}
+	}
+	return out, nil
+}
+
+func (m *Memory) SetSiteCopy(_ context.Context, lines map[string]string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.builder.init()
+	for k, v := range lines {
+		if v == "" {
+			delete(m.builder.siteCopy, k)
+		} else {
+			m.builder.siteCopy[k] = v
+		}
+	}
 	return nil
 }

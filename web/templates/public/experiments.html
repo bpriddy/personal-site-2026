@@ -5,6 +5,6 @@
   {{if .Experiments}}<p class="label">( {{two (len .Experiments)}} published )</p>{{end}}
 </section>
 <section class="index index-page">
-  {{if .Experiments}}{{template "experiment-list" .Experiments}}{{else}}<p class="prose-aside">Coming soon.</p>{{end}}
+  {{if .Experiments}}{{template "experiment-list" .Experiments}}{{else}}<p class="prose-aside">{{.Copy.experimentsEmpty}}</p>{{end}}
 </section>
 {{end}}

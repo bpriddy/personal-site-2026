@@ -14,6 +14,14 @@
       <textarea name="body" rows="9">{{.Body}}</textarea></label>
     <button class="b-primary">Save site copy</button>
   </form>
+  <form method="post" action="/admin/copy" class="stack site-lines">
+    <h3>Lines on every front end</h3>
+    {{range $.SiteCopy}}<label>{{.Label}}{{with .Hint}} <span class="muted">({{.}})</span>{{end}}
+      <input name="copy.{{.Key}}" value="{{.Value}}" placeholder="{{.Default}}" maxlength="2000"></label>
+    {{end}}
+    <p class="muted">Leave a line empty to use the default shown. Each front end's own wording (its jokes, labels, intro lines) is edited on that front end's builder page, under Copy.</p>
+    <button>Save lines</button>
+  </form>
 </section>{{end}}{{end}}
 <section>
   <h2>Pages</h2>

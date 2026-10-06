@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"net/url"
 
 	"github.com/bpriddy/personal-site-2026/internal/builder"
@@ -147,5 +148,54 @@ func TestDashboardSiteCopy(t *testing.T) {
 	}
 	if body := get(e.s, "/").Body.String(); !strings.Contains(body, "Second paragraph.") {
 		t.Error("the home page doesn't show the saved bio")
+	}
+}
+
+func TestEditableCopy(t *testing.T) {
+	e := newBuilderServer(t, true)
+
+	// site-wide lines: the dashboard form, the transcript, the content
+	if page := adminDo(e, "GET", "/admin/").Body.String(); !strings.Contains(page, `name="copy.tagline"`) || !strings.Contains(page, `placeholder="Creative technology / AI"`) {
+		t.Fatal("no site-wide copy form on the dashboard")
+	}
+	if rec := e.form("/admin/copy", url.Values{"copy.tagline": {"  AI,   upstream "}, "copy.concept": {"Built by its visitors"}, "copy.experimentsEmpty": {"Coming soon."}}); rec.Code != 303 {
+		t.Fatalf("save site copy: %d", rec.Code)
+	}
+	home := get(e.s, "/").Body.String()
+	if !strings.Contains(home, `<p class="role">AI, upstream</p>`) || !strings.Contains(home, `<p class="concept">Built by its visitors</p>`) {
+		t.Errorf("transcript doesn't use the copy:\n%s", home)
+	}
+	var site struct{ Copy map[string]string }
+	json.Unmarshal(get(e.s, "/api/site.json").Body.Bytes(), &site)
+	if site.Copy["tagline"] != "AI, upstream" || site.Copy["experimentsEmpty"] != "Coming soon." {
+		t.Errorf("site.json copy = %v", site.Copy)
+	}
+
+	// a front end's own wording: declared in copy.json, edited on its page
+	e.form("/admin/builder/new", url.Values{"slug": {"sw"}, "title": {"SW"}})
+	e.model.Responses = []string{
+		builder.ToolUse("1", "write_file", map[string]any{"path": "index.html", "content": fixtureIndex}),
+		builder.ToolUse("2", "write_file", map[string]any{"path": "copy.json", "content": `{"intro": {"label": "Opening line", "default": "A long time ago, in a browser far, far away..."}}`}),
+		builder.ToolUse("3", "finish", map[string]any{"summary": "ok"}),
+		builder.ToolUse("4", "finish", map[string]any{"summary": "ok"}),
+	}
+	r1 := eventOf(e.chat(t, "sw", "go", ""), "revision")
+	e.form("/admin/builder/fe/sw/activate", url.Values{"rev": {r1.Revision}})
+	e.form("/admin/builder/rotation", url.Values{"id": {"fe/sw"}, "in_rotation": {"1"}})
+	page := adminDo(e, "GET", "/admin/builder/fe/sw").Body.String()
+	if !strings.Contains(page, `name="copy.intro"`) || !strings.Contains(page, "Opening line") {
+		t.Fatalf("copy form: %s", page)
+	}
+	if rec := e.form("/admin/builder/fe/sw/copy", url.Values{"copy.intro": {"A long time ago, in a galaxy far, far away..."}, "copy.other": {"ignored"}}); rec.Code != 303 {
+		t.Fatalf("save copy: %d", rec.Code)
+	}
+	fe := decodeFrontend(t, e.visitor(1, "192.0.2.1").do("GET", "/api/frontend", nil, "Cookie", pickCookie+"=fe/sw"))
+	if fe.Ref != "fe/sw" || len(fe.Copy) != 1 || fe.Copy["intro"] != "A long time ago, in a galaxy far, far away..." {
+		t.Errorf("api/frontend copy = %+v", fe)
+	}
+	// back to the default: the edit goes away
+	e.form("/admin/builder/fe/sw/copy", url.Values{"copy.intro": {""}})
+	if fe := decodeFrontend(t, e.visitor(1, "192.0.2.1").do("GET", "/api/frontend", nil, "Cookie", pickCookie+"=fe/sw")); len(fe.Copy) != 0 {
+		t.Errorf("copy after clearing = %v", fe.Copy)
 	}
 }

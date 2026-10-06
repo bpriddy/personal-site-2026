@@ -26,6 +26,11 @@
       "type": "array",
       "items": { "$ref": "#/$defs/project" }
     },
+    "copy": {
+      "description": "Since v1.10. The site-wide editable copy, each line defaulted when Ben hasn't set it: tagline (the short line under his name), concept (the site bar's line; the host draws it), experimentsEmpty (what Experiments says when none are published). Read with site.text(key, fallback), which also covers a front end's own copy.json keys. Always sent; optional here only because v1 didn't have it.",
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
     "experience": {
       "description": "Since v1.8. Published roles in Ben's career, for the home page's experience list, in their CMS order (newest first). Keyed by slug. Minimal by design: a role, a company, dates and at most one short line. Always sent; optional here only because v1 didn't have it.",
       "type": "array",

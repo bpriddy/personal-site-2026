@@ -743,3 +743,41 @@ inside every front end.
   `.js` and `.mjs` files and inline HTML scripts are parsed with esbuild.
   The model gets the errors as `file:line:col`. A script that doesn't parse
   runs none of its code, so the front end would never signal ready.
+
+# v1.10 (2026-10-06): editable copy, deleting front ends
+
+- **Site-wide copy:** `/api/site.json` gains `copy`, an object of strings with
+  defaults filled in:
+  - `tagline`: "Creative technology / AI"
+  - `concept`: the site bar's line, "This site is re-imagined by its visitors"
+  - `experimentsEmpty`: "Coming soon."
+
+  Ben edits these on the dashboard (Site copy → "Lines on every front end";
+  `POST /admin/copy`), and an empty value restores the default. Stored in
+  `site_copy` (migration 0009). The transcript, the site bar (read from the
+  transcript's concept line) and the default front end use them.
+- **A front end's own wording:** a revision may declare its invented wording
+  in a root `copy.json`: `{"key": {"label": "...", "default": "..."}}` (or
+  `{"key": "default"}`). Keys are camelCase letters and digits, and
+  `copy.json` must parse, or the revision is refused.
+  - Ben edits each key on the front end's builder page (Copy;
+    `POST /admin/builder/fe/<slug>/copy`), against its active revision's
+    declaration. Edits are stored in `frontends.copy`.
+  - `/api/frontend` returns them as `copy` for rotation picks. The parent
+    passes them in `site:init` (`copy`), and so does the admin preview.
+- **`site.text(key, fallback)`** (host API): Ben's edit of this front end's
+  key, else `content.copy[key]`, else `fallback`. It always returns a string
+  and never throws. The builder prompt requires it for the tagline, the
+  empty-Experiments line and every piece of invented wording (with
+  `copy.json`), and warns when `site.text` is used without a `copy.json`.
+- **Admin dashboard:** it opens with Site copy: the home page's title and
+  bio (the main paragraph) as a form, then the site-wide lines.
+- **Deleting:**
+  - A front end: `POST /admin/builder/fe/<slug>/delete` removes a prompted
+    front end with its revisions, runs and submissions. Builtins can't be
+    deleted, and the request is refused while the front end is in the
+    rotation or has a run going.
+  - A revision: `POST /admin/builder/fe/<slug>/delete-revision`, added in
+    v1.9's follow-up. The active revision and one waiting for review are
+    refused, and children are re-parented. Revision files stay in storage,
+    unreachable.

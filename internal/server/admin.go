@@ -42,6 +42,7 @@ func (s *Server) adminDashboard(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "admin/dashboard.html", http.StatusOK, map[string]any{
 		"Pages": pages, "Experiments": exps, "Frontends": fes, "Projects": projects, "Experience": experience,
 		"RotationOverridden": s.rotationOverride != nil,
+		"SiteCopy":           s.siteCopyFields(r.Context()),
 	})
 }
 

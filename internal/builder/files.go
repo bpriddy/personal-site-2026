@@ -3,6 +3,7 @@ package builder
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/bpriddy/personal-site-2026/internal/content"
 	"github.com/bpriddy/personal-site-2026/internal/revfiles"
 	"github.com/bpriddy/personal-site-2026/internal/store"
 )
@@ -97,6 +99,18 @@ func Validate(files revfiles.Files) error {
 	if ok && !anyContains(files, "site.ready(") {
 		problems = append(problems, "no call to site.ready(): the parent replaces front ends that never signal ready")
 	}
+	if raw, ok := files["copy.json"]; ok {
+		var decl map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &decl); err != nil {
+			problems = append(problems, "copy.json: not a JSON object of {\"key\": {\"label\": ..., \"default\": ...}} ("+err.Error()+")")
+		} else {
+			for k := range decl {
+				if !content.CopyKey.MatchString(k) {
+					problems = append(problems, fmt.Sprintf("copy.json: key %q must be letters, digits and _ (starting with a letter)", k))
+				}
+			}
+		}
+	}
 	if errs := SyntaxErrors(files); len(errs) > 0 {
 		problems = append(problems, "scripts that won't parse (a browser runs none of their code, so the site falls back): "+strings.Join(errs, "; "))
 	}
@@ -114,6 +128,9 @@ func Warnings(files revfiles.Files) []string {
 	}
 	if !anyContains(files, "site.field(") {
 		out = append(out, "no site.field(...) calls: read displayed item fields through site.field so missing content is reported and healed")
+	}
+	if _, ok := files["copy.json"]; !ok && anyContains(files, "site.text(") {
+		out = append(out, "site.text is used but there is no copy.json: list every key there so Ben can edit the wording")
 	}
 	if !anyContains(files, "site.navigate(") {
 		out = append(out, "no site.navigate(...) calls: visitors need a way to reach the other pages")

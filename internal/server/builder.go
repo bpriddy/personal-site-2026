@@ -91,6 +91,7 @@ func (s *Server) builderRoutes(admin *http.ServeMux) {
 	admin.HandleFunc("POST /admin/builder/fe/{slug}/chat", s.builderChat)
 	admin.HandleFunc("POST /admin/builder/fe/{slug}/activate", s.builderActivate)
 	admin.HandleFunc("POST /admin/builder/fe/{slug}/credit", s.builderCredit)
+	admin.HandleFunc("POST /admin/builder/fe/{slug}/copy", s.builderCopy)
 	admin.HandleFunc("POST /admin/builder/fe/{slug}/delete-revision", s.builderDeleteRevision)
 	admin.HandleFunc("POST /admin/builder/fe/{slug}/delete", s.builderDeleteFrontend)
 	admin.HandleFunc("POST /admin/builder/fe/{slug}/import", s.builderImport)
@@ -477,6 +478,7 @@ func (s *Server) builderFrontend(w http.ResponseWriter, r *http.Request) {
 		"Conversation": conv, "PreviewRef": previewRef, "Runs": failed, "Running": running,
 		"Disabled": s.builderDisabledReason(), "Self": r.URL.Path, "Visitor": s.isVisitorFrontend(r, f.ID),
 		"RotationOverridden": s.rotationOverride != nil, "Error": r.URL.Query().Get("error"),
+		"CopyFields": s.frontendCopyFields(r.Context(), f.ActiveRevision, f.Copy),
 	})
 }
 

@@ -49,6 +49,18 @@ pub struct SiteData {
     pub experiments: Vec<Experiment>,
     pub projects: Vec<Project>,
     pub experience: Vec<Role>,
+    /// site-wide copy (v1.10, site.text): "" means the default
+    pub tagline: String,
+    pub experiments_empty: String,
+}
+
+impl SiteData {
+    fn tagline(&self) -> &str {
+        if self.tagline.trim().is_empty() { ROLE } else { &self.tagline }
+    }
+    fn experiments_empty(&self) -> &str {
+        if self.experiments_empty.trim().is_empty() { "Coming soon." } else { &self.experiments_empty }
+    }
 }
 
 /// One role in Ben's career (v1.8): the home page's experience list.
@@ -255,7 +267,17 @@ fn read_content() -> SiteData {
             })
             .filter(|r| !r.role.is_empty())
             .collect(),
+        tagline: site_text("tagline"),
+        experiments_empty: site_text("experimentsEmpty"),
     }
+}
+
+/// site.text(key, "") (v1.10): the editable site-wide copy, or "" (an older
+/// host, or no value), so the caller's default applies.
+fn site_text(key: &str) -> String {
+    host_call("text", &[JsValue::from_str(key), JsValue::from_str("")])
+        .and_then(|v| v.as_string())
+        .unwrap_or_default()
 }
 
 /// "2026-03" → "Mar 2026", "2019" → "2019", anything else → "".
@@ -399,6 +421,7 @@ fn placeholder() -> Loaded {
                 ..Default::default()
             }],
             experience: vec![],
+            ..Default::default()
         },
         route: String::new(),
     }
@@ -521,7 +544,7 @@ fn build_header(doc: &Document, data: &SiteData) -> Result<Element, JsValue> {
     let header = el(doc, "header", "site-header", None)?;
     let brand = route_link(doc, "", "brand")?;
     brand.set_text_content(Some(&home_title(data)));
-    let role = el(doc, "p", "role", Some(ROLE))?;
+    let role = el(doc, "p", "role", Some(data.tagline()))?;
     let nav = el(doc, "nav", "", None)?;
     nav.set_attribute("aria-label", "Pages")?;
     for (i, (slug, label)) in nav_items(data).iter().enumerate() {
@@ -870,7 +893,7 @@ fn render_route(doc: &Document, main: &Element, data: &SiteData, route: &str) ->
         let cue = el(doc, "p", "cue", Some("( Scroll )"))?;
         cue.set_attribute("aria-hidden", "true")?;
         hero.append_child(&cue)?;
-        add(&hero, &el(doc, "p", "meta", Some(ROLE))?)?;
+        add(&hero, &el(doc, "p", "meta", Some(data.tagline()))?)?;
         main.append_child(&hero)?;
         if let Some(h) = home.filter(|h| !paragraphs(&h.body).is_empty()) {
             let bio = el(doc, "section", "bio", None)?;
@@ -899,7 +922,7 @@ fn render_route(doc: &Document, main: &Element, data: &SiteData, route: &str) ->
             let idx = el(doc, "section", "index", None)?;
             if data.experiments.is_empty() {
                 add(&idx, &el(doc, "h2", "label", Some("( Experiments )"))?)?;
-                add(&idx, &el(doc, "p", "prose-aside", Some("Coming soon."))?)?;
+                add(&idx, &el(doc, "p", "prose-aside", Some(data.experiments_empty()))?)?;
             } else {
                 let label = format!("( Experiments \u{2014} {} )", two(data.experiments.len()));
                 add(&idx, &el(doc, "h2", "label", Some(&label))?)?;
@@ -935,7 +958,7 @@ fn render_route(doc: &Document, main: &Element, data: &SiteData, route: &str) ->
         }
         let idx = el(doc, "section", "index index-page", None)?;
         if data.experiments.is_empty() {
-            add(&idx, &el(doc, "p", "prose-aside", Some("Coming soon."))?)?;
+            add(&idx, &el(doc, "p", "prose-aside", Some(data.experiments_empty()))?)?;
         } else {
             append_index(doc, &idx, data)?;
         }

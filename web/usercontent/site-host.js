@@ -507,6 +507,20 @@
       return {};
     },
 
+    // text (v1.10): editable wording. Ben's edit for this front end's own
+    // key (declared in its copy.json) first, then the site-wide copy
+    // (content.copy: "tagline", "concept", "experimentsEmpty"), then
+    // fallback. Always a string; never throws.
+    text: function (key, fallback) {
+      fallback = typeof fallback === "string" ? fallback : "";
+      if (typeof key !== "string" || key === "") return fallback;
+      var v = own(frontendCopy, key);
+      if (typeof v === "string" && v.trim() !== "") return v;
+      var c = site.content && isObject(site.content) ? own(site.content, "copy") : undefined;
+      v = isObject(c) ? own(c, key) : undefined;
+      return typeof v === "string" && v.trim() !== "" ? v : fallback;
+    },
+
     // field: item[name] if it matches opts.expect ("text": a string with
     // non-whitespace content, "list": an array, "number": a finite number,
     // "bool": a boolean; default "text"). Otherwise opts.fallback (default ""
@@ -804,6 +818,7 @@
     return c;
   }
 
+  var frontendCopy = {}; // Ben's edits to this front end's own wording (site:init copy)
   site.loaded = new Promise(function (resolve) { resolveLoaded = resolve; });
 
   window.addEventListener("message", function (ev) {
@@ -820,6 +835,13 @@
         try { console.warn("site-host: content normalization failed:", e); } catch (e2) { /* no console */ }
       }
       site.route = typeof m.route === "string" ? m.route : "";
+      frontendCopy = {};
+      if (isObject(m.copy)) {
+        for (var ck in m.copy) {
+          var cv = own(m.copy, ck);
+          if (hasOwn.call(m.copy, ck) && typeof cv === "string" && cv.length <= 2000) frontendCopy[ck] = cv;
+        }
+      }
       if (!initialized) {
         initialized = true;
         resolveLoaded({ content: site.content, route: site.route });

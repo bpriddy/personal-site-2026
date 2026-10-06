@@ -26,6 +26,9 @@ type Builder interface {
 	// SetCreditRequested records the credit a visitor asks for (see
 	// FrontendInfo.CreditRequested); ErrNotFound if unregistered.
 	SetCreditRequested(ctx context.Context, id, credit string) error
+	// SetFrontendCopy replaces the front end's copy edits (FrontendInfo.Copy);
+	// ErrNotFound if unregistered.
+	SetFrontendCopy(ctx context.Context, id string, copy map[string]string) error
 
 	// AddRevision stores a new revision of rev.FrontendID. It assigns
 	// rev.Number (the next number for that front end) and CreatedAt, and
@@ -90,7 +93,10 @@ type FrontendInfo struct {
 	// CreditRequested is the credit a visitor asked for when submitting; it
 	// becomes Credit when Ben approves the submission.
 	CreditRequested string
-	UpdatedAt       time.Time
+	// Copy is Ben's edits to the front end's own wording, keyed as its
+	// copy.json declares (protocol v1.10); empty when none.
+	Copy      map[string]string
+	UpdatedAt time.Time
 }
 
 // Revision is one immutable snapshot of a prompted front end. Its files live
