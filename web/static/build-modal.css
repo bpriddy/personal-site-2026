@@ -413,13 +413,19 @@ html.bm-open #frontend { transform: scale(.985); }
    and the prompt box waits (the site bar stripes too: site.css) ── */
 @keyframes bm-stripes { to { background-position: 50.91px 0; } }
 html.bm-generating .bm-dialog {
-  --bm-stripe: color-mix(in oklab, var(--bm-fg) 9%, var(--bm-bg));
+  --bm-stripe: var(--bm-accent); /* the accent alternating with the theme colour */
   background-color: var(--bm-bg);
   background-image: repeating-linear-gradient(-45deg, var(--bm-bg) 0 18px, var(--bm-stripe) 18px 36px);
   background-size: 50.91px 50.91px; /* one stripe period along the diagonal */
   animation: bm-stripes 1.4s linear infinite;
 }
-html.bm-generating .bm-head { background: color-mix(in oklab, var(--bm-bg) 88%, transparent); }
+html.bm-generating .bm-head { background: color-mix(in oklab, var(--bm-bg) 92%, transparent); }
+/* text on the stripes sits on a wash of the theme colour */
+html.bm-generating .bm-composer, html.bm-generating .bm-notice, html.bm-generating .bm-live,
+html.bm-generating .bm-progress, html.bm-generating .bm-mine, html.bm-generating .bm-intro {
+  background: color-mix(in oklab, var(--bm-bg) 90%, transparent); border-radius: var(--r-1);
+  padding: var(--s-3); margin-inline: calc(var(--s-3) * -1);
+}
 .bm-gen {
   display: grid; gap: var(--s-3); padding: var(--s-5); margin-bottom: var(--s-2);
   background: var(--bm-field); color: var(--bm-fg);
@@ -454,9 +460,10 @@ html.bm-generating .bm-head { background: color-mix(in oklab, var(--bm-bg) 88%, 
 }
 :root[data-theme="dark"] .bm-cancel { color: #FF8A80; border-color: color-mix(in oklab, #FF8A80 55%, transparent); }
 /* the waiting prompt box reads as paused, not broken */
-html.bm-generating .bm-composer { opacity: .55; }
+html.bm-generating .bm-composer { background: var(--bm-bg); }
+html.bm-generating .bm-form > * { opacity: .55; }
 html.bm-generating .bm-pill {
-  background-image: repeating-linear-gradient(-45deg, var(--bg-raised) 0 8px, color-mix(in oklab, var(--fg) 10%, var(--bg-raised)) 8px 16px);
+  background-image: repeating-linear-gradient(-45deg, var(--bg-raised) 0 8px, var(--accent) 8px 16px);
   background-size: 22.63px 22.63px; animation: bm-rise var(--d-3) var(--ease-out) backwards, bm-stripes-sm 1s linear infinite;
 }
 @keyframes bm-stripes-sm { to { background-position: 22.63px 0; } }
