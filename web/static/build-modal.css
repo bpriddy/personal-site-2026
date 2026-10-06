@@ -469,3 +469,42 @@ html.bm-generating .bm-pill {
 @media (prefers-reduced-motion: reduce) {
   html.bm-generating .bm-dialog, html.bm-generating .bm-pill { animation: none; }
 }
+
+/* what the prompt applies to (v1.11): a two-way switch above the prompt */
+.bm-target {
+  display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 0;
+  border: 1px solid var(--bm-rule-strong); border-radius: var(--r-1); overflow: hidden;
+}
+.bm-target-opt {
+  display: grid; gap: 2px; align-content: center; min-height: 54px; min-width: 0; margin: 0; padding: 8px var(--s-4);
+  text-align: left; font: inherit; color: var(--bm-muted); background: var(--bm-field); border: 0; cursor: pointer;
+  transition: background-color var(--d-2) var(--ease-quint), color var(--d-2) var(--ease-quint);
+}
+.bm-target-opt + .bm-target-opt { border-left: 1px solid var(--bm-rule-strong); }
+.bm-target-kicker { font-family: var(--bm-font-mono); font-size: var(--t-meta); letter-spacing: .08em; text-transform: uppercase; }
+.bm-target-name {
+  font-family: var(--bm-font-display); font-weight: 560; font-stretch: 94%; font-size: var(--t-ui); letter-spacing: -.01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.bm-target-opt[aria-checked="true"] { background: var(--bm-fg); color: var(--bm-bg); }
+.bm-target-opt[aria-checked="true"] .bm-target-kicker::before { content: "\25CF  "; color: var(--bm-accent); }
+.bm-target-opt:hover:not(:disabled):not([aria-checked="true"]) { color: var(--bm-fg); background: color-mix(in oklab, var(--bm-fg) 6%, var(--bm-field)); }
+.bm-target-opt:focus-visible { outline: 2px solid var(--bm-accent); outline-offset: -2px; }
+.bm-target-opt:disabled { cursor: default; }
+/* a new site reads as a fresh start: the box takes the accent edge */
+.bm-form-new .bm-input { border-style: dashed; }
+
+/* Copy, wherever a prompt is (the full text) */
+.bm-copy {
+  display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 0 8px; margin: 0;
+  font-family: var(--bm-font-mono); font-size: var(--t-meta); letter-spacing: .06em; text-transform: uppercase;
+  color: var(--bm-muted); background: none; border: 1px solid var(--bm-rule); border-radius: var(--r-pill); cursor: pointer;
+  transition: color var(--d-2) var(--ease-quint), border-color var(--d-2) var(--ease-quint);
+}
+.bm-copy:hover, .bm-copy:focus-visible { color: var(--bm-fg); border-color: var(--bm-rule-strong); }
+.bm-copy:focus-visible { outline: 2px solid var(--bm-accent); outline-offset: 2px; }
+.bm-copy.bm-copied { color: var(--bm-accent); border-color: var(--bm-accent); }
+.bm-gen-head .bm-copy { margin-left: auto; }
+.bm-gen-head { align-items: center; }
+.bm-rev-item { position: relative; }
+.bm-rev-item > .bm-copy { margin: 0 0 var(--s-3) var(--s-5); }

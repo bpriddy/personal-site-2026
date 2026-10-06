@@ -43,6 +43,29 @@
       .catch(function () { cancelBtn.disabled = false; cancelBtn.textContent = "Cancel run"; });
   });
 
+  // a Copy button on each of Ben's prompts in the conversation (the full text)
+  function copyButtonFor(getText) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.className = "b-copy";
+    b.textContent = "Copy";
+    b.title = "Copy the prompt";
+    b.addEventListener("click", function () {
+      var done = function () { b.textContent = "Copied"; setTimeout(function () { b.textContent = "Copy"; }, 1600); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(getText()).then(done, function () { b.textContent = "Couldn't copy"; });
+    });
+    return b;
+  }
+  function addCopy(li) {
+    if (!li.classList.contains("b-user") || li.querySelector(".b-copy")) return;
+    var who = li.querySelector(".b-who");
+    var text = function () {
+      return Array.prototype.map.call(li.querySelectorAll(":scope > p"), function (p) { return p.textContent; }).join("\n\n");
+    };
+    (who || li).append(copyButtonFor(text));
+  }
+  Array.prototype.forEach.call(chat.querySelectorAll(".b-turn"), addCopy);
+
   var startImages = []; // /media/ paths from the create form (#start=...&images=...)
 
   function addTurn(role, text, images) {
@@ -61,6 +84,7 @@
       li.appendChild(box);
     }
     chat.appendChild(li);
+    addCopy(li);
   }
 
   form.addEventListener("submit", function (e) {

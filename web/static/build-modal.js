@@ -141,7 +141,32 @@
   });
   var attachBar = el("div", "bm-attach");
   row.append(attachBar, keys, newBtn, buildBtn);
-  form.append(label, ta, hint, row);
+  newBtn.hidden = true; // the target switch says it now
+  // what the prompt applies to, always in view: change a version, or start a
+  // new site (a radio pair; the button and label repeat it)
+  var target = el("div", "bm-target");
+  target.setAttribute("role", "radiogroup");
+  target.setAttribute("aria-label", "What your prompt applies to");
+  function targetOpt(cls, kicker, onPick) {
+    var b = button("bm-target-opt " + cls, "", onPick);
+    b.setAttribute("role", "radio");
+    var k = el("span", "bm-target-kicker", kicker);
+    var n = el("span", "bm-target-name");
+    b.append(k, n);
+    return { btn: b, name: n };
+  }
+  var tChange = targetOpt("bm-target-change", "Change", function () {
+    var c = changeCandidate();
+    if (c) chooseMode({ kind: "change", slug: c.slug, rev: c.rev });
+    ta.focus();
+  });
+  var tNew = targetOpt("bm-target-new", "New", function () {
+    chooseMode({ kind: "new", slug: "", rev: "" });
+    ta.focus();
+  });
+  tNew.name.textContent = "Start a new site";
+  target.append(tChange.btn, tNew.btn);
+  form.append(target, label, ta, hint, row);
   var attach = window.BuilderAttach ? window.BuilderAttach.mount({
     textarea: ta, bar: attachBar, max: 1,
     onError: function (msg) { showNotice(msg); }
@@ -177,7 +202,8 @@
   var genHead = el("div", "bm-gen-head");
   var genLabel = el("p", "bm-gen-label", "Building your version");
   var genTime = el("span", "bm-gen-time");
-  genHead.append(genLabel, genTime);
+  var genCopy = copyButton(function () { var g = genInfo(); return g ? g.prompt : ""; }, "Copy the prompt being built");
+  genHead.append(genLabel, genTime, genCopy);
   var genPrompt = el("p", "bm-gen-prompt");
   var cancelBtn = button("bm-btn bm-cancel", "Cancel this build", function () { cancelGen(); });
   cancelBtn.prepend(iconCross());
@@ -232,6 +258,41 @@
     return s;
   }
   function iconCross() { return svg("M6 6l12 12M18 6L6 18"); }
+  function iconCopy() { return svg("M9 9h10v10H9zM5 15V5h10"); }
+
+  // copyButton: a small button that copies a prompt's full text (getText is
+  // read at click time), saying "Copied" for a moment
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text);
+    return new Promise(function (resolve, reject) {
+      var t = document.createElement("textarea");
+      t.value = text;
+      t.setAttribute("readonly", "");
+      t.style.position = "fixed";
+      t.style.opacity = "0";
+      document.body.append(t);
+      t.select();
+      try { document.execCommand("copy") ? resolve() : reject(new Error("copy")); } catch (e) { reject(e); }
+      t.remove();
+    });
+  }
+  function copyButton(getText, label) {
+    var b = button("bm-copy", "", function (e) {
+      e.stopPropagation();
+      var text = getText();
+      if (!text) return;
+      copyText(text).then(function () {
+        b.classList.add("bm-copied");
+        txt.textContent = "Copied";
+        setTimeout(function () { b.classList.remove("bm-copied"); txt.textContent = "Copy"; }, 1600);
+      }, function () { txt.textContent = "Couldn't copy"; });
+    });
+    b.setAttribute("aria-label", label || "Copy the prompt");
+    b.title = label || "Copy the prompt";
+    var txt = el("span", "bm-copy-text", "Copy");
+    b.append(iconCopy(), txt);
+    return b;
+  }
   function iconLine() { return svg("M6 18h12"); }
 
   // ── data ──
@@ -282,6 +343,7 @@
     if (loading) return loading;
     loading = api("/frontends").then(function (s) {
       state = s;
+      if (!modeChosen && !busy && s.live && s.live.slug) mode = { kind: "change", slug: s.live.slug, rev: s.live.revision };
       if (!busy && !follow) {
         for (var i = 0; i < s.frontends.length; i++) {
           if (s.frontends[i].running) { follow = { slug: s.frontends[i].slug, had: s.frontends[i].revisions.length }; break; }
@@ -391,6 +453,31 @@
     renderForm();
   }
 
+  // the visitor's own choice of target, kept for this tab across reloads; until
+  // they choose, a version on the site is what the prompt changes
+  var MODE_KEY = "bm-mode", modeChosen = false;
+  function chooseMode(m) {
+    modeChosen = true;
+    try { sessionStorage.setItem(MODE_KEY, JSON.stringify(m)); } catch (e) { /* storage off */ }
+    setMode(m);
+  }
+  (function () {
+    try {
+      var m = JSON.parse(sessionStorage.getItem(MODE_KEY) || "null");
+      if (m && (m.kind === "new" || (m.kind === "change" && typeof m.slug === "string"))) { mode = m; modeChosen = true; }
+    } catch (e) { /* none */ }
+  })();
+  // changeCandidate: what "Change" means now: the version being changed, else
+  // the one on the site, else the newest version of the newest creation
+  function changeCandidate() {
+    if (mode.kind === "change" && findFrontend(mode.slug)) return { slug: mode.slug, rev: mode.rev };
+    var live = state && state.live;
+    if (live && findFrontend(live.slug)) return { slug: live.slug, rev: live.revision };
+    var fs = state ? state.frontends : [];
+    for (var i = 0; i < fs.length; i++) if (fs[i].revisions.length) return { slug: fs[i].slug, rev: fs[i].revisions[0].id };
+    return null;
+  }
+
   function renderForm() {
     var enabled = !!(state && state.enabled);
     form.hidden = !enabled;
@@ -399,27 +486,34 @@
     if (mode.kind === "change" && !f) mode = { kind: "new", slug: "", rev: "" };
     var rv = f ? findRevision(f, mode.rev) : null;
     if (mode.kind === "new") {
-      label.textContent = "Describe your version of the site";
-      buildBtn.textContent = "Build";
+      label.textContent = "Describe a new version of the site";
+      buildBtn.textContent = "Build a new site";
       ta.placeholder = "Describe the site you want \u2014 a mood, a reference, a rule.";
-      hint.textContent = "";
-      newBtn.hidden = true;
+      hint.textContent = "This starts a new creation. Your existing ones stay as they are.";
     } else if (rv) {
-      label.textContent = "What should change in version " + rv.number + " of “" + f.title + "”?";
-      buildBtn.textContent = "Make the change";
+      label.textContent = "What should change in version " + rv.number + " of \u201c" + f.title + "\u201d?";
+      buildBtn.textContent = "Change version " + rv.number;
       ta.placeholder = "What should change? A colour, a feeling, a rule.";
-      hint.textContent = "Changes start from version " + rv.number + ". Older versions stay as they are.";
-      newBtn.hidden = false;
+      hint.textContent = "This makes version " + (f.revisions.length + 1) + ", starting from version " + rv.number + ". Older versions stay as they are.";
     } else {
-      label.textContent = "Describe “" + f.title + "”";
-      buildBtn.textContent = "Build";
+      label.textContent = "Describe \u201c" + f.title + "\u201d";
+      buildBtn.textContent = "Build \u201c" + f.title + "\u201d";
       ta.placeholder = "Describe it \u2014 a mood, a reference, a rule.";
       hint.textContent = "";
-      newBtn.hidden = false;
     }
+    // the switch: what the prompt applies to
+    var cand = changeCandidate();
+    target.hidden = !cand;
+    if (cand) {
+      var cf = findFrontend(cand.slug), crv = findRevision(cf, cand.rev);
+      tChange.name.textContent = "\u201c" + cf.title + "\u201d" + (crv ? " \u00b7 version " + crv.number : "");
+    }
+    tChange.btn.setAttribute("aria-checked", mode.kind === "change" ? "true" : "false");
+    tNew.btn.setAttribute("aria-checked", mode.kind === "new" ? "true" : "false");
+    form.classList.toggle("bm-form-new", mode.kind === "new");
     form.classList.toggle("bm-form-change", mode.kind !== "new"); // a longer label, set smaller
     var off = !!busy || !!genInfo();
-    ta.disabled = buildBtn.disabled = newBtn.disabled = off;
+    ta.disabled = buildBtn.disabled = newBtn.disabled = tChange.btn.disabled = tNew.btn.disabled = off;
     if (attach) attach.setDisabled(off);
     composer.classList.toggle("bm-composer-off", !enabled);
   }
@@ -471,7 +565,7 @@
         if (!f.running && !(busy && busy.slug === f.slug)) {
           var again = el("p", "bm-fe-note", "Not built yet. ");
           again.append(keyed(button("bm-link", "Build it", function () {
-            setMode({ kind: "change", slug: f.slug, rev: "" });
+            chooseMode({ kind: "change", slug: f.slug, rev: "" });
             ta.focus();
           }), "build:" + f.slug));
           li.append(again);
@@ -495,9 +589,12 @@
         if (rv.parentNumber) top.append(el("span", "bm-rev-from", "from version " + rv.parentNumber));
         top.append(el("span", "bm-rev-state", on ? "On the site" : "Show on the site"));
         b.append(top);
+        var prompt = rv.prompt || "";
         if (rv.prompt) b.append(el("span", "bm-rev-prompt", "“" + rv.prompt + "”"));
         if (f.status.revision === rv.id && f.status.key !== "draft") b.append(el("span", "bm-chip bm-chip-" + f.status.key, f.status.label));
         item.append(b);
+        // the full prompt (the list shows three lines of it)
+        if (prompt) item.append(keyed(copyButton(function () { return prompt; }, "Copy the prompt for version " + rv.number), "copy:" + rv.id));
         revs.append(item);
       });
       // the versions fold away (closed unless the visitor opened them)
@@ -515,7 +612,7 @@
         var acts = el("div", "bm-fe-actions");
         if (state.enabled) {
           acts.append(keyed(button("bm-btn bm-btn-text bm-change", "Change it", function () {
-            setMode({ kind: "change", slug: f.slug, rev: selected.id });
+            chooseMode({ kind: "change", slug: f.slug, rev: selected.id });
             ta.focus();
           }), "change:" + f.slug));
         }
@@ -566,7 +663,7 @@
     return api("/fe/" + encodeURIComponent(f.slug) + "/live", { rev: rv.id }).then(function (live) {
       state.live = live;
       if (window.siteHost) window.siteHost.reload();
-      if (!busy) setMode({ kind: "change", slug: f.slug, rev: rv.id });
+      if (!busy) chooseMode({ kind: "change", slug: f.slug, rev: rv.id });
       render();
     }).catch(function (err) {
       showNotice(err.message);
@@ -580,7 +677,7 @@
     return Promise.resolve(done).catch(function () {}).then(function () {
       exitBtn.disabled = false;
       if (state) state.live = null;
-      if (!busy) mode = { kind: "new", slug: "", rev: "" };
+      // the target stays as chosen: the switch shows what the prompt will change
       render();
     });
   }
@@ -711,7 +808,7 @@
       return api("/fe/" + encodeURIComponent(res.slug) + "/live", { rev: res.revision }).then(function (live) {
         if (state) state.live = live;
         if (window.siteHost) window.siteHost.reload();
-        mode = { kind: "change", slug: res.slug, rev: res.revision };
+        chooseMode({ kind: "change", slug: res.slug, rev: res.revision });
         pStatus.textContent = "Version " + res.number + " is on the site now. Want to change anything?";
         setPill("Version " + res.number + " is ready · Open", true);
         return finish(true);

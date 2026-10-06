@@ -97,3 +97,7 @@
 /* destructive actions (delete a revision) */
 .admin button.b-danger { color: var(--accent); border-color: color-mix(in oklab, var(--accent) 45%, transparent); }
 .admin button.b-danger:hover:not(:disabled) { border-color: var(--accent); }
+
+/* Copy on Ben's prompts in the conversation */
+.b-who { display: flex; align-items: center; gap: var(--s-2); }
+.admin .b-copy { min-height: 24px; padding: 0 8px; margin-left: auto; font-size: .7rem; }

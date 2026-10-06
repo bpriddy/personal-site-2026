@@ -56,7 +56,7 @@ test("the site bar's button opens the builder modal; Esc closes it and focus ret
   await expect(dialog).toHaveAttribute("aria-modal", "true");
   await expect(page).toHaveURL(`${MAIN}/`);
   await expect(page.locator("#bm-prompt")).toBeFocused();
-  await expect(dialog.getByRole("button", { name: "Build" })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Build a new site" })).toBeVisible();
   await expect(dialog.getByRole("heading", { name: "Your creations" })).toBeVisible();
   // the prompt comes first; your creations sit below it, folded until opened
   await expect(dialog.locator(".bm-mine")).not.toHaveAttribute("open", /.*/);
@@ -108,7 +108,7 @@ test("a visitor builds in the modal and sees it live; picks versions; nobody els
   const dialog = dialogOf(pa);
   const prompt = `e2e public ${Date.now().toString(36)}`;
   await pa.locator("#bm-prompt").fill(prompt);
-  await dialog.getByRole("button", { name: "Build" }).click();
+  await dialog.getByRole("button", { name: "Build a new site" }).click();
 
   // the run streams in the modal, then the site switches to version 1 by itself
   const card = dialog.locator(".bm-fe", { hasText: prompt.replace(/^e/, "E") });
@@ -135,7 +135,7 @@ test("a visitor builds in the modal and sees it live; picks versions; nobody els
   // reprompt: the form now changes the version on the site
   await expect(pa.locator("label[for=bm-prompt]")).toContainText("What should change in version 1");
   await pa.locator("#bm-prompt").fill("make it warmer");
-  await dialog.getByRole("button", { name: "Make the change" }).click();
+  await dialog.getByRole("button", { name: /^Change version \d+$/ }).click();
   await expect(card.locator(".bm-rev")).toHaveCount(2, { timeout: 20_000 });
   const r2Button = card.locator(".bm-rev").first(); // newest first
   await expect(r2Button).toHaveAttribute("aria-pressed", "true", { timeout: 10_000 });

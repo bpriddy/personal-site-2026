@@ -8,18 +8,24 @@ import { test, expect, ROTATION } from "./support";
 test.skip(ROTATION.length > 0, "needs the rotation from the store (run.sh phase prompted)");
 
 test("a build in progress: stripes, the prompt, a disabled box, survives a reload, cancels", async ({ page }) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto("/");
   await page.locator("#make-own").click();
   const dialog = page.getByRole("dialog", { name: "Re-imagine this site" });
   const prompt = "A slow brutalist page, all concrete";
   await dialog.locator("#bm-prompt").fill(prompt);
-  await dialog.getByRole("button", { name: "Build" }).click();
+  await dialog.getByRole("button", { name: "Build a new site" }).click();
 
   const html = page.locator("html");
   const card = dialog.locator(".bm-gen");
   await expect(html).toHaveClass(/bm-generating/);
   await expect(card).toBeVisible();
+  // Copy puts the full prompt on the clipboard
+  await card.getByRole("button", { name: "Copy the prompt being built" }).click();
+  await expect(card.locator(".bm-copy")).toHaveText("Copied");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(prompt);
   await expect(page.locator("#make-own .make-own-status")).toHaveText("Building…");
+
   await expect(card.locator(".bm-gen-prompt")).toHaveText(`“${prompt}”`);
   await expect(dialog.locator("#bm-prompt")).toBeDisabled();
   await expect(card.getByRole("button", { name: "Cancel this build" })).toBeEnabled();
@@ -71,18 +77,18 @@ test("during a build the visitor can still switch between their versions", async
   const dialog = page.getByRole("dialog", { name: "Re-imagine this site" });
   const prompt = `switching ${Date.now().toString(36)}`;
   await dialog.locator("#bm-prompt").fill(prompt);
-  await dialog.getByRole("button", { name: "Build" }).click();
+  await dialog.getByRole("button", { name: "Build a new site" }).click();
   const card = dialog.locator(".bm-fe", { hasText: prompt.replace(/^s/, "S") });
   await expect(card.locator(".bm-rev")).toHaveCount(1, { timeout: 20_000 });
   await expect(dialog.locator(".bm-progress")).toContainText("Version 1 is on the site now", { timeout: 15_000 });
   await dialog.locator("#bm-prompt").fill("make it warmer");
-  await dialog.getByRole("button", { name: "Make the change" }).click();
+  await dialog.getByRole("button", { name: /^Change version \d+$/ }).click();
   await expect(card.locator(".bm-rev")).toHaveCount(2, { timeout: 20_000 });
   await expect(dialog.locator(".bm-progress")).toContainText("Version 2 is on the site now", { timeout: 15_000 });
 
   // a third build, and while it runs: switch to version 1, then back to 2
   await dialog.locator("#bm-prompt").fill("make it cooler");
-  await dialog.getByRole("button", { name: "Make the change" }).click();
+  await dialog.getByRole("button", { name: /^Change version \d+$/ }).click();
   await expect(page.locator("html")).toHaveClass(/bm-generating/);
   await dialog.locator(".bm-mine-sum").click();
   await card.locator(".bm-versions-sum").click();
@@ -97,4 +103,45 @@ test("during a build the visitor can still switch between their versions", async
   // the build finishes as version 3, on the site
   await expect(card.locator(".bm-rev")).toHaveCount(3, { timeout: 20_000 });
   await expect(page.locator("html")).not.toHaveClass(/bm-generating/);
+});
+
+test("the prompt's target is always clear: the version on the site by default, the visitor's choice kept", async ({ page }) => {
+  await page.goto("/");
+  await page.locator("#make-own").click();
+  const dialog = page.getByRole("dialog", { name: "Re-imagine this site" });
+  // no creations yet: no switch, only a new site
+  await expect(dialog.locator(".bm-target")).toBeHidden();
+  const prompt = `target ${Date.now().toString(36)}`;
+  await dialog.locator("#bm-prompt").fill(prompt);
+  await dialog.getByRole("button", { name: "Build a new site" }).click();
+  await expect(dialog.locator(".bm-progress")).toContainText("Version 1 is on the site now", { timeout: 20_000 });
+
+  // after a reload, the version on the site is what the prompt changes
+  await page.reload();
+  await page.locator("#make-own").click();
+  const change = dialog.getByRole("radio", { name: /Change/ });
+  const fresh = dialog.getByRole("radio", { name: /New/ });
+  await expect(change).toHaveAttribute("aria-checked", "true");
+  await expect(change).toContainText("version 1");
+  await expect(dialog.getByRole("button", { name: "Change version 1" })).toBeVisible();
+  await expect(page.locator("label[for=bm-prompt]")).toContainText("What should change in version 1");
+  if (process.env.E2E_SHOT_DIR) await dialog.screenshot({ path: `${process.env.E2E_SHOT_DIR}/target-change.png` });
+
+  // choosing New sticks across a reload
+  await fresh.click();
+  await expect(fresh).toHaveAttribute("aria-checked", "true");
+  await expect(dialog.getByRole("button", { name: "Build a new site" })).toBeVisible();
+  await page.reload();
+  await page.locator("#make-own").click();
+  await expect(fresh).toHaveAttribute("aria-checked", "true");
+  await expect(dialog.getByRole("button", { name: "Build a new site" })).toBeVisible();
+  await change.click();
+  await expect(dialog.getByRole("button", { name: "Change version 1" })).toBeVisible();
+
+  // each version's prompt can be copied in full
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await dialog.locator(".bm-mine-sum").click();
+  await dialog.locator(".bm-versions-sum").first().click();
+  await dialog.getByRole("button", { name: "Copy the prompt for version 1" }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(prompt);
 });
