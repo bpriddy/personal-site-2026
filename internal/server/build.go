@@ -56,6 +56,7 @@ func (s *Server) buildRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /build/api/fe/{slug}/chat", post(s.buildChat))
 	mux.Handle("POST /build/api/fe/{slug}/live", post(s.buildLive))
 	mux.Handle("POST /build/api/fe/{slug}/submit", post(s.buildSubmit))
+	mux.Handle("POST /build/api/fe/{slug}/cancel", post(s.buildCancel))
 	mux.Handle("POST "+buildExitPath, cop.Handler(http.HandlerFunc(s.buildExit)))
 }
 
@@ -168,9 +169,14 @@ type (
 		Title     string          `json:"title"`
 		Credit    string          `json:"credit"` // how the visitor asked to be credited
 		UpdatedAt time.Time       `json:"updatedAt"`
-		Running   bool            `json:"running"` // a run is in progress (on this instance)
+		Running   bool            `json:"running"`       // a run is in progress
+		Run       *buildRun       `json:"run,omitempty"` // the run in progress (v1.11)
 		Status    visitorStatus   `json:"status"`
 		Revisions []buildRevision `json:"revisions"` // newest first
+	}
+	buildRun struct {
+		Prompt    string    `json:"prompt"`
+		StartedAt time.Time `json:"startedAt"`
 	}
 	buildRevision struct {
 		ID           string    `json:"id"`
@@ -213,12 +219,21 @@ func (s *Server) buildList(w http.ResponseWriter, r *http.Request) {
 		s.builder.mu.Lock()
 		running := s.builder.running[f.ID]
 		s.builder.mu.Unlock()
+		// the store knows about runs on every instance (a page reload may land
+		// on another one): the newest run, if it's still running and young
+		// enough to be alive
+		var run *buildRun
+		if runs, err := s.builderStore().Runs(ctx, f.ID, 1); err == nil && len(runs) == 1 &&
+			runs[0].Status == store.RunRunning && s.now().Sub(runs[0].StartedAt) < RunTimeout+time.Minute {
+			running = true
+			run = &buildRun{Prompt: runs[0].Prompt, StartedAt: runs[0].StartedAt}
+		}
 		numbers := map[string]int{}
 		for _, rv := range revs {
 			numbers[rv.ID] = rv.Number
 		}
 		row := buildFrontend{ID: f.ID, Slug: strings.TrimPrefix(f.ID, "fe/"), Title: f.Title, Credit: f.CreditRequested, UpdatedAt: f.UpdatedAt,
-			Running: running, Status: st, Revisions: []buildRevision{}}
+			Running: running, Run: run, Status: st, Revisions: []buildRevision{}}
 		for _, rv := range revs {
 			row.Revisions = append(row.Revisions, buildRevision{ID: rv.ID, Number: rv.Number, ParentNumber: numbers[rv.ParentID],
 				Prompt: lastPrompt(rv.Conversation), Summary: rv.Summary, CreatedAt: rv.CreatedAt})
@@ -478,4 +493,19 @@ func (s *Server) buildSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": st, "message": buildMessage(msgSubmitted, s.limits)})
+}
+
+// buildCancel stops the visitor's running build of {slug} (v1.11): JSON
+// {"canceled": n}. The run ends with a "canceled" event and no new version.
+func (s *Server) buildCancel(w http.ResponseWriter, r *http.Request) {
+	f, ok := s.ownedFrontend(w, r)
+	if !ok {
+		return
+	}
+	n, err := s.cancelRuns(r.Context(), f.ID)
+	if err != nil {
+		s.fail(w, "build: cancel", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"canceled": n})
 }

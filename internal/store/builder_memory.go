@@ -21,6 +21,7 @@ type memBuilder struct {
 	asked    map[string]string // front-end ID → credit requested
 	copy     map[string]map[string]string
 	siteCopy map[string]string
+	cancel   map[int64]bool // run ID → cancel requested
 	revs     map[string]Revision
 	runs     []Run
 }
@@ -320,4 +321,31 @@ func (m *Memory) SetSiteCopy(_ context.Context, lines map[string]string) error {
 		}
 	}
 	return nil
+}
+
+func (m *Memory) RequestCancel(_ context.Context, frontendID string) ([]int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.builder.cancel == nil {
+		m.builder.cancel = map[int64]bool{}
+	}
+	var ids []int64
+	for _, r := range m.builder.runs {
+		if r.FrontendID == frontendID && r.Status == RunRunning {
+			m.builder.cancel[r.ID] = true
+			ids = append(ids, r.ID)
+		}
+	}
+	return ids, nil
+}
+
+func (m *Memory) CancelRequested(_ context.Context, runID int64) (bool, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, r := range m.builder.runs {
+		if r.ID == runID {
+			return m.builder.cancel[runID], nil
+		}
+	}
+	return false, ErrNotFound
 }

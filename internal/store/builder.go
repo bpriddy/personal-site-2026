@@ -60,6 +60,11 @@ type Builder interface {
 	StartRun(ctx context.Context, run Run) (int64, error)
 	// FinishRun marks a run done (with its revision) or failed (with errMsg).
 	FinishRun(ctx context.Context, id int64, revisionID, errMsg string) error
+	// RequestCancel asks the front end's running runs to stop and returns
+	// their IDs (none if nothing is running).
+	RequestCancel(ctx context.Context, frontendID string) ([]int64, error)
+	// CancelRequested reports whether a run was asked to stop.
+	CancelRequested(ctx context.Context, runID int64) (bool, error)
 	// Runs lists a front end's most recent runs, newest first.
 	Runs(ctx context.Context, frontendID string, limit int) ([]Run, error)
 }
@@ -139,6 +144,9 @@ type Run struct {
 	StartedAt  time.Time
 	FinishedAt time.Time // zero while running
 }
+
+// RunCanceled is a canceled run's Error.
+const RunCanceled = "canceled"
 
 // MaxCredit is the longest credit, in runes.
 const MaxCredit = 80

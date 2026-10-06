@@ -24,3 +24,7 @@ Licenses: OFL-newsreader.txt, OFL-instrumentsans.txt, OFL-fragmentmono.txt
 Served at /static/fonts/<file> (main site) and /fonts/<file> (user-content
 service), cached for a year: never change a file in place; add a new name.
 The Latin subset has no arrows (← → ↗) or ⌘ ↵ ⇧; avoid them in house type.
+
+geist-mono.woff2             Geist Mono (The Geist Project Authors), variable wght, Latin subset, unmodified
+  fetched 2026-10-06 from Google Fonts (fonts.gstatic.com, geistmono v6, latin). Used by the
+  builder modal (web/static/build-modal.css), replacing Fragment Mono there. License: OFL-geistmono.txt

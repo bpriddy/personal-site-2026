@@ -34,8 +34,9 @@ type builderState struct {
 	files revfiles.Store   // revision files; defaults to FRONTENDS_DIR
 
 	mu      sync.Mutex
-	running map[string]bool // front-end IDs with a chat run in progress
-	runs    map[int64]bool  // their builder_runs IDs, to close if the server stops mid-run
+	running map[string]bool              // front-end IDs with a chat run in progress
+	runs    map[int64]bool               // their builder_runs IDs, to close if the server stops mid-run
+	cancels map[int64]context.CancelFunc // stop a run on this instance (cancel requests)
 }
 
 // InterruptRuns records the chat runs still in progress on this instance as
@@ -92,6 +93,7 @@ func (s *Server) builderRoutes(admin *http.ServeMux) {
 	admin.HandleFunc("POST /admin/builder/fe/{slug}/activate", s.builderActivate)
 	admin.HandleFunc("POST /admin/builder/fe/{slug}/credit", s.builderCredit)
 	admin.HandleFunc("POST /admin/builder/fe/{slug}/copy", s.builderCopy)
+	admin.HandleFunc("POST /admin/builder/fe/{slug}/cancel", s.builderCancel)
 	admin.HandleFunc("POST /admin/builder/fe/{slug}/delete-revision", s.builderDeleteRevision)
 	admin.HandleFunc("POST /admin/builder/fe/{slug}/delete", s.builderDeleteFrontend)
 	admin.HandleFunc("POST /admin/builder/fe/{slug}/import", s.builderImport)
@@ -791,12 +793,23 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, f store.Fronten
 		s.builder.runs = map[int64]bool{}
 	}
 	s.builder.runs[runID] = true
+	// the run stops when someone cancels it: here directly, or on another
+	// instance through the store (watched every couple of seconds)
+	runCtx, cancelRun := context.WithCancel(ctx)
+	defer cancelRun()
+	if s.builder.cancels == nil {
+		s.builder.cancels = map[int64]context.CancelFunc{}
+	}
+	s.builder.cancels[runID] = cancelRun
 	s.builder.mu.Unlock()
 	defer func() {
 		s.builder.mu.Lock()
 		delete(s.builder.runs, runID)
+		delete(s.builder.cancels, runID)
 		s.builder.mu.Unlock()
 	}()
+	go s.watchCancel(runCtx, runID, cancelRun)
+	canceled := func() bool { return runCtx.Err() != nil && ctx.Err() == nil }
 	req.Content = s.siteContent(ctx)
 
 	ev := newEventStream(w)
@@ -805,7 +818,15 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, f store.Fronten
 	ev.send(builder.Event{Type: "status", Text: "working"})
 
 	started := s.now()
-	res, err := s.builder.agent.Run(ctx, req, ev.send)
+	res, err := s.builder.agent.Run(runCtx, req, ev.send)
+	if err != nil && canceled() {
+		if ferr := b.FinishRun(ctx, runID, "", store.RunCanceled); ferr != nil {
+			s.log.Error("builder: finish run", "err", ferr)
+		}
+		ev.send(builder.Event{Type: "canceled", Text: "Stopped. Nothing was changed."})
+		ev.send(builder.Event{Type: "done"})
+		return
+	}
 	var rev store.Revision
 	if err == nil {
 		turns := append(slices.Clone(history),
@@ -928,4 +949,56 @@ func attachmentPaths(images []builder.Attachment) []string {
 		out = append(out, a.Path)
 	}
 	return out
+}
+
+// cancelPoll is how often a run checks the store for a cancel request made
+// on another instance.
+var cancelPoll = 2 * time.Second
+
+// watchCancel stops the run when its cancel is requested in the store.
+func (s *Server) watchCancel(ctx context.Context, runID int64, cancel context.CancelFunc) {
+	b := s.builderStore()
+	t := time.NewTicker(cancelPoll)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if c, err := b.CancelRequested(context.WithoutCancel(ctx), runID); err == nil && c {
+				cancel()
+				return
+			}
+		}
+	}
+}
+
+// cancelRuns asks f's running runs to stop: recorded in the store (for the
+// instance running them) and stopped right away when they run here.
+func (s *Server) cancelRuns(ctx context.Context, frontendID string) (int, error) {
+	ids, err := s.builderStore().RequestCancel(ctx, frontendID)
+	if err != nil {
+		return 0, err
+	}
+	s.builder.mu.Lock()
+	for _, id := range ids {
+		if c := s.builder.cancels[id]; c != nil {
+			c()
+		}
+	}
+	s.builder.mu.Unlock()
+	return len(ids), nil
+}
+
+// builderCancel stops the front end's running chat run (admin).
+func (s *Server) builderCancel(w http.ResponseWriter, r *http.Request) {
+	if s.needBuilderStore(w) == nil {
+		return
+	}
+	n, err := s.cancelRuns(r.Context(), frontend.PromptedID(r.PathValue("slug")))
+	if err != nil {
+		s.fail(w, "builder: cancel", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"canceled": n})
 }

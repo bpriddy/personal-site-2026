@@ -136,6 +136,32 @@ func builderConformance(t *testing.T, newStore func(t *testing.T) Builder) {
 		must(t, st.CreatePromptedFrontend(ctx, "fe/gone", "Again"))
 	})
 
+	t.Run("cancel", func(t *testing.T) {
+		st := newStore(t)
+		must(t, st.CreatePromptedFrontend(ctx, "fe/k", "K"))
+		if ids, err := st.RequestCancel(ctx, "fe/k"); err != nil || len(ids) != 0 {
+			t.Fatalf("nothing running: %v %v", ids, err)
+		}
+		id, err := st.StartRun(ctx, Run{FrontendID: "fe/k", Prompt: "p"})
+		must(t, err)
+		if c, err := st.CancelRequested(ctx, id); err != nil || c {
+			t.Fatalf("before: %v %v", c, err)
+		}
+		if ids, err := st.RequestCancel(ctx, "fe/k"); err != nil || len(ids) != 1 || ids[0] != id {
+			t.Fatalf("RequestCancel = %v %v", ids, err)
+		}
+		if c, _ := st.CancelRequested(ctx, id); !c {
+			t.Fatal("not requested")
+		}
+		must(t, st.FinishRun(ctx, id, "", RunCanceled))
+		if ids, _ := st.RequestCancel(ctx, "fe/k"); len(ids) != 0 {
+			t.Fatalf("finished run canceled again: %v", ids)
+		}
+		if _, err := st.CancelRequested(ctx, 99999); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("unknown run: %v", err)
+		}
+	})
+
 	t.Run("copy", func(t *testing.T) {
 		st := newStore(t)
 		must(t, st.CreatePromptedFrontend(ctx, "fe/c", "C"))

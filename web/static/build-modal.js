@@ -169,6 +169,21 @@
   notes.append(notesSum, pThinking, pText);
   progress.append(pStatus, pSteps, notes);
 
+  // while a build runs (here, in another tab, or before a reload): what's being
+  // built and a clear way to stop it (v1.11)
+  var gen = el("section", "bm-gen");
+  gen.hidden = true;
+  gen.setAttribute("aria-label", "Build in progress");
+  var genHead = el("div", "bm-gen-head");
+  var genLabel = el("p", "bm-gen-label", "Building your version");
+  var genTime = el("span", "bm-gen-time");
+  genHead.append(genLabel, genTime);
+  var genPrompt = el("p", "bm-gen-prompt");
+  var cancelBtn = button("bm-btn bm-cancel", "Cancel this build", function () { cancelGen(); });
+  cancelBtn.prepend(iconCross());
+  var genNote = el("p", "bm-gen-note", "The prompt box opens again when it's done or canceled. Canceling keeps everything as it was.");
+  gen.append(genHead, genPrompt, cancelBtn, genNote);
+
   // your creations: below everything else, folded away behind its title until opened
   var mine = el("details", "bm-mine");
   var mineSum = el("summary", "bm-mine-sum");
@@ -184,7 +199,7 @@
   // the prompt comes first: it's what this dialog is for
   var composer = el("div", "bm-composer");
   composer.append(form);
-  body.append(notice, liveBox, composer, intro, progress, mine);
+  body.append(notice, liveBox, gen, composer, intro, progress, mine);
   dialog.append(runLine, grab, head, body);
   wrap.append(backdrop, dialog);
 
@@ -259,13 +274,19 @@
         setPill("Version " + rv.number + " is ready · Open", true);
       });
     } else {
-      pStatus.textContent = "That one didn't finish. Please try again.";
+      pStatus.textContent = "That build stopped without a new version.";
+      if (!isOpen) setPill("Build stopped · Open", true);
     }
   }
   function refresh() {
     if (loading) return loading;
     loading = api("/frontends").then(function (s) {
       state = s;
+      if (!busy && !follow) {
+        for (var i = 0; i < s.frontends.length; i++) {
+          if (s.frontends[i].running) { follow = { slug: s.frontends[i].slug, had: s.frontends[i].revisions.length }; break; }
+        }
+      }
       render();
       checkFollow();
       return s;
@@ -283,7 +304,7 @@
   // another tab), check back until it's done
   function schedulePoll() {
     clearTimeout(pollTimer);
-    if ((!isOpen && !follow) || busy || !state) return;
+    if (busy || !state) return;
     if (state.frontends.some(function (f) { return f.running; })) pollTimer = setTimeout(refresh, POLL_MS);
   }
 
@@ -303,6 +324,65 @@
     return null;
   }
 
+  // ── a build in progress (v1.11) ──
+  // genInfo: the build going on now, streamed here (busy) or seen in the
+  // list (a reload, another tab): {slug, prompt, startedAt (ms)}, or null
+  var GEN_KEY = "bm-generating";
+  var canceling = false, genTimer = 0;
+  function genInfo() {
+    if (busy) return { slug: busy.slug, prompt: busy.prompt || "", startedAt: busy.startedAt || 0 };
+    if (!state) return null;
+    for (var i = 0; i < state.frontends.length; i++) {
+      var f = state.frontends[i];
+      if (f.running) return { slug: f.slug, prompt: f.run ? f.run.prompt : "", startedAt: f.run ? Date.parse(f.run.startedAt) || 0 : 0 };
+    }
+    return null;
+  }
+  function elapsed(ms) {
+    var s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+    return s < 60 ? s + "s" : Math.floor(s / 60) + "m " + (s % 60 < 10 ? "0" : "") + (s % 60) + "s";
+  }
+  function applyGen() {
+    var g = genInfo();
+    root.classList.toggle("bm-generating", !!g);
+    gen.hidden = !g;
+    try { if (g) localStorage.setItem(GEN_KEY, "1"); else localStorage.removeItem(GEN_KEY); } catch (e) { /* storage off: the list still tells */ }
+    if (!g) {
+      canceling = false;
+      clearInterval(genTimer);
+      genTimer = 0;
+      return;
+    }
+    genPrompt.textContent = g.prompt ? "\u201c" + g.prompt + "\u201d" : "";
+    genPrompt.hidden = !g.prompt;
+    cancelBtn.disabled = canceling;
+    cancelBtn.lastChild.textContent = canceling ? "Canceling\u2026" : "Cancel this build";
+    var tick = function () { genTime.textContent = g.startedAt ? elapsed(g.startedAt) : ""; };
+    tick();
+    if (!genTimer) genTimer = setInterval(function () { var c = genInfo(); if (c && c.startedAt) genTime.textContent = elapsed(c.startedAt); }, 1000);
+    // closed while building: the pill keeps it in view
+    if (!isOpen) {
+      pill.hidden = false;
+      if (!busy) setPill("Building\u2026 \u00b7 Open", false);
+    }
+  }
+  function cancelGen() {
+    var g = genInfo();
+    if (!g || canceling) return;
+    canceling = true;
+    applyGen();
+    pStatus.textContent = "Canceling\u2026";
+    pStatus.classList.remove("bm-error");
+    api("/fe/" + encodeURIComponent(g.slug) + "/cancel", {}).then(function () {
+      // streaming here: the stream ends with "canceled"; otherwise the list will show it stopped
+      if (!busy) return refresh();
+    }).catch(function (err) {
+      canceling = false;
+      applyGen();
+      showNotice(err && err.message ? err.message : "Couldn't cancel it. Please try again.");
+    });
+  }
+
   // ── rendering ──
   function showNotice(text) {
     notice.textContent = text || "";
@@ -317,7 +397,6 @@
   function renderForm() {
     var enabled = !!(state && state.enabled);
     form.hidden = !enabled;
-    if (attach) attach.setDisabled(!!busy);
     if (state && state.maxPrompt) ta.maxLength = state.maxPrompt;
     var f = mode.kind === "change" ? findFrontend(mode.slug) : null;
     if (mode.kind === "change" && !f) mode = { kind: "new", slug: "", rev: "" };
@@ -342,8 +421,9 @@
       newBtn.hidden = false;
     }
     form.classList.toggle("bm-form-change", mode.kind !== "new"); // a longer label, set smaller
-    var off = !!busy;
+    var off = !!busy || !!genInfo();
     ta.disabled = buildBtn.disabled = newBtn.disabled = off;
+    if (attach) attach.setDisabled(off);
     composer.classList.toggle("bm-composer-off", !enabled);
   }
 
@@ -374,6 +454,7 @@
     renderForm();
     renderList();
     minBtn.hidden = !busy;
+    applyGen();
   }
 
   function renderList() {
@@ -559,9 +640,10 @@
     showNotice("");
     resetProgress();
     var m = mode;
-    busy = { slug: m.slug, title: "" };
+    busy = { slug: m.slug, title: "", prompt: prompt, startedAt: Date.now() };
     renderForm();
     renderHead();
+    applyGen();
     minBtn.hidden = false;
     setPill("Building…", false);
 
@@ -601,6 +683,10 @@
       if (res.outcome !== "revision") {
         progress.classList.toggle("bm-failed", res.outcome === "error");
         if (res.outcome === "error") setPill("It didn't work · Open", true);
+        if (res.outcome === "canceled") {
+          pStatus.textContent = "Canceled. Nothing was changed.";
+          setPill("Canceled · Open", true);
+        }
         return finish(false);
       }
       ta.value = "";
@@ -685,6 +771,7 @@
   var hideTimer = 0;
   function hide() {
     isOpen = false;
+    setTimeout(applyGen, 0); // a build still going: the pill keeps it in view
     clearTimeout(pollTimer);
     root.classList.remove("bm-open");
     setInert(false);
@@ -823,6 +910,9 @@
   });
 
   window.buildModal = { open: open, close: close };
+
+  // a build was running before this page loaded: pick it back up
+  try { if (localStorage.getItem(GEN_KEY)) refresh(); } catch (e) { /* storage off */ }
 
   try {
     var params = new URLSearchParams(location.search);

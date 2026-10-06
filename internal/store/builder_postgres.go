@@ -305,3 +305,18 @@ func (p *Postgres) DeleteFrontend(ctx context.Context, id string) error {
 	}
 	return ErrInRotation
 }
+
+func (p *Postgres) RequestCancel(ctx context.Context, frontendID string) ([]int64, error) {
+	rows, err := p.pool.Query(ctx, `UPDATE builder_runs SET cancel_requested = true
+		WHERE frontend_id = $1 AND status = 'running' RETURNING id`, frontendID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[int64])
+}
+
+func (p *Postgres) CancelRequested(ctx context.Context, runID int64) (bool, error) {
+	var c bool
+	err := p.pool.QueryRow(ctx, `SELECT cancel_requested FROM builder_runs WHERE id = $1`, runID).Scan(&c)
+	return c, notFound(err)
+}

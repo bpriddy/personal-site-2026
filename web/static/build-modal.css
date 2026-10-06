@@ -2,8 +2,14 @@
    (docs/design-pov.md, 5.5; web/static/build-modal.js). On base.css tokens,
    aliased here as --bm-* so the Studio can be themed on its own. Desktop: a
    square sheet docked right, the site still alive behind a scrim. Phones and
-   tablets: a bottom sheet with a grabber. */
+   tablets: a bottom sheet with a grabber. Its own type (upright Instrument
+   Sans for display, Geist Mono for labels; no italics) and a neutral
+   off-white in light mode, so it doesn't read as the site's serif identity. */
+@font-face { font-family: "Geist Mono"; src: url("/static/fonts/geist-mono.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
 :root {
+  --bm-font-display: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+  --bm-font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --bm-field: var(--bg);
   --bm-bg: var(--bg-raised);
   --bm-fg: var(--fg);
   --bm-muted: var(--fg-2);
@@ -20,7 +26,15 @@
   --bm-z: var(--z-modal);
 }
 @media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) { --bm-shadow: 0 30px 80px -40px rgb(21 21 19 / .35); }
+  :root:not([data-theme="dark"]) {
+    --bm-shadow: 0 30px 80px -40px rgb(21 21 19 / .35);
+    --bm-bg: #FAFAF8; --bm-field: #FFFFFF; --bm-muted: #5F5F5B; --bm-faint: #8E8E89;
+    --bm-rule: rgb(20 20 18 / .1); --bm-rule-strong: rgb(20 20 18 / .26);
+  }
+}
+:root[data-theme="light"] {
+  --bm-bg: #FAFAF8; --bm-field: #FFFFFF; --bm-muted: #5F5F5B; --bm-faint: #8E8E89;
+  --bm-rule: rgb(20 20 18 / .1); --bm-rule-strong: rgb(20 20 18 / .26);
 }
 
 html.bm-open, html.bm-open body { overflow: hidden; }
@@ -104,7 +118,7 @@ html.bm-open #frontend { transform: scale(.985); }
 }
 .bm-title, .bm-head-meta, .bm-state, .bm-icon-text, .bm-chip, .bm-fe-count, .bm-rev-top, .bm-label, .bm-keys,
 .bm-steps, .bm-notes summary, .bm-h3, .bm-starter, .bm-pill, .bm-foot {
-  font-family: var(--font-mono); font-size: var(--t-meta); font-weight: 400; line-height: 1.3;
+  font-family: var(--bm-font-mono); font-size: var(--t-meta); font-weight: 400; line-height: 1.3;
   letter-spacing: .06em; text-transform: uppercase; font-variant-numeric: tabular-nums;
 }
 .bm-title { margin: 0; color: var(--bm-fg); white-space: nowrap; }
@@ -225,7 +239,7 @@ html.bm-open #frontend { transform: scale(.985); }
 }
 .bm-mine[open] > .bm-mine-sum::after { transform: translateY(2px) rotate(-135deg); }
 .bm-mine-sum:hover, .bm-mine[open] > .bm-mine-sum { color: var(--bm-fg); }
-.bm-mine-count { color: var(--bm-faint); font-family: var(--font-mono); font-size: var(--t-meta); letter-spacing: .06em; }
+.bm-mine-count { color: var(--bm-faint); font-family: var(--bm-font-mono); font-size: var(--t-meta); letter-spacing: .06em; }
 .bm-h3 { margin: 0; color: inherit; }
 .bm-empty { margin: 0; color: var(--bm-muted); max-width: 46ch; }
 .bm-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-7); }
@@ -236,8 +250,8 @@ html.bm-open #frontend { transform: scale(.985); }
 }
 .bm-fe-title {
   flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere;
-  font-family: var(--font-display); font-weight: 360; font-size: calc(var(--t-title) * .78);
-  font-variation-settings: "opsz" 48; line-height: 1.05; letter-spacing: -.015em;
+  font-family: var(--bm-font-display); font-weight: 560; font-stretch: 92%; font-size: calc(var(--t-title) * .72);
+  line-height: 1.08; letter-spacing: -.02em;
 }
 .bm-fe-count { color: var(--bm-muted); }
 .bm-chip { display: inline-block; color: var(--bm-muted); white-space: nowrap; }
@@ -268,8 +282,8 @@ html.bm-open #frontend { transform: scale(.985); }
 .bm-rev-n { color: var(--bm-fg); }
 .bm-rev-state { margin-left: auto; color: var(--bm-muted); transition: color var(--d-2) var(--ease-quint); }
 .bm-rev-prompt {
-  font-family: var(--font-display); font-weight: 340; font-size: calc(var(--t-lede) * .72);
-  font-variation-settings: "opsz" 24; line-height: 1.25; letter-spacing: -.005em;
+  font-family: var(--bm-font-display); font-weight: 450; font-size: calc(var(--t-lede) * .66);
+  line-height: 1.3; letter-spacing: -.005em;
   color: var(--bm-muted); overflow-wrap: anywhere;
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
   transition: color var(--d-2) var(--ease-quint);
@@ -287,21 +301,21 @@ html.bm-open #frontend { transform: scale(.985); }
 .bm-composer-off { display: none; }
 .bm-form { display: grid; gap: var(--s-4); }
 .bm-label {
-  font-family: var(--font-display); font-weight: 320; font-style: italic; text-transform: none; letter-spacing: -.012em;
-  font-size: calc(var(--t-lede) * 1.15); font-variation-settings: "opsz" 36; line-height: 1.15; text-wrap: balance;
+  font-family: var(--bm-font-display); font-weight: 580; font-stretch: 90%; text-transform: none; letter-spacing: -.025em;
+  font-size: calc(var(--t-lede) * 1.05); line-height: 1.12; text-wrap: balance;
   color: var(--bm-fg);
 }
 .bm-input {
   display: block; width: 100%; min-height: 5.4em; max-height: 40vh; resize: none; field-sizing: content;
-  margin: 0; padding: var(--s-4); border: 1px solid var(--bm-rule-strong); border-radius: var(--r-1); background: var(--bg); color: var(--bm-fg);
-  font-family: var(--font-display); font-weight: 340; font-size: calc(var(--t-lede) * .85);
-  font-variation-settings: "opsz" 24; line-height: 1.25; letter-spacing: -.005em;
+  margin: 0; padding: var(--s-4); border: 1px solid var(--bm-rule-strong); border-radius: var(--r-1); background: var(--bm-field); color: var(--bm-fg);
+  font-family: var(--bm-font-display); font-weight: 420; font-size: calc(var(--t-lede) * .8);
+  line-height: 1.3; letter-spacing: -.008em;
   caret-color: var(--bm-accent);
   transition: border-color var(--d-2) var(--ease-quint);
 }
 .bm-input:focus { border-color: var(--bm-fg); }
 .bm-form-change .bm-label { font-size: calc(var(--t-lede) * .78); }
-.bm-input::placeholder { color: var(--bm-faint); font-style: italic; opacity: 1; }
+.bm-input::placeholder { color: var(--bm-faint); opacity: 1; }
 .bm-root .bm-input:focus-visible { outline: none; }
 .bm-input:disabled { color: var(--bm-muted); }
 .bm-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); }
@@ -370,7 +384,7 @@ html.bm-open #frontend { transform: scale(.985); }
 
 /* "Credit me as": how the visitor is credited in the site bar if Ben approves */
 .bm-credit { display: grid; gap: var(--s-1); padding-top: var(--s-3); }
-.bm-credit-label { color: var(--bm-muted); font-family: var(--font-mono); font-size: var(--t-meta); letter-spacing: .06em; text-transform: uppercase; }
+.bm-credit-label { color: var(--bm-muted); font-family: var(--bm-font-mono); font-size: var(--t-meta); letter-spacing: .06em; text-transform: uppercase; }
 .bm-credit-input {
   width: 100%; min-height: 40px; padding: 0 var(--s-3); border: 1px solid var(--bm-rule-strong); border-radius: 6px;
   background: transparent; color: var(--bm-fg); font: inherit;
@@ -382,7 +396,7 @@ html.bm-open #frontend { transform: scale(.985); }
 .bm-versions { margin-top: var(--s-2); }
 .bm-versions-sum {
   display: inline-flex; align-items: center; gap: var(--s-2); min-height: 36px; cursor: pointer; list-style: none;
-  color: var(--bm-muted); font-family: var(--font-mono); font-size: var(--t-meta); letter-spacing: .06em; text-transform: uppercase;
+  color: var(--bm-muted); font-family: var(--bm-font-mono); font-size: var(--t-meta); letter-spacing: .06em; text-transform: uppercase;
   transition: color var(--d-2) var(--ease-quint);
 }
 .bm-versions-sum::-webkit-details-marker { display: none; }
@@ -393,3 +407,59 @@ html.bm-open #frontend { transform: scale(.985); }
 .bm-versions[open] > .bm-versions-sum::after { transform: translateY(1px) rotate(-135deg); }
 .bm-versions-sum:hover, .bm-versions[open] > .bm-versions-sum { color: var(--bm-fg); }
 .bm-versions-sum:focus-visible { outline: 2px solid var(--bm-accent); outline-offset: 2px; }
+
+/* ── a build in progress (v1.11): the sheet turns into animated diagonal
+   stripes, the prompt being built sits on a solid card with a clear Cancel,
+   and the prompt box waits (the site bar stripes too: site.css) ── */
+@keyframes bm-stripes { to { background-position: 50.91px 0; } }
+html.bm-generating .bm-dialog {
+  --bm-stripe: color-mix(in oklab, var(--bm-fg) 9%, var(--bm-bg));
+  background-color: var(--bm-bg);
+  background-image: repeating-linear-gradient(-45deg, var(--bm-bg) 0 18px, var(--bm-stripe) 18px 36px);
+  background-size: 50.91px 50.91px; /* one stripe period along the diagonal */
+  animation: bm-stripes 1.4s linear infinite;
+}
+html.bm-generating .bm-head { background: color-mix(in oklab, var(--bm-bg) 88%, transparent); }
+.bm-gen {
+  display: grid; gap: var(--s-3); padding: var(--s-5); margin-bottom: var(--s-2);
+  background: var(--bm-field); color: var(--bm-fg);
+  border: 1px solid var(--bm-rule-strong); border-radius: var(--r-1);
+  box-shadow: 0 18px 40px -28px rgb(0 0 0 / .45);
+}
+.bm-gen-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-3); }
+.bm-gen-label {
+  margin: 0; display: inline-flex; align-items: center; gap: .6em;
+  font-family: var(--bm-font-mono); font-size: var(--t-meta); letter-spacing: .08em; text-transform: uppercase; color: var(--bm-fg);
+}
+.bm-gen-label::before {
+  content: ""; width: 8px; height: 8px; border-radius: var(--r-pill); background: var(--bm-accent);
+  animation: bm-blink 1.2s steps(2, jump-none) infinite;
+}
+.bm-gen-time { font-family: var(--bm-font-mono); font-size: var(--t-meta); color: var(--bm-muted); font-variant-numeric: tabular-nums; }
+.bm-gen-prompt {
+  margin: 0; font-family: var(--bm-font-display); font-weight: 520; font-stretch: 94%;
+  font-size: calc(var(--t-lede) * .9); line-height: 1.25; letter-spacing: -.015em; overflow-wrap: anywhere;
+  max-height: 9.5em; overflow: auto;
+}
+.bm-gen-note { margin: 0; color: var(--bm-muted); font-size: var(--t-ui); }
+.bm-cancel {
+  justify-self: start; gap: .5em; min-height: 44px; padding: 0 var(--s-5);
+  color: #B42318; border-color: color-mix(in oklab, #B42318 55%, transparent); font-weight: 600;
+}
+.bm-cancel:hover:not(:disabled) { color: #FFFFFF; background: #B42318; border-color: #B42318; }
+.bm-cancel:focus-visible { outline: 2px solid #B42318; outline-offset: 2px; }
+.bm-cancel:disabled { opacity: .6; cursor: progress; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .bm-cancel { color: #FF8A80; border-color: color-mix(in oklab, #FF8A80 55%, transparent); }
+}
+:root[data-theme="dark"] .bm-cancel { color: #FF8A80; border-color: color-mix(in oklab, #FF8A80 55%, transparent); }
+/* the waiting prompt box reads as paused, not broken */
+html.bm-generating .bm-composer { opacity: .55; }
+html.bm-generating .bm-pill {
+  background-image: repeating-linear-gradient(-45deg, var(--bg-raised) 0 8px, color-mix(in oklab, var(--fg) 10%, var(--bg-raised)) 8px 16px);
+  background-size: 22.63px 22.63px; animation: bm-rise var(--d-3) var(--ease-out) backwards, bm-stripes-sm 1s linear infinite;
+}
+@keyframes bm-stripes-sm { to { background-position: 22.63px 0; } }
+@media (prefers-reduced-motion: reduce) {
+  html.bm-generating .bm-dialog, html.bm-generating .bm-pill { animation: none; }
+}

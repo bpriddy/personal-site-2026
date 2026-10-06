@@ -57,6 +57,11 @@
         case "warning":
           if (!friendly) onTool("⚠ " + (ev.text || ""), "b-warn");
           break;
+        case "canceled":
+          result.outcome = "canceled";
+          result.message = ev.text || "Stopped. Nothing was changed.";
+          onStatus(result.message, false);
+          break;
         case "error":
           result.outcome = "error";
           result.message = failText(ev.text);

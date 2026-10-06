@@ -33,6 +33,8 @@ UC_PORT="${E2E_UC_PORT:-8091}"
 export APP_ENV=dev
 # the public builder runs offline: a canned model instead of Claude (dev only)
 export BUILDER_DEMO_MODEL=1
+# slow enough (2 turns × 2s) to see, reload and cancel a build in progress (build-progress.spec.ts)
+export BUILDER_DEMO_DELAY="${BUILDER_DEMO_DELAY:-2s}"
 export FRONTENDS_DIR="${FRONTENDS_DIR:-$ROOT/build/frontends}"
 # project media for tests/work.spec.ts (tiny generated fixtures; real media never lives in git)
 export MEDIA_DIR="$E2E_DIR/fixtures/media"
@@ -155,7 +157,7 @@ declare -A SPECS_OF=(
   [site]=""
   [particle-stream]="tests/builtins-ready.spec.ts tests/navigation.spec.ts"
   [broken]="tests/fallback.spec.ts tests/contract.spec.ts"
-  [prompted]="tests/prompted.spec.ts tests/public-builder.spec.ts"
+  [prompted]="tests/prompted.spec.ts tests/public-builder.spec.ts tests/build-progress.spec.ts"
   [custom]=""
 )
 if [[ -n "${FRONTEND_ROTATION:-}" ]]; then

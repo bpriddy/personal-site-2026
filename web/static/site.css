@@ -637,3 +637,13 @@ body.public::after {
 /* the front end's credit (v1.9), after the concept line */
 .site-bar-credit { color: var(--fg-2); font-weight: 450; }
 .site-bar-credit[hidden] { display: none; }
+/* a build in progress (v1.11, build-modal.js sets html.bm-generating): the
+   persistent site bar wears the same moving diagonal stripes as the builder */
+@keyframes site-bar-stripes { to { background-position: 28.28px 0; } }
+html.bm-generating .site-bar {
+  background-image: repeating-linear-gradient(-45deg, var(--bg) 0 10px, color-mix(in oklab, var(--fg) 11%, var(--bg)) 10px 20px);
+  background-size: 28.28px 28.28px;
+  animation: site-bar-stripes 1.1s linear infinite;
+}
+html.bm-generating .site-bar-line, html.bm-generating .site-bar-credit { text-shadow: 0 0 6px var(--bg), 0 0 2px var(--bg); }
+@media (prefers-reduced-motion: reduce) { html.bm-generating .site-bar { animation: none; } }

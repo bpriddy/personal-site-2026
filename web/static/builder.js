@@ -29,6 +29,20 @@
     onError: function (msg) { statusEl.textContent = msg; statusEl.className = "b-error"; streamBox.hidden = false; }
   }) : null;
 
+  // a run in progress can be canceled (v1.11)
+  var cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.className = "b-danger b-cancel";
+  cancelBtn.textContent = "Cancel run";
+  cancelBtn.hidden = true;
+  statusEl.after(cancelBtn);
+  cancelBtn.addEventListener("click", function () {
+    cancelBtn.disabled = true;
+    cancelBtn.textContent = "Canceling…";
+    fetch(form.getAttribute("data-action").replace(/\/chat$/, "/cancel"), { method: "POST", credentials: "same-origin" })
+      .catch(function () { cancelBtn.disabled = false; cancelBtn.textContent = "Cancel run"; });
+  });
+
   var startImages = []; // /media/ paths from the create form (#start=...&images=...)
 
   function addTurn(role, text, images) {
@@ -62,6 +76,9 @@
     addTurn("user", prompt, (attach ? attach.urls() : []).concat(attached));
     if (attach) attach.setDisabled(true);
     streamBox.hidden = false;
+    cancelBtn.hidden = false;
+    cancelBtn.disabled = false;
+    cancelBtn.textContent = "Cancel run";
     thinkingEl.textContent = textEl.textContent = "";
     toolsEl.replaceChildren();
 
@@ -95,6 +112,7 @@
         return;
       }
       ta.disabled = btn.disabled = false;
+      cancelBtn.hidden = true;
       if (attach) attach.setDisabled(false);
     });
   });
