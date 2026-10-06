@@ -2,12 +2,25 @@
 {{define "main"}}
 <h1>Content</h1>
 <p><a class="b-primary button-link" href="/admin/builder/#new-prompt">Prompt a new front end</a></p>
+{{range .Pages}}{{if eq .Slug ""}}<section class="site-copy" id="site-copy">
+  <h2>Site copy</h2>
+  <p class="muted">What every front end shows on the home page. Saving updates the live site right away.</p>
+  <form method="post" action="/admin/pages/edit" class="stack">
+    <input type="hidden" name="slug" value="">
+    {{if .Published}}<input type="hidden" name="published" value="on">{{end}}
+    <label>Your name <span class="muted">(the home page title)</span>
+      <input name="title" value="{{.Title}}" required></label>
+    <label>Main paragraph <span class="muted">(your bio; a blank line starts a new paragraph)</span>
+      <textarea name="body" rows="9">{{.Body}}</textarea></label>
+    <button class="b-primary">Save site copy</button>
+  </form>
+</section>{{end}}{{end}}
 <section>
   <h2>Pages</h2>
   <table>
     <tr><th>Slug</th><th>Title</th><th>Published</th><th>Updated</th></tr>
     {{range .Pages}}<tr>
-      <td><a href="/admin/pages/edit?slug={{.Slug}}"><code>/{{.Slug}}</code></a></td>
+      <td><a href="/admin/pages/edit?slug={{.Slug}}"><code>/{{.Slug}}</code></a>{{if eq .Slug ""}} <span class="muted">home</span>{{end}}</td>
       <td>{{.Title}}</td><td>{{if .Published}}yes{{else}}no{{end}}</td>
       <td><code>{{.UpdatedAt.Format "2006-01-02 15:04"}}</code></td>
     </tr>{{end}}

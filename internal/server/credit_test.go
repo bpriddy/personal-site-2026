@@ -103,3 +103,49 @@ func TestBuilderDeleteRevision(t *testing.T) {
 		t.Errorf("deleting it again: %d", rec.Code)
 	}
 }
+
+func TestBuilderDeleteFrontend(t *testing.T) {
+	e := newBuilderServer(t, true)
+	e.form("/admin/builder/new", url.Values{"slug": {"bye"}, "title": {"Bye"}})
+	e.script()
+	r1 := eventOf(e.chat(t, "bye", "one", ""), "revision")
+	e.form("/admin/builder/fe/bye/activate", url.Values{"rev": {r1.Revision}})
+	e.form("/admin/builder/rotation", url.Values{"id": {"fe/bye"}, "in_rotation": {"1"}})
+
+	rec := e.form("/admin/builder/fe/bye/delete", nil)
+	if rec.Code != 303 || !strings.Contains(rec.Header().Get("Location"), "error=") {
+		t.Fatalf("delete in rotation: %d %s", rec.Code, rec.Header().Get("Location"))
+	}
+	if page := adminDo(e, "GET", "/admin/builder/").Body.String(); strings.Contains(page, "/admin/builder/fe/bye/delete") {
+		t.Error("a front end in the rotation offers Delete")
+	}
+	e.form("/admin/builder/rotation", url.Values{"id": {"fe/bye"}, "in_rotation": {"0"}})
+	if page := adminDo(e, "GET", "/admin/builder/").Body.String(); !strings.Contains(page, `action="/admin/builder/fe/bye/delete"`) {
+		t.Error("no Delete for a front end out of the rotation")
+	}
+	if rec := e.form("/admin/builder/fe/bye/delete", nil); rec.Code != 303 || rec.Header().Get("Location") != "/admin/builder/" {
+		t.Fatalf("delete: %d %s", rec.Code, rec.Header().Get("Location"))
+	}
+	if rec := adminDo(e, "GET", "/admin/builder/fe/bye"); rec.Code != 404 {
+		t.Errorf("its page after delete: %d", rec.Code)
+	}
+	if rec := e.form("/admin/builder/fe/nope/delete", nil); rec.Code != 404 {
+		t.Errorf("unknown: %d", rec.Code)
+	}
+}
+
+// The home page's title and bio are editable at the top of the dashboard.
+func TestDashboardSiteCopy(t *testing.T) {
+	e := newBuilderServer(t, false)
+	page := adminDo(e, "GET", "/admin/").Body.String()
+	if !strings.Contains(page, `id="site-copy"`) || !strings.Contains(page, "Save site copy") || !strings.Contains(page, `<textarea name="body"`) {
+		t.Fatalf("no site copy form:\n%s", page)
+	}
+	rec := e.form("/admin/pages/edit", url.Values{"slug": {""}, "title": {"Ben Priddy"}, "body": {"New bio.\n\nSecond paragraph."}, "published": {"on"}})
+	if rec.Code != 303 {
+		t.Fatalf("save: %d %s", rec.Code, rec.Body)
+	}
+	if body := get(e.s, "/").Body.String(); !strings.Contains(body, "Second paragraph.") {
+		t.Error("the home page doesn't show the saved bio")
+	}
+}

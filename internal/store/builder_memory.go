@@ -249,3 +249,34 @@ func (m *Memory) DeleteRevision(_ context.Context, frontendID, revID string) err
 	delete(m.builder.revs, revID)
 	return nil
 }
+
+func (m *Memory) DeleteFrontend(_ context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.builder.init()
+	f, ok := m.frontends[id]
+	if !ok || !m.builder.prompted[id] {
+		return ErrNotFound
+	}
+	if f.InRotation {
+		return ErrInRotation
+	}
+	for rid, r := range m.builder.revs {
+		if r.FrontendID == id {
+			delete(m.builder.revs, rid)
+		}
+	}
+	m.builder.runs = slices.DeleteFunc(m.builder.runs, func(r Run) bool { return r.FrontendID == id })
+	for i := range m.visitors.subs {
+		if m.visitors.subs[i].FrontendID == id {
+			m.visitors.subs[i] = Submission{ID: m.visitors.subs[i].ID, Status: submissionDeleted}
+		}
+	}
+	delete(m.visitors.owner, id)
+	delete(m.builder.prompted, id)
+	delete(m.builder.active, id)
+	delete(m.builder.credit, id)
+	delete(m.builder.asked, id)
+	delete(m.frontends, id)
+	return nil
+}

@@ -276,6 +276,8 @@ var templateFuncs = template.FuncMap{
 	// heroMax: a still is never shown past 1.25x its width (the old ones are small)
 	"heroMax": func(w int) int { return w * 5 / 4 },
 	// dict builds a map for passing several values to a template
+	// slugOf is a prompted front end's slug ("fe/dark" → "dark")
+	"slugOf": func(id string) string { return strings.TrimPrefix(id, "fe/") },
 	"dict": func(kv ...any) map[string]any {
 		m := map[string]any{}
 		for i := 0; i+1 < len(kv); i += 2 {

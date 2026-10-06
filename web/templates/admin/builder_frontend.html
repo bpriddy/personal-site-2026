@@ -19,6 +19,9 @@
       {{if .FE.InRotation}}<input type="hidden" name="in_rotation" value="0"><button>Remove from rotation</button>
       {{else}}<input type="hidden" name="in_rotation" value="1"><button {{if and (not .Builtin) (not .FE.ActiveRevision)}}disabled title="Make a revision active first"{{end}}>Add to rotation</button>{{end}}
     </form>
+    {{if and (not .Builtin) (not .FE.InRotation)}}<form method="post" action="/admin/builder/fe/{{.Slug}}/delete" class="b-inline" data-confirm="Delete “{{.FE.Title}}” and all its versions? This can't be undone.">
+      <button class="b-danger">Delete front end</button>
+    </form>{{end}}
   </div>
 </header>
 {{if .RotationOverridden}}<p class="b-notice"><strong>FRONTEND_ROTATION is set:</strong> it overrides the rotation.</p>{{end}}

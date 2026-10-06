@@ -92,6 +92,7 @@ func (s *Server) builderRoutes(admin *http.ServeMux) {
 	admin.HandleFunc("POST /admin/builder/fe/{slug}/activate", s.builderActivate)
 	admin.HandleFunc("POST /admin/builder/fe/{slug}/credit", s.builderCredit)
 	admin.HandleFunc("POST /admin/builder/fe/{slug}/delete-revision", s.builderDeleteRevision)
+	admin.HandleFunc("POST /admin/builder/fe/{slug}/delete", s.builderDeleteFrontend)
 	admin.HandleFunc("POST /admin/builder/fe/{slug}/import", s.builderImport)
 	admin.HandleFunc("GET /admin/builder/rev/{id}/{path...}", s.builderSource)
 }
@@ -501,6 +502,36 @@ func (s *Server) builderDeleteRevision(w http.ResponseWriter, r *http.Request) {
 	default:
 		s.contentChanged()
 		http.Redirect(w, r, page, http.StatusSeeOther)
+	}
+}
+
+// builderDeleteFrontend deletes a prompted front end and all its versions.
+// One in the rotation, or with a run in progress, is refused.
+func (s *Server) builderDeleteFrontend(w http.ResponseWriter, r *http.Request) {
+	b := s.needBuilderStore(w)
+	if b == nil {
+		return
+	}
+	slug := r.PathValue("slug")
+	id := frontend.PromptedID(slug)
+	s.builder.mu.Lock()
+	running := s.builder.running[id]
+	s.builder.mu.Unlock()
+	if running {
+		http.Redirect(w, r, "/admin/builder/fe/"+slug+"?error="+urlQuery("A build is running for it: wait for it to finish."), http.StatusSeeOther)
+		return
+	}
+	err := b.DeleteFrontend(r.Context(), id)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		http.NotFound(w, r)
+	case errors.Is(err, store.ErrInRotation):
+		http.Redirect(w, r, "/admin/builder/fe/"+slug+"?error="+urlQuery("It's in the rotation: remove it from the rotation first."), http.StatusSeeOther)
+	case err != nil:
+		s.fail(w, "builder: delete front end", err)
+	default:
+		s.contentChanged()
+		http.Redirect(w, r, "/admin/builder/", http.StatusSeeOther)
 	}
 }
 

@@ -47,6 +47,11 @@ type Builder interface {
 	// ErrPendingRevision if a pending submission is for it. The revision's
 	// files are left in storage (unreachable).
 	DeleteRevision(ctx context.Context, frontendID, revID string) error
+	// DeleteFrontend removes a prompted front end with all its revisions,
+	// runs and submissions. ErrNotFound unless id is a prompted front end;
+	// ErrInRotation while it's in the rotation (take it out first). Revision
+	// files are left in storage (unreachable).
+	DeleteFrontend(ctx context.Context, id string) error
 
 	// StartRun records a builder run as running and returns its ID.
 	StartRun(ctx context.Context, run Run) (int64, error)
@@ -61,6 +66,9 @@ var ErrExists = errors.New("already exists")
 
 // ErrActiveRevision: the active revision can't be deleted.
 var ErrActiveRevision = errors.New("the active revision can't be deleted")
+
+// ErrInRotation: a front end in the rotation can't be deleted.
+var ErrInRotation = errors.New("the front end is in the rotation")
 
 // ErrPendingRevision: a revision waiting for review can't be deleted.
 var ErrPendingRevision = errors.New("the revision has a pending submission")

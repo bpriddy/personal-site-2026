@@ -93,6 +93,49 @@ func builderConformance(t *testing.T, newStore func(t *testing.T) Builder) {
 		}
 	})
 
+	t.Run("delete front end", func(t *testing.T) {
+		st := newStore(t)
+		must(t, st.CreatePromptedFrontend(ctx, "fe/gone", "Gone"))
+		_, err := st.AddRevision(ctx, Revision{ID: "ggggggg01", FrontendID: "fe/gone", Author: "ben"})
+		must(t, err)
+		_, err = st.AddRevision(ctx, Revision{ID: "ggggggg02", FrontendID: "fe/gone", ParentID: "ggggggg01", Author: "ben"})
+		must(t, err)
+		must(t, st.SetActiveRevision(ctx, "fe/gone", "ggggggg02"))
+		_, err = st.StartRun(ctx, Run{FrontendID: "fe/gone", ParentID: "ggggggg01"})
+		must(t, err)
+		if s, ok := st.(Store); ok {
+			must(t, s.SetFrontendInRotation(ctx, "fe/gone", true))
+			if err := st.DeleteFrontend(ctx, "fe/gone"); !errors.Is(err, ErrInRotation) {
+				t.Fatalf("delete in rotation: %v", err)
+			}
+			must(t, s.SetFrontendInRotation(ctx, "fe/gone", false))
+		}
+		if v, ok := st.(Visitors); ok {
+			_, err := v.Submit(ctx, "fe/gone", "ggggggg02")
+			must(t, err)
+		}
+		if err := st.DeleteFrontend(ctx, "builtin/site"); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("delete a builtin: %v", err)
+		}
+		must(t, st.DeleteFrontend(ctx, "fe/gone"))
+		if _, err := st.BuilderFrontend(ctx, "fe/gone"); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("still there: %v", err)
+		}
+		if _, err := st.Revision(ctx, "ggggggg01"); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("revision still there: %v", err)
+		}
+		if v, ok := st.(Visitors); ok {
+			if subs, _ := v.Submissions(ctx, 10); len(subs) != 0 {
+				t.Fatalf("submissions = %+v", subs)
+			}
+		}
+		if err := st.DeleteFrontend(ctx, "fe/gone"); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("delete twice: %v", err)
+		}
+		// the slug is free again
+		must(t, st.CreatePromptedFrontend(ctx, "fe/gone", "Again"))
+	})
+
 	t.Run("credit", func(t *testing.T) {
 		st := newStore(t)
 		must(t, st.CreatePromptedFrontend(ctx, "fe/c", "C"))

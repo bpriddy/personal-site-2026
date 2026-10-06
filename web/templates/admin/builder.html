@@ -57,7 +57,7 @@
       <td>{{.Revisions}}</td>
       <td>{{with .Active}}r{{.Number}} <span class="b-muted">{{.CreatedAt.Format "Jan 2 15:04"}}</span>{{else}}<span class="b-muted">none yet</span>{{end}}</td>
       <td>{{if .InRotation}}yes{{if not .Servable}} <span class="b-muted">(not served: no active revision)</span>{{end}}{{else}}no{{end}}</td>
-      <td>{{template "rotation-toggle" .}}</td>
+      <td class="b-rev-actions">{{template "rotation-toggle" .}}{{template "delete-frontend" .}}</td>
     </tr>{{end}}
   </table>
   {{else}}<p class="b-muted">None yet.</p>{{end}}
@@ -75,7 +75,7 @@
         <td>{{.Revisions}}</td>
         <td>{{with .Active}}r{{.Number}}{{else}}<span class="b-muted">none</span>{{end}}</td>
         <td>{{if .InRotation}}yes{{else}}no{{end}}</td>
-        <td>{{template "rotation-toggle" .}}</td>
+        <td class="b-rev-actions">{{template "rotation-toggle" .}}{{template "delete-frontend" .}}</td>
       </tr>{{end}}
     </table>
   </details>
@@ -102,3 +102,8 @@
   {{if .InRotation}}<input type="hidden" name="in_rotation" value="0"><button>Remove from rotation</button>
   {{else}}<input type="hidden" name="in_rotation" value="1"><button {{if not .Servable}}disabled title="Make a revision active first"{{end}}>Add to rotation</button>{{end}}
 </form>{{end}}
+
+{{/* delete a prompted front end (only when it's out of the rotation) */}}
+{{define "delete-frontend"}}{{if not .InRotation}}<form method="post" action="/admin/builder/fe/{{slugOf .ID}}/delete" data-confirm="Delete “{{.Title}}” and all its versions? This can't be undone.">
+  <button class="b-danger">Delete</button>
+</form>{{end}}{{end}}

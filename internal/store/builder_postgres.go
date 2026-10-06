@@ -245,3 +245,17 @@ func (p *Postgres) DeleteRevision(ctx context.Context, frontendID, revID string)
 		return err
 	})
 }
+
+func (p *Postgres) DeleteFrontend(ctx context.Context, id string) error {
+	// revisions, runs and submissions go with it (ON DELETE CASCADE)
+	tag, err := p.pool.Exec(ctx, `DELETE FROM frontends WHERE ref = $1 AND kind = 'prompted' AND NOT in_rotation`, id)
+	if err != nil || tag.RowsAffected() == 1 {
+		return err
+	}
+	// not deleted: missing, built in, or in the rotation
+	var rot bool
+	if err := p.pool.QueryRow(ctx, `SELECT in_rotation FROM frontends WHERE ref = $1 AND kind = 'prompted'`, id).Scan(&rot); err != nil {
+		return notFound(err)
+	}
+	return ErrInRotation
+}
