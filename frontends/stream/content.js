@@ -80,6 +80,8 @@
   // a block the stream flows around
   function box(tag, cls) { return el(tag || "div", "ob-box " + (cls || "")); }
   function label(text) { return el("p", "st-label ob-word", text); }
+  // one relief surface for a group of short text (never several small ones side by side)
+  function plate(tag, cls) { return el(tag || "div", "st-plate ob-word " + (cls || "")); }
 
   function mediaEl(m, alt, eager) {
     if (!m || (m.kind !== "image" && m.kind !== "loop")) return null;
@@ -120,8 +122,10 @@
     var out = [];
 
     var hero = screen("st-hero", name);
-    hero.append(glyph("h1", "st-name", name), el("p", "st-tagline ob-word", T("tagline")));
-    if (current) hero.append(el("p", "st-now ob-word", s(current.role) + " · " + s(current.company)));
+    var hp = plate("div");
+    hp.append(el("p", "st-tagline", T("tagline")));
+    if (current) hp.append(el("p", "st-now", s(current.role) + " · " + s(current.company)));
+    hero.append(glyph("h1", "st-name", name), hp);
     out.push(hero);
 
     paras(home.body).forEach(function (p, i) {
@@ -152,10 +156,7 @@
 
     if (B.projects.length) {
       var ws = screen("st-list-screen", "Selected work");
-      ws.append(label("Selected work"), workList(B.projects.slice(0, 6), 0));
-      var more = el("p", "st-more");
-      more.append(link("All work", "work", "st-link ob-word"));
-      ws.append(more);
+      ws.append(workList(B.projects.slice(0, 6), 0, "Selected work", true));
       out.push(ws);
     }
 
@@ -163,18 +164,27 @@
     return out;
   }
 
-  function workList(projects, offset) {
+  // the list is one surface: its label, the titles with their meta, and "All work"
+  function workList(projects, offset, heading, allLink) {
+    var pl = plate("div", "st-list");
+    if (heading) pl.append(el("p", "st-label", heading));
     var ol = el("ol", "st-work");
     projects.forEach(function (p, i) {
       var li = el("li", "st-work-item");
       var a = link("", "work/" + s(p.slug), "st-work-link");
-      a.append(glyph("span", "st-work-title", s(p.title) || s(p.slug)));
+      a.append(el("span", "st-work-title", s(p.title) || s(p.slug)));
       var meta = [two(offset + i), s(p.client), s(p.year)].filter(Boolean).join(" · ");
-      a.append(el("span", "st-work-meta ob-word", meta));
+      a.append(el("span", "st-work-meta", meta));
       li.append(a);
       ol.append(li);
     });
-    return ol;
+    pl.append(ol);
+    if (allLink) {
+      var more = el("p", "st-more");
+      more.append(link("All work", "work", "st-link"));
+      pl.append(more);
+    }
+    return pl;
   }
 
   function experimentsScreen() {
@@ -204,8 +214,7 @@
     for (var k = 0; k < projects.length; k += per) {
       var sc = screen("st-list-screen", "Work");
       if (k === 0) sc.append(glyph("h1", "st-h2", "Work"));
-      else sc.append(label("Work, continued"));
-      sc.append(workList(projects.slice(k, k + per), k));
+      sc.append(workList(projects.slice(k, k + per), k, k === 0 ? "" : "Work, continued"));
       out.push(sc);
     }
     if (!out.length) {
@@ -229,15 +238,18 @@
     var out = [];
 
     var t = screen("st-hero st-project-hero", title);
-    t.append(label(two(i) + " / " + projects.length), glyph("h1", "st-name st-project-name", title));
+    t.append(glyph("h1", "st-name st-project-name", title));
+    var mp = plate("div");
+    mp.append(el("p", "st-label", two(i) + " / " + projects.length));
     var meta = el("dl", "st-meta");
     [["Client", p.client], ["Agency", p.agency], ["Year", p.year], ["Role", list(p.roles).join(", ")]].forEach(function (row) {
       if (!s(row[1])) return;
-      var d = el("div", "ob-word");
+      var d = el("div");
       d.append(el("dt", null, row[0]), el("dd", null, s(row[1])));
       meta.append(d);
     });
-    t.append(meta);
+    mp.append(meta);
+    t.append(mp);
     out.push(t);
 
     var brief = paras(p.summary);
@@ -269,17 +281,20 @@
       out.push(g);
     }
     var nx = screen("st-next", "Next");
+    // one surface: the project's links, all work, and the next project's cue
+    var np = plate("div");
     var links = el("p", "st-links");
-    if (p.youtube) links.append(external("Watch the film", "https://www.youtube.com/watch?v=" + s(p.youtube), "st-link ob-word"));
-    if (p.link) links.append(external("Visit the work", s(p.link), "st-link ob-word"));
-    if (links.childNodes.length) nx.append(links);
+    if (p.youtube) links.append(external("Watch the film", "https://www.youtube.com/watch?v=" + s(p.youtube), "st-link"));
+    if (p.link) links.append(external("Visit the work", s(p.link), "st-link"));
+    links.append(link("All work", "work", "st-link"));
+    np.append(links);
+    nx.append(np);
     if (projects.length > 1) {
       var next = projects[(i + 1) % projects.length];
+      np.append(el("p", "st-label", "Next project"));
       var a = link("", "work/" + s(next.slug), "st-next-link");
       a.append(glyph("span", "st-h2", s(next.title) || s(next.slug)));
-      var all = el("p", "st-more");
-      all.append(link("All work", "work", "st-link ob-word"));
-      nx.append(label("Next"), a, all);
+      nx.append(a);
     }
     out.push(nx);
     return out;
