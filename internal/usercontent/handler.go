@@ -236,7 +236,22 @@ func (h *Handler) serveToken(w http.ResponseWriter, r *http.Request, rest string
 		return
 	}
 
-	obj, err := h.src.Open(r.Context(), claims.Ref, name)
+	// built-in bundles ship a precompressed <name>.gz next to their text and
+	// wasm files (scripts/build-frontends.sh); prefer it when the client takes
+	// gzip. Built-ins only: revisions in the bucket have no .gz to look for.
+	var obj *Object
+	gz := false
+	if strings.HasPrefix(claims.Ref, "builtin/") && compressible(name) {
+		hd.Add("Vary", "Accept-Encoding")
+		if acceptsGzip(r) {
+			if obj, err = h.src.Open(r.Context(), claims.Ref, name+".gz"); err == nil {
+				gz = true
+			}
+		}
+	}
+	if !gz {
+		obj, err = h.src.Open(r.Context(), claims.Ref, name)
+	}
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			h.fail(w, r, http.StatusNotFound, "no such file")
@@ -252,6 +267,9 @@ func (h *Handler) serveToken(w http.ResponseWriter, r *http.Request, rest string
 		hd.Set("Cache-Control", cacheAsset)
 	}
 	hd.Set("Content-Type", contentType(name))
+	if gz {
+		hd.Set("Content-Encoding", "gzip")
+	}
 	if obj.Size >= 0 {
 		hd.Set("Content-Length", strconv.FormatInt(obj.Size, 10))
 	}
@@ -264,6 +282,32 @@ func (h *Handler) serveToken(w http.ResponseWriter, r *http.Request, rest string
 			h.log.Debug("usercontent: copy", "ref", claims.Ref, "name", name, "err", err)
 		}
 	}
+}
+
+// compressible: the built-in files worth sending gzipped
+func compressible(name string) bool {
+	switch strings.ToLower(path.Ext(name)) {
+	case ".html", ".js", ".mjs", ".css", ".wasm", ".json", ".wgsl", ".svg", ".txt":
+		return true
+	}
+	return false
+}
+
+// acceptsGzip: the request's Accept-Encoding lists gzip (without q=0)
+func acceptsGzip(r *http.Request) bool {
+	for _, v := range r.Header.Values("Accept-Encoding") {
+		for part := range strings.SplitSeq(v, ",") {
+			enc, params, _ := strings.Cut(strings.TrimSpace(part), ";")
+			if !strings.EqualFold(strings.TrimSpace(enc), "gzip") && strings.TrimSpace(enc) != "*" {
+				continue
+			}
+			if q, ok := strings.CutPrefix(strings.ReplaceAll(params, " ", ""), "q="); ok && (q == "0" || q == "0.0" || q == "0.00" || q == "0.000") {
+				return false
+			}
+			return true
+		}
+	}
+	return false
 }
 
 // serveFont serves one house font (or its license) from /fonts/<name>, the

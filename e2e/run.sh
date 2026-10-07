@@ -5,13 +5,14 @@
 # Usage: e2e/run.sh [options] [-- playwright args...]
 #   --skip-build-frontends  don't run scripts/build-frontends.sh (reuse build/frontends)
 #   --slow                  also run @slow tests (token expiry, ~61s)
-#   --phase NAME            run only this phase (repeatable): site, particle-stream, broken, prompted
+#   --phase NAME            run only this phase (repeatable): site, particle-stream, stream, broken, prompted
 #   --feasibility           only the standalone WebGPU feasibility test (no servers)
 #
 # The main site's FRONTEND_ROTATION picks the front end, so the suite runs in
 # phases, restarting the servers with a different rotation each time:
 #   site             FRONTEND_ROTATION=builtin/site             all specs
 #   particle-stream  FRONTEND_ROTATION=builtin/particle-stream  ready + navigation
+#   stream           FRONTEND_ROTATION=builtin/stream           ready + paging (stream.spec.ts)
 #   broken           FRONTEND_ROTATION=builtin/e2e-broken       fallback + its observer report
 #   prompted         (unset: rotation from the store)            builder-published front end, public builder
 # If FRONTEND_ROTATION is already set in the environment, it runs a single
@@ -53,7 +54,7 @@ while [[ $# -gt 0 ]]; do
     --phase) phases+=("$2"); shift ;;
     --feasibility) feasibility=1 ;;
     --) shift; pw_args=("$@"); break ;;
-    -h|--help) sed -n "2,22p" "$0" | grep "^#"; exit 0 ;;
+    -h|--help) sed -n "2,23p" "$0" | grep "^#"; exit 0 ;;
     *) echo "run.sh: unknown option $1 (see --help)" >&2; exit 2 ;;
   esac
   shift
@@ -92,7 +93,7 @@ if [[ $build_frontends == 1 ]]; then
     die "scripts/build-frontends.sh is missing (the front-end build hasn't landed yet); pass --skip-build-frontends to use an existing $FRONTENDS_DIR"
   scripts/build-frontends.sh || die "scripts/build-frontends.sh exited non-zero"
 fi
-for ref in builtin/site builtin/particle-stream; do
+for ref in builtin/site builtin/particle-stream builtin/stream; do
   [[ -f "$FRONTENDS_DIR/$ref/index.html" ]] ||
     die "$FRONTENDS_DIR/$ref/index.html is missing (run scripts/build-frontends.sh)"
 done
@@ -150,12 +151,14 @@ start_servers() { # phase rotation
 declare -A ROTATION_OF=(
   [site]=builtin/site
   [particle-stream]=builtin/particle-stream
+  [stream]=builtin/stream
   [broken]=builtin/e2e-broken
   [prompted]=store
 )
 declare -A SPECS_OF=(
   [site]=""
   [particle-stream]="tests/builtins-ready.spec.ts tests/navigation.spec.ts"
+  [stream]="tests/builtins-ready.spec.ts tests/stream.spec.ts"
   [broken]="tests/fallback.spec.ts tests/contract.spec.ts"
   [prompted]="tests/prompted.spec.ts tests/public-builder.spec.ts tests/build-progress.spec.ts"
   [custom]=""
@@ -164,12 +167,12 @@ if [[ -n "${FRONTEND_ROTATION:-}" ]]; then
   ROTATION_OF[custom]=$FRONTEND_ROTATION
   phases=(custom)
 elif [[ ${#phases[@]} -eq 0 ]]; then
-  phases=(site particle-stream broken prompted)
+  phases=(site particle-stream stream broken prompted)
 fi
 
 failed=()
 for phase in "${phases[@]}"; do
-  [[ -n "${ROTATION_OF[$phase]:-}" ]] || die "unknown phase $phase (site, particle-stream, broken, prompted)"
+  [[ -n "${ROTATION_OF[$phase]:-}" ]] || die "unknown phase $phase (site, particle-stream, stream, broken, prompted)"
   step "phase $phase: FRONTEND_ROTATION=${ROTATION_OF[$phase]}"
   start_servers "$phase" "${ROTATION_OF[$phase]}"
   cd "$E2E_DIR"

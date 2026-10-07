@@ -1,4 +1,30 @@
-# particle-stream
+# stream (builtin/stream)
+
+**The site version of Particle Stream.** A copy of `experiments/particle-stream`
+(kept unchanged there, tag `particle-stream-experiment`) that is the whole site:
+paged screens of content sitting in the stream, with everything displacing it.
+
+- **Baked content.** `baked/site.js` is the site's `/api/site.json`, written by
+  `scripts/bake-stream.sh` and inlined into `index.html` by trunk. Nothing is
+  fetched at runtime; re-bake and rebuild to pick up CMS changes.
+- **Paged screens** (`content.js`). Each route is a few full-screen
+  compositions; wheel, swipe, arrow keys and the pager step through them. A
+  panel whose text doesn't fit scrolls first.
+- **Everything displaces the stream.** `content.js` measures each screen from
+  the DOM into `window.__SCENE` (big type as glyphs; panels, media and pills as
+  boxes). The wasm rasters it into the obstacle field: the page in RG (it
+  slides, and plows the stream while it does, from `window.__SCENE_T`), the nav
+  and pager in BA (they stay put). The GPU draws the big type in relief; the DOM
+  keeps a transparent copy for selection and screen readers, and shows it itself
+  until the wasm sets `__SCENE_DRAWN` (or forever, without WebGPU).
+- **Fonts:** Inter Tight (display), Instrument Sans, Geist Mono: house fonts
+  at `/fonts/`, cached for a year.
+- **Measuring:** the wasm marks `stream:first-frame`, `stream:scene`,
+  `stream:raster-start/-end` and `stream:sdf-end` (performance marks).
+
+Below: the experiment's own README.
+
+## particle-stream
 
 **Words as rocks in a stream.** Up to 500,000 WebGPU compute-shader particles
 flow across the screen; a centered, cycling phrase is not a cluster target but

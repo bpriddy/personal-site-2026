@@ -1,25 +1,36 @@
-// content.js: the site version of Particle Stream (builtin/stream). The
-// experiment's stream stays as it is; this layer turns it into the site:
+// content.js: the site version of Particle Stream (builtin/stream).
 //
-//   • the stream parts around the current page's words: window.__PHRASES is
-//     set per route (the wasm re-reads it every cycle) and __PHRASES_GEN bumped
-//     so the words change at once;
-//   • the readable content scrolls up over the stream on a dark sheet: the
-//     first screen is the stream, everything else is below it;
-//   • navigation (site.navigate / site.onRoute), and every field read through
-//     site.field, so the observer can fill gaps.
-//
-// Runs only inside the site (window.site); standalone (trunk serve) the
-// experiment's own phrases keep cycling.
+//   • All content is baked: window.__BAKED (baked/site.js, inlined into
+//     index.html at build time; scripts/bake-stream.sh refreshes it) holds
+//     the site's content and copy. Nothing is fetched at runtime; the host's
+//     site.loaded only supplies the starting route.
+//   • Paged screens: each route is a short sequence of full-screen
+//     compositions. Wheel, swipe, arrow keys and the pager step through them.
+//   • Everything displaces the stream. Each screen is described to the wasm as
+//     an obstacle scene (window.__SCENE), measured from the DOM so the two
+//     always agree:
+//       glyph  big type: the GPU draws it in relief (the DOM copy turns
+//              transparent once it does, and stays for selection and readers)
+//       box    everything else: block text and media sit in panels, short
+//              text on pills (.ob-word); the stream flows around them
+//     The nav and pager are the "chrome" scene: they stay put while pages
+//     slide through the water. window.__SCENE_T carries the slide (offset,
+//     velocity, opacity) every frame, so the moving page plows the stream.
 (function () {
   "use strict";
-  var site = window.site;
-  if (!site) return;
+  var site = window.site || null;
+  var B = window.__BAKED || {};
+  ["pages", "projects", "experiments", "experience"].forEach(function (k) { if (!Array.isArray(B[k])) B[k] = []; });
+  window.__SCENE_MODE = true;
 
-  var T = function (key, def) { return typeof site.text === "function" ? site.text(key, def) : def; };
-  var F = function (item, name, opts) { return site.field(item, name, opts || { expect: "text" }); };
-  var OPT = { expect: "text", optional: true };
   var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var DEFAULTS = { tagline: "Creative technology / AI", experimentsEmpty: "Coming soon." };
+  function T(key) {
+    var v = B.copy && B.copy[key];
+    return typeof v === "string" && v ? v : DEFAULTS[key] || "";
+  }
+  function s(v) { return typeof v === "string" ? v : v == null ? "" : String(v); }
+  function list(v) { return Array.isArray(v) ? v : []; }
 
   function el(tag, cls, text) {
     var e = document.createElement(tag);
@@ -27,342 +38,572 @@
     if (text != null) e.textContent = text;
     return e;
   }
+  function go(route) {
+    if (site) site.navigate(route);
+    else location.hash = "#/" + route;
+  }
   function link(text, route, cls) {
     var a = el("a", cls, text);
-    a.href = "#";
-    a.addEventListener("click", function (e) { e.preventDefault(); site.navigate(route); });
+    a.href = "#/" + route;
+    a.addEventListener("click", function (e) { e.preventDefault(); go(route); });
     return a;
   }
+  function external(text, href, cls) {
+    var b = el("button", cls, text + " ↗");
+    b.type = "button";
+    b.addEventListener("click", function () {
+      if (site) site.openExternal(href); else window.open(href, "_blank", "noopener");
+    });
+    return b;
+  }
   function paras(body) {
-    return String(body || "").split(/\n\s*\n/).map(function (p) { return p.trim(); }).filter(Boolean);
+    return s(body).split(/\r?\n\s*\r?\n/).map(function (p) { return p.trim(); }).filter(Boolean);
   }
   var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  function month(s) {
-    var m = /^(\d{4})(?:-(\d{2}))?$/.exec(s || "");
+  function month(v) {
+    var m = /^(\d{4})(?:-(\d{2}))?$/.exec(s(v));
     if (!m) return "";
     return m[2] ? MONTHS[+m[2] - 1] + " " + m[1] : m[1];
   }
-  function dates(role) {
-    var a = month(F(role, "start", OPT));
-    var b = site.field(role, "current", { expect: "bool", optional: true }) ? T("present", "present") : month(F(role, "end", OPT));
-    return a && b ? a + " " + T("dateTo", "to") + " " + b : a || b;
+  function dates(r) {
+    var a = month(r.start), b = r.current ? "present" : month(r.end);
+    return a && b ? a + " to " + b : a || b;
   }
-  function upper(s) { return String(s || "").toUpperCase(); }
+  // long paragraphs read better at body size
+  function lede(text) { return text.length > 420 ? "st-body st-long" : "st-lede"; }
+  function two(n) { return (n < 9 ? "0" : "") + (n + 1); }
 
-  // ── the words the stream parts around ──
-  var gen = 0;
-  function setPhrases(list) {
-    list = list.map(function (s) { return upper(s).trim(); }).filter(Boolean);
-    if (!list.length) list = ["BEN PRIDDY"];
-    window.__PHRASES = list;
-    window.__PHRASES_GEN = ++gen;
-  }
+  // ── the parts a screen is made of ──
+  // big display type, drawn by the GPU in relief
+  function glyph(tag, cls, text) { return el(tag, "ob-glyph " + (cls || ""), s(text).toUpperCase()); }
+  // a block the stream flows around
+  function box(tag, cls) { return el(tag || "div", "ob-box " + (cls || "")); }
+  function label(text) { return el("p", "st-label ob-word", text); }
 
-  // ── media ──
-  var loopObserver = typeof IntersectionObserver === "function" ? new IntersectionObserver(function (entries) {
-    entries.forEach(function (e) {
-      var v = e.target;
-      if (e.isIntersecting && !reduce) { v.muted = true; var p = v.play(); if (p && p.catch) p.catch(function () {}); }
-      else v.pause();
-    });
-  }, { threshold: 0.2 }) : null;
   function mediaEl(m, alt, eager) {
-    var kind = m && m.kind;
-    var box = el("figure", "st-media");
-    if (m.width && m.height) box.style.aspectRatio = m.width + " / " + m.height;
-    if (kind === "loop") {
+    if (!m || (m.kind !== "image" && m.kind !== "loop")) return null;
+    var fig = el("figure", "st-media ob-box");
+    if (m.width && m.height) fig.style.aspectRatio = m.width + " / " + m.height;
+    if (m.kind === "loop") {
       var v = el("video");
       v.muted = true; v.loop = true; v.playsInline = true; v.preload = "none";
       v.setAttribute("muted", ""); v.setAttribute("playsinline", "");
       if (m.poster) v.poster = m.poster;
       v.src = m.src;
       v.setAttribute("aria-label", m.alt || alt);
-      box.append(v);
-      if (loopObserver) loopObserver.observe(v);
-    } else if (kind === "image") {
+      fig.append(v);
+    } else {
       var img = el("img");
       img.src = m.src;
       img.alt = m.alt || alt;
       img.decoding = "async";
       if (!eager) img.loading = "lazy";
       if (m.width && m.height) { img.width = m.width; img.height = m.height; }
-      box.append(img);
-    } else {
-      return null;
+      fig.append(img);
     }
-    return box;
+    return fig;
   }
 
-  // ── the page ──
-  var page = el("div", "st-page");
-  page.id = "st-page";
-  var nav = el("nav", "st-nav");
-  nav.setAttribute("aria-label", "Pages");
-  var hero = el("section", "st-hero");
-  hero.setAttribute("aria-hidden", "true");
-  var cue = el("p", "st-cue");
-  hero.append(cue);
-  var sheet = el("main", "st-sheet");
-  sheet.id = "st-sheet";
-  page.append(hero, sheet);
-  document.body.append(page, nav);
-
-  function renderNav(route) {
-    nav.replaceChildren();
-    var items = [["", T("navHome", "Home")], ["work", T("navWork", "Work")], ["experiments", T("navExperiments", "Experiments")]];
-    site.pages().forEach(function (p) {
-      var slug = F(p, "slug", OPT);
-      if (slug && slug !== "work" && slug !== "experiments") items.push([slug, F(p, "title", { expect: "text", fallback: slug })]);
-    });
-    items.forEach(function (it) {
-      var a = link(it[1], it[0], "st-nav-link");
-      var current = it[0] === "" ? route === "" : route === it[0] || route.indexOf(it[0] + "/") === 0;
-      if (current) a.setAttribute("aria-current", "page");
-      nav.append(a);
-    });
+  // ── the screens of each route ──
+  function screen(cls, name) {
+    var sc = el("section", "st-screen " + (cls || ""));
+    sc.setAttribute("aria-label", name);
+    return sc;
   }
 
-  function label(text) { return el("p", "st-label", text); }
+  function homeScreens() {
+    var home = B.pages.filter(function (p) { return p.slug === ""; })[0] || {};
+    var name = s(home.title) || "Ben Priddy";
+    var roles = B.experience;
+    var current = roles.filter(function (r) { return r.current; })[0];
+    var out = [];
 
-  function workList(projects, limit) {
+    var hero = screen("st-hero", name);
+    hero.append(glyph("h1", "st-name", name), el("p", "st-tagline ob-word", T("tagline")));
+    if (current) hero.append(el("p", "st-now ob-word", s(current.role) + " · " + s(current.company)));
+    out.push(hero);
+
+    paras(home.body).forEach(function (p, i) {
+      var sc = screen("st-read", "About");
+      var b = box("div", "st-panel");
+      if (i === 0) b.append(el("p", "st-label", "About"));
+      b.append(el("p", lede(p), p));
+      sc.append(b);
+      out.push(sc);
+    });
+
+    if (roles.length) {
+      var xs = screen("st-xp-screen", "Experience");
+      xs.append(glyph("h2", "st-h2", "Experience"));
+      var ol = box("ol", "st-panel st-xp");
+      roles.forEach(function (r) {
+        var li = el("li", "st-xp-item");
+        li.append(el("p", "st-xp-dates", dates(r)));
+        var main = el("div", "st-xp-main");
+        main.append(el("h3", "st-xp-role", s(r.role)), el("p", "st-xp-company", s(r.company)));
+        if (r.note) main.append(el("p", "st-xp-note", s(r.note)));
+        li.append(main);
+        ol.append(li);
+      });
+      xs.append(ol);
+      out.push(xs);
+    }
+
+    if (B.projects.length) {
+      var ws = screen("st-list-screen", "Selected work");
+      ws.append(label("Selected work"), workList(B.projects.slice(0, 6), 0));
+      var more = el("p", "st-more");
+      more.append(link("All work", "work", "st-link ob-word"));
+      ws.append(more);
+      out.push(ws);
+    }
+
+    out.push(experimentsScreen());
+    return out;
+  }
+
+  function workList(projects, offset) {
     var ol = el("ol", "st-work");
-    projects.slice(0, limit || projects.length).forEach(function (p, i) {
-      var slug = F(p, "slug", OPT);
+    projects.forEach(function (p, i) {
       var li = el("li", "st-work-item");
-      var a = link("", "work/" + slug, "st-work-link");
-      a.append(el("span", "st-work-n", (i < 9 ? "0" : "") + (i + 1)));
-      var t = el("span", "st-work-text");
-      t.append(el("span", "st-work-title", F(p, "title", { expect: "text", fallback: slug })));
-      var meta = [F(p, "client", OPT), F(p, "year", OPT)].filter(Boolean).join(" · ");
-      if (meta) t.append(el("span", "st-work-meta", meta));
-      a.append(t);
-      var media = site.field(p, "media", { expect: "list", optional: true });
-      var thumb = media.filter(function (m) { return m && m.kind === "loop"; })[0] || media.filter(function (m) { return m && m.kind === "image"; })[0];
-      if (thumb) { var me = mediaEl(thumb, "", false); if (me) { me.classList.add("st-work-thumb"); a.append(me); } }
+      var a = link("", "work/" + s(p.slug), "st-work-link");
+      a.append(glyph("span", "st-work-title", s(p.title) || s(p.slug)));
+      var meta = [two(offset + i), s(p.client), s(p.year)].filter(Boolean).join(" · ");
+      a.append(el("span", "st-work-meta ob-word", meta));
       li.append(a);
       ol.append(li);
     });
     return ol;
   }
 
-  function renderHome() {
-    var home = site.page("");
-    var name = F(home, "title", { expect: "text", fallback: "Ben Priddy" });
-    var roles = typeof site.experience === "function" ? site.experience() : [];
-    var current = roles.filter(function (r) { return site.field(r, "current", { expect: "bool", optional: true }); })[0];
-    setPhrases([name, T("tagline", "Creative technology / AI")].concat(current ? [F(current, "role", OPT), F(current, "company", OPT)] : []));
-
-    var head = el("header", "st-head");
-    head.append(el("h1", "st-title", name), el("p", "st-tagline", T("tagline", "Creative technology / AI")));
-    sheet.append(head);
-
-    var bio = paras(F(home, "body", OPT));
-    if (bio.length) {
-      var sec = el("section", "st-section st-bio");
-      sec.append(label(T("aboutLabel", "About")));
-      bio.forEach(function (p, i) { sec.append(el("p", i === 0 ? "st-lede" : "st-body", p)); });
-      sheet.append(sec);
-    }
-    if (roles.length) {
-      var xs = el("section", "st-section");
-      xs.append(label(T("experienceLabel", "Experience")));
-      var ol = el("ol", "st-xp");
-      roles.forEach(function (r) {
-        var li = el("li", "st-xp-item");
-        li.append(el("p", "st-xp-dates", dates(r)));
-        var main = el("div", "st-xp-main");
-        main.append(el("h3", "st-xp-role", F(r, "role", OPT)), el("p", "st-xp-company", F(r, "company", OPT)));
-        var note = F(r, "note", OPT);
-        if (note) main.append(el("p", "st-xp-note", note));
-        li.append(main);
-        ol.append(li);
-      });
-      xs.append(ol);
-      sheet.append(xs);
-    }
-    var projects = site.projects();
-    if (projects.length) {
-      var ws = el("section", "st-section");
-      ws.append(label(T("selectedWorkLabel", "Selected work")), workList(projects, 6));
-      var more = el("p", "st-more");
-      more.append(link(T("allWorkLink", "All work") + " →", "work", "st-link"));
-      ws.append(more);
-      sheet.append(ws);
-    }
-    sheet.append(experimentsSection());
-  }
-
-  function experimentsSection() {
-    var sec = el("section", "st-section");
-    sec.append(label(T("experimentsTitle", "Experiments")));
-    var exps = site.experiments();
+  function experimentsScreen() {
+    var sc = screen("st-exp-screen", "Experiments");
+    sc.append(glyph("h2", "st-h2", "Experiments"));
+    var exps = B.experiments;
     if (!exps.length) {
-      sec.append(el("p", "st-lede st-empty", T("experimentsEmpty", "Coming soon.")));
-      return sec;
+      sc.append(el("p", "st-soon ob-word", T("experimentsEmpty")));
+      return sc;
     }
-    var ol = el("ol", "st-work");
+    var ol = box("ol", "st-panel st-exps");
     exps.forEach(function (x) {
-      var li = el("li", "st-work-item st-exp");
-      li.append(el("h3", "st-work-title", F(x, "title", { expect: "text", fallback: F(x, "slug", OPT) })));
-      var sum = F(x, "summary", OPT);
-      if (sum) li.append(el("p", "st-body", sum));
-      var media = site.field(x, "media", { expect: "list", optional: true });
-      if (media[0]) { var me = mediaEl(media[0], F(x, "title", OPT), false); if (me) li.append(me); }
-      var href = F(x, "link", OPT);
-      if (href) {
-        var b = el("button", "st-link", T("openExperiment", "Open it") + " ↗");
-        b.type = "button";
-        b.addEventListener("click", function () { site.openExternal(href); });
-        li.append(b);
-      }
+      var li = el("li", "st-exp");
+      li.append(el("h3", "st-xp-role", s(x.title) || s(x.slug)));
+      if (x.summary) li.append(el("p", "st-body", s(x.summary)));
+      if (x.link) li.append(external("Open it", s(x.link), "st-link"));
       ol.append(li);
     });
-    sec.append(ol);
-    return sec;
+    sc.append(ol);
+    return sc;
   }
 
-  function renderWork() {
-    var projects = site.projects();
-    setPhrases([T("workTitle", "Work")].concat(projects.map(function (p) { return F(p, "title", OPT); })));
-    var head = el("header", "st-head");
-    head.append(el("h1", "st-title", T("workTitle", "Work")),
-      el("p", "st-tagline", T("projectsCount", "{n} projects").replace("{n}", String(projects.length))));
-    sheet.append(head);
-    var sec = el("section", "st-section");
-    sec.append(workList(projects));
-    sheet.append(sec);
+  function workScreens() {
+    var projects = B.projects;
+    var out = [];
+    var per = window.innerHeight < 760 ? 5 : 6;
+    for (var k = 0; k < projects.length; k += per) {
+      var sc = screen("st-list-screen", "Work");
+      if (k === 0) sc.append(glyph("h1", "st-h2", "Work"));
+      else sc.append(label("Work, continued"));
+      sc.append(workList(projects.slice(k, k + per), k));
+      out.push(sc);
+    }
+    if (!out.length) {
+      var e = screen("st-hero", "Work");
+      e.append(glyph("h1", "st-name", "Work"));
+      out.push(e);
+    }
+    return out;
   }
 
-  function renderProject(slug) {
-    var projects = site.projects();
+  function projectScreens(slug) {
+    var projects = B.projects;
     var i = -1;
-    projects.forEach(function (p, k) { if (F(p, "slug", OPT) === slug) i = k; });
-    if (i < 0) return renderNotFound();
+    projects.forEach(function (p, k) { if (p.slug === slug) i = k; });
+    if (i < 0) return notFoundScreens();
     var p = projects[i];
-    var title = F(p, "title", { expect: "text", fallback: slug });
-    var client = F(p, "client", OPT), year = F(p, "year", OPT);
-    setPhrases([title, [client, year].filter(Boolean).join(" · ")]);
+    var title = s(p.title) || slug;
+    var media = list(p.media);
+    var heroImg = media.filter(function (m) { return m && m.kind === "image"; })[0];
+    var rest = media.filter(function (m) { return m && m !== heroImg; });
+    var out = [];
 
-    var head = el("header", "st-head");
-    head.append(el("p", "st-label", (i < 9 ? "0" : "") + (i + 1) + " / " + projects.length), el("h1", "st-title", title));
-    sheet.append(head);
-
-    var dl = el("dl", "st-meta");
-    [[T("clientLabel", "Client"), client], [T("agencyLabel", "Agency"), F(p, "agency", OPT)], [T("yearLabel", "Year"), year],
-     [T("rolesLabel", "Role"), site.field(p, "roles", { expect: "list", optional: true }).join(", ")],
-     [T("tagsLabel", "Tags"), site.field(p, "tags", { expect: "list", optional: true }).join(", ")]].forEach(function (row) {
-      if (!row[1]) return;
-      var d = el("div");
-      d.append(el("dt", null, row[0]), el("dd", null, row[1]));
-      dl.append(d);
+    var t = screen("st-hero st-project-hero", title);
+    t.append(label(two(i) + " / " + projects.length), glyph("h1", "st-name st-project-name", title));
+    var meta = el("dl", "st-meta");
+    [["Client", p.client], ["Agency", p.agency], ["Year", p.year], ["Role", list(p.roles).join(", ")]].forEach(function (row) {
+      if (!s(row[1])) return;
+      var d = el("div", "ob-word");
+      d.append(el("dt", null, row[0]), el("dd", null, s(row[1])));
+      meta.append(d);
     });
-    sheet.append(dl);
+    t.append(meta);
+    out.push(t);
 
-    var media = site.field(p, "media", { expect: "list", optional: true });
-    var hero = media.filter(function (m) { return m && m.kind === "image"; })[0];
-    if (hero) { var hm = mediaEl(hero, title, true); if (hm) { hm.classList.add("st-hero-media"); sheet.append(hm); } }
-
-    [["briefLabel", "Brief", "summary", "st-lede"], ["roleLabel", "Role", "contribution", "st-body"], ["notesLabel", "Notes", "body", "st-body"]].forEach(function (s) {
-      var ps = paras(F(p, s[2], OPT));
+    var brief = paras(p.summary);
+    if (heroImg || brief.length) {
+      var sc = screen("st-split", "Brief");
+      var hm = heroImg && mediaEl(heroImg, title, true);
+      if (hm) sc.append(hm);
+      if (brief.length) {
+        var b = box("div", "st-panel");
+        b.append(el("p", "st-label", "Brief"));
+        brief.forEach(function (x) { b.append(el("p", lede(x), x)); });
+        sc.append(b);
+      }
+      out.push(sc);
+    }
+    [["Role", p.contribution], ["Notes", p.body]].forEach(function (sec) {
+      var ps = paras(sec[1]);
       if (!ps.length) return;
-      var sec = el("section", "st-section");
-      sec.append(label(T(s[0], s[1])));
-      ps.forEach(function (t) { sec.append(el("p", s[3], t)); });
-      sheet.append(sec);
+      var sc = screen("st-read", sec[0]);
+      var b = box("div", "st-panel");
+      b.append(el("p", "st-label", sec[0]));
+      ps.forEach(function (x) { b.append(el("p", "st-body", x)); });
+      sc.append(b);
+      out.push(sc);
     });
-
-    var links = el("p", "st-links");
-    var yt = F(p, "youtube", OPT), live = F(p, "link", OPT);
-    if (yt) {
-      var fb = el("button", "st-link", T("filmLink", "Watch the film") + " ↗");
-      fb.type = "button";
-      fb.addEventListener("click", function () { site.openExternal("https://www.youtube.com/watch?v=" + yt); });
-      links.append(fb);
-    }
-    if (live) {
-      var lb = el("button", "st-link", T("liveLink", "Visit the work") + " ↗");
-      lb.type = "button";
-      lb.addEventListener("click", function () { site.openExternal(live); });
-      links.append(lb);
-    }
-    if (links.childNodes.length) sheet.append(links);
-
-    var rest = media.filter(function (m) { return m && m !== hero; });
     if (rest.length) {
-      var ms = el("section", "st-section st-gallery");
-      rest.forEach(function (m, k) { var me = mediaEl(m, title + " " + (k + 1), false); if (me) ms.append(me); });
-      sheet.append(ms);
+      var g = screen("st-gallery", "Gallery");
+      rest.slice(0, 4).forEach(function (m, k) { var me = mediaEl(m, title + " " + (k + 1), false); if (me) g.append(me); });
+      out.push(g);
     }
-
+    var nx = screen("st-next", "Next");
+    var links = el("p", "st-links");
+    if (p.youtube) links.append(external("Watch the film", "https://www.youtube.com/watch?v=" + s(p.youtube), "st-link ob-word"));
+    if (p.link) links.append(external("Visit the work", s(p.link), "st-link ob-word"));
+    if (links.childNodes.length) nx.append(links);
     if (projects.length > 1) {
       var next = projects[(i + 1) % projects.length];
-      var nx = el("nav", "st-next");
-      nx.setAttribute("aria-label", T("moreWorkLabel", "More work"));
-      nx.append(label(T("nextLabel", "Next")), link(F(next, "title", OPT), "work/" + F(next, "slug", OPT), "st-next-title"),
-        link(T("allWorkLink", "All work"), "work", "st-link"));
-      sheet.append(nx);
+      var a = link("", "work/" + s(next.slug), "st-next-link");
+      a.append(glyph("span", "st-h2", s(next.title) || s(next.slug)));
+      var all = el("p", "st-more");
+      all.append(link("All work", "work", "st-link ob-word"));
+      nx.append(label("Next"), a, all);
     }
+    out.push(nx);
+    return out;
   }
 
-  function renderExperiments() {
-    setPhrases([T("experimentsTitle", "Experiments"), T("experimentsEmpty", "Coming soon.")]);
-    var head = el("header", "st-head");
-    head.append(el("h1", "st-title", T("experimentsTitle", "Experiments")));
-    sheet.append(head);
-    var sec = experimentsSection();
-    sec.firstChild.remove(); // the title is the page's
-    sheet.append(sec);
+  function pageScreens(p) {
+    var title = s(p.title) || s(p.slug);
+    var t = screen("st-hero", title);
+    t.append(glyph("h1", "st-name", title));
+    var out = [t];
+    paras(p.body).forEach(function (x, i) {
+      var sc = screen("st-read", title);
+      var b = box("div", "st-panel");
+      b.append(el("p", i === 0 ? "st-lede" : "st-body", x));
+      sc.append(b);
+      out.push(sc);
+    });
+    return out;
   }
 
-  function renderPage(p) {
-    var title = F(p, "title", { expect: "text", fallback: F(p, "slug", OPT) });
-    setPhrases([title]);
-    var head = el("header", "st-head");
-    head.append(el("h1", "st-title", title));
-    sheet.append(head);
-    var sec = el("section", "st-section");
-    paras(F(p, "body", OPT)).forEach(function (t, i) { sec.append(el("p", i === 0 ? "st-lede" : "st-body", t)); });
-    sheet.append(sec);
+  function notFoundScreens() {
+    var sc = screen("st-hero", "Not found");
+    var p = el("p", "st-tagline ob-word", "There's nothing here. ");
+    p.append(link("Home", "", "st-link"));
+    sc.append(glyph("h1", "st-name", "Not found"), p);
+    return [sc];
   }
 
-  function renderNotFound() {
-    setPhrases([T("notFoundTitle", "Not found")]);
-    var head = el("header", "st-head");
-    head.append(el("h1", "st-title", T("notFoundTitle", "Not found")));
-    var p = el("p", "st-lede", T("notFoundBody", "There's nothing here. "));
-    p.append(link(T("navHome", "Home"), "", "st-link"));
-    head.append(p);
-    sheet.append(head);
+  function screensFor(r) {
+    if (r === "") return homeScreens();
+    if (r === "work") return workScreens();
+    if (r.indexOf("work/") === 0) return projectScreens(r.slice(5));
+    if (r === "experiments") return [experimentsScreen()];
+    var p = B.pages.filter(function (x) { return x.slug === r; })[0];
+    return p ? pageScreens(p) : notFoundScreens();
   }
 
-  function render(route) {
-    route = route || "";
-    sheet.replaceChildren();
-    renderNav(route);
-    cue.textContent = T("scrollCue", "Scroll");
-    if (route === "") renderHome();
-    else if (route === "work") renderWork();
-    else if (route.indexOf("work/") === 0) renderProject(route.slice(5));
-    else if (route === "experiments") renderExperiments();
-    else {
-      var p = site.page(route);
-      if (p && F(p, "slug", OPT) === route) renderPage(p);
-      else renderNotFound();
+  // ── the frame ──
+  var stage = el("main", "st-stage");
+  var nav = el("nav", "st-nav ob-box");
+  nav.setAttribute("aria-label", "Pages");
+  var pager = el("div", "st-pager ob-box");
+  var pagerN = el("span", "st-pager-n");
+  var prevB = el("button", "st-pager-b", "Back");
+  prevB.type = "button"; prevB.setAttribute("aria-label", "Previous screen");
+  var nextB = el("button", "st-pager-b", "Next");
+  nextB.type = "button"; nextB.setAttribute("aria-label", "Next screen");
+  pager.append(prevB, pagerN, nextB);
+  document.body.append(stage, nav, pager);
+
+  function renderNav(r) {
+    nav.replaceChildren();
+    var items = [["", "Home"], ["work", "Work"], ["experiments", "Experiments"]];
+    B.pages.forEach(function (p) {
+      if (p.slug && p.slug !== "work" && p.slug !== "experiments") items.push([p.slug, s(p.title) || p.slug]);
+    });
+    items.forEach(function (it) {
+      var a = link(it[1], it[0], "st-nav-link");
+      var cur = it[0] === "" ? r === "" : r === it[0] || r.indexOf(it[0] + "/") === 0;
+      if (cur) a.setAttribute("aria-current", "page");
+      nav.append(a);
+    });
+  }
+
+  // ── the obstacle scene, measured from the DOM ──
+  var mctx = document.createElement("canvas").getContext("2d");
+  function fontOf(e) {
+    var cs = getComputedStyle(e);
+    return cs.fontStyle + " " + cs.fontWeight + " " + cs.fontSize + " " + cs.fontFamily;
+  }
+  // an element's text as laid out, one entry per line: {t, x, y (baseline)}
+  function lines(e, font) {
+    mctx.font = font;
+    var asc = mctx.measureText("Hg").fontBoundingBoxAscent || 0;
+    var out = [], cur = null;
+    var walker = document.createTreeWalker(e, NodeFilter.SHOW_TEXT);
+    var range = document.createRange();
+    var node;
+    while ((node = walker.nextNode())) {
+      var text = node.nodeValue, re = /\S+/g, m;
+      while ((m = re.exec(text))) {
+        range.setStart(node, m.index);
+        range.setEnd(node, m.index + m[0].length);
+        var r = range.getClientRects()[0];
+        if (!r || r.width === 0) continue;
+        if (cur && Math.abs(r.top - cur.top) < r.height * 0.5) {
+          cur.t += " " + m[0];
+        } else {
+          cur = { t: m[0], x: r.left, y: r.top + asc, top: r.top };
+          out.push(cur);
+        }
+      }
     }
-    page.scrollTop = 0;
+    return out;
+  }
+  function describe(root, dy) {
+    var out = { glyphs: [], words: [], boxes: [] };
+    function add(kind, e) {
+      var f = fontOf(e);
+      lines(e, f).forEach(function (l) { out[kind].push({ t: l.t, f: f, x: l.x, y: l.y - dy }); });
+    }
+    if (root.offsetParent === null && getComputedStyle(root).position !== "fixed") return out;
+    root.querySelectorAll(".ob-glyph").forEach(function (e) { add("glyphs", e); });
+    // panels and pills: the root itself may be one (the nav, the pager)
+    [root].concat([].slice.call(root.querySelectorAll(".ob-box, .ob-word"))).forEach(function (e) {
+      if (!e.classList.contains("ob-box") && !e.classList.contains("ob-word")) return;
+      var r = e.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) return;
+      var rad = parseFloat(getComputedStyle(e).borderTopLeftRadius) || 0;
+      out.boxes.push({ x: r.left, y: r.top - dy, w: r.width, h: r.height, r: rad });
+    });
+    return out;
+  }
+  var sceneGen = 0;
+  // measured at rest: a sliding page's offset reaches the wasm through __SCENE_T
+  function publishScene() {
+    var sc = screens[index];
+    if (!sc) return;
+    var chrome = describe(nav, 0), p = describe(pager, 0);
+    chrome.boxes = chrome.boxes.concat(p.boxes);
+    window.__SCENE = {
+      gen: ++sceneGen,
+      vw: window.innerWidth,
+      vh: window.innerHeight,
+      page: describe(sc, sc._dy || 0),
+      chrome: chrome
+    };
   }
 
-  site.loaded.then(function (init) {
-    try {
-      site.theme("dark");
-      render(init.route);
-      site.onRoute(render);
-      // the content is on screen: ready now (the protocol's order). The stream
-      // fades in behind it when the GPU is set up, however long that takes on
-      // this machine; the wasm's own ready after its first frame is a no-op then.
-      site.ready();
-    } catch (e) {
-      site.reportError(e);
+  // the wasm sets __SCENE_DRAWN once its relief type is on screen; until then
+  // (and if WebGPU never comes up) the DOM shows the big type itself
+  (function watchDrawn() {
+    if (window.__SCENE_DRAWN) document.documentElement.classList.add("gpu-type");
+    else requestAnimationFrame(watchDrawn);
+  })();
+
+  // ── paging ──
+  var screens = [], index = 0, busy = false, queued = null, seq = 0;
+  var SLIDE = 0.55; // how far a page travels on a step (fraction of the screen)
+  var OUT_MS = reduce ? 160 : 380, IN_MS = reduce ? 200 : 560;
+  window.__SCENE_T = { dv: 0, vy: 0, op: 1 };
+
+  function setOffset(sc, dv, op) {
+    sc._dy = dv * window.innerHeight;
+    sc.style.transform = dv ? "translate3d(0," + sc._dy.toFixed(1) + "px,0)" : "";
+    sc.style.opacity = op >= 1 ? "" : String(op);
+  }
+  function updatePager() {
+    pagerN.textContent = screens.length > 1 ? two(index) + " / " + two(screens.length - 1) : "";
+    prevB.disabled = index === 0;
+    nextB.disabled = index >= screens.length - 1;
+    pager.hidden = screens.length < 2;
+  }
+  function activate(i) {
+    screens.forEach(function (sc, k) {
+      var on = k === i;
+      sc.classList.toggle("is-on", on);
+      sc.inert = !on;
+    });
+    index = i;
+    updatePager();
+    playLoops();
+  }
+  function animate(ms, fn) {
+    return new Promise(function (res) {
+      var t0 = performance.now(), last = t0;
+      function f(now) {
+        var t = Math.min(1, (now - t0) / ms);
+        fn(t, Math.max(1, now - last));
+        last = now;
+        if (t < 1) requestAnimationFrame(f); else res();
+      }
+      requestAnimationFrame(f);
+    });
+  }
+  // dir +1: the page rises out of the top and the next rises in from below
+  // a click or key during a slide runs when it lands (wheel momentum doesn't queue)
+  function step(to) {
+    if (busy) { queued = to; return; }
+    if (to === index || to < 0 || to >= screens.length) return;
+    busy = true;
+    var my = ++seq; // a route change mid-slide retires this one
+    var dir = to > index ? 1 : -1;
+    var from = screens[index], next = screens[to];
+    var prev = 0;
+    function frame(sc, dv, op, dtms) {
+      if (my !== seq) return;
+      setOffset(sc, dv, op);
+      window.__SCENE_T = { dv: dv, vy: -2 * (dv - prev) / (dtms / 1000), op: op };
+      prev = dv;
     }
+    animate(OUT_MS, function (t, dtms) {
+      var e = t * t;
+      frame(from, reduce ? 0 : -dir * SLIDE * e, 1 - e, dtms);
+    }).then(function () {
+      if (my !== seq) return;
+      setOffset(from, 0, 1);
+      var start = reduce ? 0 : dir * SLIDE;
+      setOffset(next, start, 0);
+      activate(to);
+      publishScene();
+      prev = start;
+      return animate(IN_MS, function (t, dtms) {
+        var e = 1 - Math.pow(1 - t, 3);
+        frame(next, start * (1 - e), e, dtms);
+      });
+    }).then(function () {
+      if (my !== seq) return;
+      setOffset(next, 0, 1);
+      window.__SCENE_T = { dv: 0, vy: 0, op: 1 };
+      busy = false;
+      if (queued != null) { var q = queued; queued = null; step(q); }
+    });
+  }
+  prevB.addEventListener("click", function () { step(index - 1); });
+  nextB.addEventListener("click", function () { step(index + 1); });
+  // tabbing into another screen brings it up
+  stage.addEventListener("focusin", function (e) {
+    var k = screens.indexOf(e.target.closest && e.target.closest(".st-screen"));
+    if (k >= 0 && k !== index) step(k);
   });
+
+  // a panel whose text doesn't fit scrolls first; then the page steps
+  function scroller(t) {
+    while (t && t !== stage && t.nodeType === 1) {
+      if (t.scrollHeight > t.clientHeight + 2 && /(auto|scroll)/.test(getComputedStyle(t).overflowY)) return t;
+      t = t.parentElement;
+    }
+    return null;
+  }
+  function canScroll(sc, dir) {
+    if (!sc) return false;
+    return dir > 0 ? sc.scrollTop + sc.clientHeight < sc.scrollHeight - 2 : sc.scrollTop > 2;
+  }
+  var wheelAcc = 0, wheelT = 0;
+  window.addEventListener("wheel", function (e) {
+    var dir = e.deltaY > 0 ? 1 : -1;
+    if (canScroll(scroller(e.target), dir)) return;
+    e.preventDefault();
+    var now = performance.now();
+    if (now - wheelT > 260) wheelAcc = 0;
+    wheelT = now;
+    if (busy) return;
+    wheelAcc += e.deltaMode === 1 ? e.deltaY * 32 : e.deltaY;
+    if (Math.abs(wheelAcc) > 50) { step(index + (wheelAcc > 0 ? 1 : -1)); wheelAcc = 0; }
+  }, { passive: false });
+  var ty = null, tsc = null, tst = 0;
+  window.addEventListener("touchstart", function (e) {
+    if (e.touches.length !== 1) { ty = null; return; }
+    ty = e.touches[0].clientY; tsc = scroller(e.target);
+    tst = tsc ? tsc.scrollTop : 0;
+  }, { passive: true });
+  window.addEventListener("touchend", function (e) {
+    if (ty == null) return;
+    var dy = ty - e.changedTouches[0].clientY;
+    ty = null;
+    if (Math.abs(dy) < 48) return;
+    var dir = dy > 0 ? 1 : -1;
+    // a swipe that scrolled a panel (or still could) stays in the panel
+    if (tsc && (tsc.scrollTop !== tst || canScroll(tsc, dir))) return;
+    step(index + dir);
+  }, { passive: true });
+  window.addEventListener("keydown", function (e) {
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    var t = e.target;
+    if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+    var k = e.key;
+    if (k === "ArrowDown" || k === "PageDown" || (k === " " && !e.shiftKey)) { e.preventDefault(); step(index + 1); }
+    else if (k === "ArrowUp" || k === "PageUp" || (k === " " && e.shiftKey)) { e.preventDefault(); step(index - 1); }
+    else if (k === "Home") { e.preventDefault(); step(0); }
+    else if (k === "End") { e.preventDefault(); step(screens.length - 1); }
+  });
+
+  function playLoops() {
+    screens.forEach(function (sc, k) {
+      sc.querySelectorAll("video").forEach(function (v) {
+        if (k === index && !reduce) { v.preload = "auto"; var p = v.play(); if (p && p.catch) p.catch(function () {}); }
+        else v.pause();
+      });
+    });
+  }
+
+  function render(r) {
+    r = r || "";
+    renderNav(r);
+    stage.replaceChildren();
+    screens = screensFor(r);
+    screens.forEach(function (sc) { stage.append(sc); setOffset(sc, 0, 1); });
+    busy = false;
+    queued = null;
+    seq++;
+    window.__SCENE_T = { dv: 0, vy: 0, op: 1 };
+    activate(0);
+    publishScene();
+  }
+
+  var resizeT = 0;
+  window.addEventListener("resize", function () {
+    clearTimeout(resizeT);
+    resizeT = setTimeout(function () { if (!busy) publishScene(); }, 120);
+  });
+
+  // the type must be in before it's measured and rastered
+  var fontsIn = document.fonts && document.fonts.load
+    ? Promise.all(["900 64px 'Inter Tight'", "400 16px 'Instrument Sans'", "400 12px 'Geist Mono'"].map(function (f) {
+        return document.fonts.load(f).catch(function () {});
+      }))
+    : Promise.resolve();
+
+  if (site) {
+    site.loaded.then(function (init) {
+      try {
+        site.theme("dark");
+        render(init.route);
+        site.onRoute(render);
+        site.ready();
+        fontsIn.then(publishScene);
+      } catch (e) {
+        site.reportError(e);
+      }
+    });
+  } else {
+    var fromHash = function () { return location.hash.replace(/^#\/?/, ""); };
+    window.addEventListener("hashchange", function () { render(fromHash()); });
+    render(fromHash());
+    fontsIn.then(publishScene);
+  }
 })();

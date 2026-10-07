@@ -28,3 +28,8 @@ The Latin subset has no arrows (← → ↗) or ⌘ ↵ ⇧; avoid them in house
 geist-mono.woff2             Geist Mono (The Geist Project Authors), variable wght, Latin subset, unmodified
   fetched 2026-10-06 from Google Fonts (fonts.gstatic.com, geistmono v6, latin). Used by the
   builder modal (web/static/build-modal.css), replacing Fragment Mono there. License: OFL-geistmono.txt
+
+inter-tight.woff2            Inter Tight (The Inter Project Authors), variable wght 100-900, Latin subset, unmodified
+  fetched 2026-10-07 from @fontsource-variable/inter-tight@5.2.5 inter-tight-latin-wght-normal.woff2.
+  The display type of builtin/stream (frontends/stream), drawn by the GPU as obstacles in the
+  particle stream. License: OFL-intertight.txt

@@ -23,10 +23,13 @@ build() { # <crate dir> <ref name>
   # a front end must load its assets relatively and include the host API
   grep -q '<script src="/site-host.js"></script>' "$dist/index.html" ||
     { echo "error: $dist/index.html does not include /site-host.js" >&2; exit 1; }
-  if grep -Eo '(src|href)="/[^"]*"' "$dist/index.html" | grep -v '"/site-host.js"'; then
+  if grep -Eo '(src|href)="/[^"]*"' "$dist/index.html" | grep -v '"/site-host.js"' | grep -v '"/fonts/'; then
     echo "error: $dist/index.html has root-absolute asset paths (above)" >&2
     exit 1
   fi
+  # precompressed copies, served when the browser takes gzip (internal/usercontent)
+  find "$dist" -type f \( -name '*.html' -o -name '*.js' -o -name '*.css' -o -name '*.wasm' -o -name '*.json' \) \
+    -exec gzip -9 -k -n -f {} \;
 }
 
 build site site

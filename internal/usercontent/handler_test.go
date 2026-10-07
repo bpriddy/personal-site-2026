@@ -48,6 +48,7 @@ func fixture(t *testing.T) string {
 		filepath.Join(fe, "builtin", "other", "index.html"): "OTHER " + secret,
 		filepath.Join(demo, "index.html"):                   "<!doctype html><title>demo</title>",
 		filepath.Join(demo, "app.js"):                       "console.log('hi')",
+		filepath.Join(demo, "app.js.gz"):                    "GZIPPED app.js",
 		filepath.Join(demo, "mod.mjs"):                      "export {}",
 		filepath.Join(demo, "site.wasm"):                    "\x00asm\x01\x00\x00\x00",
 		filepath.Join(demo, "shader.wgsl"):                  "@vertex fn main() {}",
@@ -547,5 +548,41 @@ func TestCSPNamesSelfOrigin(t *testing.T) {
 	}
 	if _, err := New(Options{SigningKey: []byte("k"), Source: NewDirSource(t.TempDir()), MainOrigin: "https://main.example", SelfOrigin: "https://uc.example/x"}); err == nil {
 		t.Error("a SelfOrigin with a path must be refused")
+	}
+}
+
+func TestGzipVariant(t *testing.T) {
+	h, _ := newHandler(t)
+	u := "/t/" + tok("builtin/demo", t0) + "/app.js"
+	for _, tc := range []struct {
+		accept string
+		gz     bool
+	}{
+		{"gzip, deflate, br", true},
+		{"br;q=1.0, gzip;q=0.8", true},
+		{"*", true},
+		{"gzip;q=0", false},
+		{"br", false},
+		{"", false},
+	} {
+		w := do(h, u, map[string]string{"Accept-Encoding": tc.accept})
+		if w.Code != 200 {
+			t.Fatalf("%q: code %d", tc.accept, w.Code)
+		}
+		gotGz := w.Header().Get("Content-Encoding") == "gzip"
+		if gotGz != tc.gz || (w.Body.String() == "GZIPPED app.js") != tc.gz {
+			t.Errorf("%q: gzip %v body %q, want gzip %v", tc.accept, gotGz, w.Body.String(), tc.gz)
+		}
+		if ct := w.Header().Get("Content-Type"); ct != "text/javascript; charset=utf-8" {
+			t.Errorf("%q: content-type %q", tc.accept, ct)
+		}
+		if v := w.Header().Get("Vary"); v != "Accept-Encoding" {
+			t.Errorf("%q: Vary %q", tc.accept, v)
+		}
+	}
+	// no .gz next to it: the plain file, still marked Vary
+	w := do(h, "/t/"+tok("builtin/demo", t0)+"/mod.mjs", map[string]string{"Accept-Encoding": "gzip"})
+	if w.Code != 200 || w.Header().Get("Content-Encoding") != "" || w.Body.String() != "export {}" {
+		t.Errorf("mod.mjs: %d %q %q", w.Code, w.Header().Get("Content-Encoding"), w.Body.String())
 	}
 }

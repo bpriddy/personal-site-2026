@@ -115,6 +115,8 @@ fn rand01(v: u32) -> f32 { return f32(pcg(v)) / 4294967295.0; }
 fn fieldAt(p: vec2<f32>) -> f32 {
   let uv = vec2<f32>(p.x * 0.5 + 0.5 - P.text_du, 0.5 - p.y * 0.5 - P.text_dv);
   let s = textureSampleLevel(field, fsamp, uv, 0.0);
+  // the chrome/phrase layer (BA) stays put; only the page layer (RG) slides
+  let c = textureSampleLevel(field, fsamp, vec2<f32>(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5), 0.0);
   let muv = (vec2<f32>(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5) + vec2<f32>(1.0, 1.0) - vec2<f32>(P.menu_du, P.menu_dv)) / 3.0;
   // only the single active panel cell (pad0,pad1) contributes - never its neighbours
   let inCell = abs(muv.x - P.pad0) < 0.1667 && abs(muv.y - P.pad1) < 0.1667;
@@ -122,7 +124,7 @@ fn fieldAt(p: vec2<f32>) -> f32 {
   // name (R) permanent; phrase (B) fades with z; panel (mr) pans in opposite the
   // drag — suppressed as a section title takes over (titlex.w) so the small east
   // panel's obstacle doesn't ghost behind the big zoomed title.
-  return max(max(s.r * P.name_op, s.b * P.phrase_w), mr * (1.0 - titlex.w));
+  return max(max(s.r * P.name_op, c.b * P.phrase_w), mr * (1.0 - titlex.w));
 }
 
 @compute @workgroup_size(64)
@@ -456,8 +458,9 @@ fn fs_bg(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
   // press doesn't leave the shadow as an outline at the original z.
   let zuv = vec2<f32>(0.5, 0.5) + (uv - vec2<f32>(0.5, 0.5)) / max(P.press_z, 0.01);
   let fr = textureSampleLevel(field, fsamp, zuv - vec2<f32>(P.text_du, P.text_dv), 0.0);
+  let fc = textureSampleLevel(field, fsamp, zuv, 0.0);
   let name_sh = fr.r * (1.0 - fr.g) * P.name_op;
-  let phrase_sh = fr.b * P.phrase_w * (1.0 - fr.a);
+  let phrase_sh = fc.b * P.phrase_w * (1.0 - fc.a);
   let shadow = max(name_sh, phrase_sh);
   col *= 1.0 - 0.55 * shadow;
 
@@ -685,7 +688,7 @@ fn fs_comp(in: VOut) -> @location(0) vec4<f32> {
   // phrase center (z<1 expands the sample → glyphs shrink → pushed back),
   // and multiply coverage by opacity. A fading phrase reveals the bloom again.
   let pivot = vec2<f32>(0.5, P.phrase_cy);
-  let puv = pivot + (zuv - vec2<f32>(P.text_du, P.text_dv) - pivot) / max(P.phrase_z, 0.01);
+  let puv = pivot + (zuv - pivot) / max(P.phrase_z, 0.01);
   let phrase_c = smoothstep(0.42, 0.55,
     textureSampleLevel(fieldtex, samp, puv, 0.0).a) * P.phrase_op;
 
@@ -1003,41 +1006,7 @@ fn coverage_to_sdf(sharp: &[u8], w: u32, h: u32, px_per_screen: f32, maxdist: f3
     out
 }
 
-// rasterize a title word large + centered (shrunk to fit) into a sharp coverage
-// mask — feeds the title SDF bake.
-fn raster_title_sharp(ctx: &web_sys::CanvasRenderingContext2d, w: u32, h: u32, title: &str) -> Vec<u8> {
-    let (wf, hf) = (w as f64, h as f64);
-    let (wu, hu) = (w as usize, h as usize);
-    ctx.set_filter("none");
-    ctx.set_fill_style_str("#000000");
-    ctx.fill_rect(0.0, 0.0, wf, hf);
-    ctx.set_fill_style_str("#ffffff");
-    ctx.set_text_align("center");
-    ctx.set_text_baseline("middle");
-    let mut fpx = hf * 0.6;
-    ctx.set_font(&format!("900 {:.0}px -apple-system, system-ui, sans-serif", fpx));
-    if let Ok(m) = ctx.measure_text(title) {
-        let tw = m.width();
-        if tw > wf * 0.88 {
-            fpx *= wf * 0.88 / tw; // shrink to fit
-            ctx.set_font(&format!("900 {:.0}px -apple-system, system-ui, sans-serif", fpx));
-        }
-    }
-    ctx.fill_text(title, wf * 0.5, hf * 0.5).ok();
-    let img = ctx.get_image_data(0.0, 0.0, wf, hf).unwrap().data();
-    let n = wu * hu;
-    (0..n).map(|i| img[i * 4]).collect()
-}
-
-// the section title's render/wake SDF (RG outward dir, B = distance as a fraction
-// of the title width). maxdist 0.1 = fine edge precision near the glyph; MUST match
-// the shader decodes (title_sdf .b * 0.1) in fs_comp and the sim title berth.
-// (The stroke-centerline camera path was parked — see parked/line-tracing/.)
-fn bake_title(ctx: &web_sys::CanvasRenderingContext2d, w: u32, h: u32, title: &str) -> Vec<u8> {
-    let sharp = raster_title_sharp(ctx, w, h, title);
-    coverage_to_sdf(&sharp, w, h, w as f32, 0.1)
-}
-
+// (the parked section-title and menu-atlas bakes live on in experiments/particle-stream)
 
 // wake SDF for the on-screen words (name + phrase), sampled in their moving frame
 fn bake_sdf(
@@ -1054,84 +1023,6 @@ fn bake_sdf(
     coverage_to_sdf(&sharp, sw, sh, sw as f32, maxdist)
 }
 
-// wake SDF for the off-screen panel atlas (static, baked once). The atlas spans
-// 3 screens across `w`, so one screen width = w/3 px.
-fn bake_atlas_sdf(ctx: &web_sys::CanvasRenderingContext2d, w: u32, h: u32, maxdist: f32, east: &str) -> Vec<u8> {
-    let entries = menu_atlas_entries(w, h, east);
-    let (_, sharp) = raster_atlas(ctx, w, h, &entries);
-    coverage_to_sdf(&sharp, w, h, w as f32 / 3.0, maxdist)
-}
-
-// the 8 off-screen panel words at their 3x3 atlas cell centres, sized for a
-// w x h canvas — shared by the live atlas raster and the wake-SDF bake. The EAST
-// cell is the live "current section" (its title), re-baked as the home cycles;
-// the rest are still fixed placeholders for now.
-fn menu_atlas_entries(w: u32, h: u32, east: &str) -> Vec<(String, f64, f64, f64)> {
-    let (cw, ch) = (w as f64, h as f64);
-    // panel font (atlas is 3x screen). On the phone tier the name jumps to ~0.205,
-    // so the panels scale up to match - capped at 0.05 so the longest word
-    // (NORTHWEST) still fits inside a 1/3-width cell.
-    let phone = ch > cw * 1.6;
-    let pf = if phone { cw * 0.05 } else { cw * 0.033 };
-    // the east cell is a live title (or long action-phrase fallback) — shrink its
-    // font so it still fits the 1/3-width cell rather than overflowing
-    let east_f = pf.min(cw * 0.5 / (east.chars().count().max(1) as f64));
-    vec![
-        ("NORTHWEST".into(), pf, 0.1667 * cw, 0.1667 * ch),
-        ("MENU".into(), pf, 0.5 * cw, 0.1667 * ch),
-        ("NORTHEAST".into(), pf, 0.8333 * cw, 0.1667 * ch),
-        ("WEST".into(), pf, 0.1667 * cw, 0.5 * ch),
-        (east.to_string(), east_f, 0.8333 * cw, 0.5 * ch),
-        ("SOUTHWEST".into(), pf, 0.1667 * cw, 0.8333 * ch),
-        ("SOUTH".into(), pf, 0.5 * cw, 0.8333 * ch),
-        ("SOUTHEAST".into(), pf, 0.8333 * cw, 0.8333 * ch),
-    ]
-}
-
-// interleave name(RG) + phrase(BA) coverage into one RGBA upload buffer
-// rasterize text at arbitrary (cx, cy) into a (blur, sharp) coverage pair —
-// used to bake the static off-screen panel atlas (one raster, all panels)
-fn raster_atlas(
-    ctx: &web_sys::CanvasRenderingContext2d,
-    w: u32,
-    h: u32,
-    entries: &[(String, f64, f64, f64)],
-) -> (Vec<u8>, Vec<u8>) {
-    let (wf, hf) = (w as f64, h as f64);
-    let draw = |ctx: &web_sys::CanvasRenderingContext2d| {
-        for (text, px, cx, cy) in entries {
-            ctx.set_font(&format!("900 {:.0}px -apple-system, system-ui, sans-serif", px));
-            ctx.fill_text(text, *cx, *cy).ok();
-        }
-    };
-    let clear = |ctx: &web_sys::CanvasRenderingContext2d| {
-        ctx.set_filter("none");
-        ctx.set_fill_style_str("#000000");
-        ctx.fill_rect(0.0, 0.0, wf, hf);
-        ctx.set_fill_style_str("#ffffff");
-        ctx.set_text_align("center");
-        ctx.set_text_baseline("middle");
-    };
-    clear(ctx);
-    ctx.set_filter("blur(6px)");
-    draw(ctx);
-    ctx.set_filter("blur(2px)");
-    draw(ctx);
-    ctx.set_filter("none");
-    let blur = ctx.get_image_data(0.0, 0.0, wf, hf).unwrap().data();
-    clear(ctx);
-    draw(ctx);
-    let sharp = ctx.get_image_data(0.0, 0.0, wf, hf).unwrap().data();
-    let n = (w * h) as usize;
-    let mut b = Vec::with_capacity(n);
-    let mut sh = Vec::with_capacity(n);
-    for i in 0..n {
-        b.push(blur[i * 4]);
-        sh.push(sharp[i * 4]);
-    }
-    (b, sh)
-}
-
 fn pack_rgba(nb: &[u8], ns: &[u8], pb: &[u8], ps: &[u8]) -> Vec<u8> {
     let n = nb.len();
     let mut out = Vec::with_capacity(n * 4);
@@ -1142,6 +1033,305 @@ fn pack_rgba(nb: &[u8], ns: &[u8], pb: &[u8], ps: &[u8]) -> Vec<u8> {
         out.push(ps[i]);
     }
     out
+}
+
+// ── the site scene (content.js): window.__SCENE describes the current page
+// as obstacles, measured from the DOM in CSS px:
+//   page   the current screen; slides through the stream (RG channels)
+//   chrome the nav + pager; stays put (BA channels)
+// each with glyphs {t, f, x, y} (big type the GPU draws: sharp + blur),
+// words {t, f, x, y} (small type the DOM draws: a halo only) and boxes
+// {x, y, w, h, r} (panels and media: solid). y is a text baseline.
+#[derive(Default)]
+struct SceneText {
+    t: String,
+    f: String,
+    x: f64,
+    y: f64,
+}
+#[derive(Default)]
+struct SceneBox {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    r: f64,
+}
+#[derive(Default)]
+struct ScenePart {
+    glyphs: Vec<SceneText>,
+    words: Vec<SceneText>,
+    boxes: Vec<SceneBox>,
+}
+struct Scene {
+    gen: f64,
+    vw: f64,
+    vh: f64,
+    page: ScenePart,
+    chrome: ScenePart,
+}
+
+// a performance.mark, for measuring time to first frame on real devices
+fn mark(name: &str) {
+    if let Some(p) = web_sys::window().and_then(|w| w.performance()) {
+        let _ = js_sys::Reflect::get(&p, &"mark".into())
+            .ok()
+            .and_then(|f| f.dyn_into::<js_sys::Function>().ok())
+            .map(|f| f.call1(&p, &name.into()));
+    }
+}
+
+fn win_get(name: &str) -> JsValue {
+    web_sys::window()
+        .and_then(|w| js_sys::Reflect::get(&w, &name.into()).ok())
+        .unwrap_or(JsValue::UNDEFINED)
+}
+fn js_f(o: &JsValue, k: &str) -> f64 {
+    js_sys::Reflect::get(o, &k.into()).ok().and_then(|v| v.as_f64()).unwrap_or(0.0)
+}
+fn js_s(o: &JsValue, k: &str) -> String {
+    js_sys::Reflect::get(o, &k.into()).ok().and_then(|v| v.as_string()).unwrap_or_default()
+}
+fn js_arr(o: &JsValue, k: &str) -> Vec<JsValue> {
+    js_sys::Reflect::get(o, &k.into())
+        .ok()
+        .and_then(|v| v.dyn_into::<js_sys::Array>().ok())
+        .map(|a| a.iter().collect())
+        .unwrap_or_default()
+}
+fn scene_mode() -> bool {
+    win_get("__SCENE_MODE").is_truthy()
+}
+fn scene_gen() -> f64 {
+    js_f(&win_get("__SCENE"), "gen")
+}
+fn read_part(o: &JsValue) -> ScenePart {
+    let text = |v: &JsValue| SceneText { t: js_s(v, "t"), f: js_s(v, "f"), x: js_f(v, "x"), y: js_f(v, "y") };
+    ScenePart {
+        glyphs: js_arr(o, "glyphs").iter().map(text).collect(),
+        words: js_arr(o, "words").iter().map(text).collect(),
+        boxes: js_arr(o, "boxes")
+            .iter()
+            .map(|v| SceneBox { x: js_f(v, "x"), y: js_f(v, "y"), w: js_f(v, "w"), h: js_f(v, "h"), r: js_f(v, "r") })
+            .collect(),
+    }
+}
+fn read_scene() -> Option<Scene> {
+    let o = win_get("__SCENE");
+    if !o.is_object() {
+        return None;
+    }
+    let get = |k: &str| js_sys::Reflect::get(&o, &k.into()).unwrap_or(JsValue::UNDEFINED);
+    Some(Scene {
+        gen: js_f(&o, "gen"),
+        vw: js_f(&o, "vw").max(1.0),
+        vh: js_f(&o, "vh").max(1.0),
+        page: read_part(&get("page")),
+        chrome: read_part(&get("chrome")),
+    })
+}
+// the slide content.js is animating: (offset in screen heights, NDC/s velocity, opacity)
+fn scene_t() -> (f32, f32, f32) {
+    let o = win_get("__SCENE_T");
+    if !o.is_object() {
+        return (0.0, 0.0, 1.0);
+    }
+    let op = js_sys::Reflect::get(&o, &"op".into()).ok().and_then(|v| v.as_f64()).unwrap_or(1.0);
+    (js_f(&o, "dv") as f32, (js_f(&o, "vy") as f32).clamp(-8.0, 8.0), op.clamp(0.0, 1.0) as f32)
+}
+
+fn round_rect(ctx: &web_sys::CanvasRenderingContext2d, x: f64, y: f64, w: f64, h: f64, r: f64) {
+    let r = r.min(w * 0.5).min(h * 0.5).max(0.0);
+    ctx.begin_path();
+    ctx.move_to(x + r, y);
+    ctx.arc_to(x + w, y, x + w, y + h, r).ok();
+    ctx.arc_to(x + w, y + h, x, y + h, r).ok();
+    ctx.arc_to(x, y + h, x, y, r).ok();
+    ctx.arc_to(x, y, x + w, y, r).ok();
+    ctx.close_path();
+    ctx.fill();
+}
+
+// a word's halo: its measured line box, padded
+fn word_rect(ctx: &web_sys::CanvasRenderingContext2d, w: &SceneText) -> (f64, f64, f64, f64) {
+    ctx.set_font(&w.f);
+    let (width, asc, desc) = ctx
+        .measure_text(&w.t)
+        .map(|m| (m.width(), m.font_bounding_box_ascent(), m.font_bounding_box_descent()))
+        .unwrap_or((0.0, 0.0, 0.0));
+    let pad = 5.0;
+    (w.x - pad, w.y - asc - pad, width + pad * 2.0, asc + desc + pad * 2.0)
+}
+
+// draw one part of the scene into a w x h canvas spanning the viewport, hard
+// edged, in two colour channels: R = the glyphs (the type the GPU draws),
+// G = everything solid (glyphs, pills, panels, media). One readback for both.
+fn draw_part(ctx: &web_sys::CanvasRenderingContext2d, w: u32, h: u32, sc: &Scene, part: &ScenePart) -> Vec<u8> {
+    let (wf, hf) = (w as f64, h as f64);
+    ctx.set_transform(1.0, 0.0, 0.0, 1.0, 0.0, 0.0).ok();
+    ctx.set_filter("none");
+    ctx.set_global_composite_operation("source-over").ok();
+    ctx.set_fill_style_str("#000000");
+    ctx.fill_rect(0.0, 0.0, wf, hf);
+    ctx.set_global_composite_operation("lighter").ok();
+    ctx.set_text_align("left");
+    ctx.set_text_baseline("alphabetic");
+    // CSS px → canvas px (the canvas spans the viewport, whatever its aspect)
+    ctx.set_transform(wf / sc.vw, 0.0, 0.0, hf / sc.vh, 0.0, 0.0).ok();
+    ctx.set_fill_style_str("#ffff00");
+    for g in &part.glyphs {
+        ctx.set_font(&g.f);
+        ctx.fill_text(&g.t, g.x, g.y).ok();
+    }
+    ctx.set_fill_style_str("#00ff00");
+    for wd in &part.words {
+        let (x, y, ww, hh) = word_rect(ctx, wd);
+        round_rect(ctx, x, y, ww, hh, hh * 0.5);
+    }
+    for b in &part.boxes {
+        round_rect(ctx, b.x, b.y, b.w, b.h, b.r);
+    }
+    ctx.set_transform(1.0, 0.0, 0.0, 1.0, 0.0, 0.0).ok();
+    ctx.set_global_composite_operation("source-over").ok();
+    // keep the edges empty: a sliding page samples past them (clamp-to-edge)
+    ctx.set_fill_style_str("#000000");
+    ctx.fill_rect(0.0, 0.0, wf, 2.0);
+    ctx.fill_rect(0.0, hf - 2.0, wf, 2.0);
+    ctx.fill_rect(0.0, 0.0, 2.0, hf);
+    ctx.fill_rect(wf - 2.0, 0.0, 2.0, hf);
+    ctx.get_image_data(0.0, 0.0, wf, hf).unwrap().data().to_vec()
+}
+
+fn channel(img: &[u8], c: usize) -> Vec<u8> {
+    img.chunks_exact(4).map(|p| p[c]).collect()
+}
+
+// three box-blur passes each way ≈ a gaussian (sigma² ≈ r(r+1)), in place of
+// canvas filters, which cost ~150 ms a scene on the CPU-backed field canvas
+fn blur3(src: &[u8], w: usize, h: usize, r: usize) -> Vec<u8> {
+    let mut a: Vec<u16> = src.iter().map(|&v| v as u16).collect();
+    let mut b = vec![0u16; w * h];
+    let d = (2 * r + 1) as u32;
+    for _ in 0..3 {
+        for y in 0..h {
+            let row = &a[y * w..(y + 1) * w];
+            let mut acc: u32 = 0;
+            for x in 0..=r.min(w - 1) {
+                acc += row[x] as u32;
+            }
+            acc += row[0] as u32 * r as u32; // edge clamp on the left
+            for x in 0..w {
+                b[y * w + x] = (acc / d) as u16;
+                let add = row[(x + r + 1).min(w - 1)] as u32;
+                let sub = row[x.saturating_sub(r)] as u32;
+                acc = acc + add - sub;
+            }
+        }
+        for x in 0..w {
+            let mut acc: u32 = 0;
+            for y in 0..=r.min(h - 1) {
+                acc += b[y * w + x] as u32;
+            }
+            acc += b[x] as u32 * r as u32;
+            for y in 0..h {
+                a[y * w + x] = (acc / d) as u16;
+                let add = b[(y + r + 1).min(h - 1) * w + x] as u32;
+                let sub = b[y.saturating_sub(r) * w + x] as u32;
+                acc = acc + add - sub;
+            }
+        }
+    }
+    a.iter().map(|&v| v.min(255) as u8).collect()
+}
+
+// the physics channel from a solid mask: solid inside, a soft halo outside.
+// The halo is soft, so it's blurred at quarter resolution and scaled back up.
+fn halo(solid: &[u8], w: u32, h: u32, k: f64) -> Vec<u8> {
+    const F: usize = 4;
+    let (w, h) = (w as usize, h as usize);
+    let (lw, lh) = ((w + F - 1) / F, (h + F - 1) / F);
+    let mut low = vec![0u32; lw * lh];
+    for y in 0..h {
+        let ly = (y / F) * lw;
+        let row = &solid[y * w..(y + 1) * w];
+        for (x, &v) in row.iter().enumerate() {
+            low[ly + x / F] += v as u32;
+        }
+    }
+    let low: Vec<u8> = low.iter().map(|&v| (v / (F * F) as u32).min(255) as u8).collect();
+    let r = (((6.0 * k) / F as f64).round() as usize).clamp(1, 4);
+    let soft = blur3(&low, lw, lh, r);
+    // bilinear back up to full resolution
+    let xs: Vec<(usize, usize, u32)> = (0..w)
+        .map(|x| {
+            let fx = ((x as f32 + 0.5) / F as f32 - 0.5).max(0.0);
+            let x0 = (fx as usize).min(lw - 1);
+            (x0, (x0 + 1).min(lw - 1), ((fx - x0 as f32) * 256.0) as u32)
+        })
+        .collect();
+    let mut out = vec![0u8; w * h];
+    for y in 0..h {
+        let fy = ((y as f32 + 0.5) / F as f32 - 0.5).max(0.0);
+        let y0 = (fy as usize).min(lh - 1);
+        let y1 = (y0 + 1).min(lh - 1);
+        let wy = ((fy - y0 as f32) * 256.0) as u32;
+        let (r0, r1) = (&soft[y0 * lw..(y0 + 1) * lw], &soft[y1 * lw..(y1 + 1) * lw]);
+        let o = &mut out[y * w..(y + 1) * w];
+        let c = &solid[y * w..(y + 1) * w];
+        for x in 0..w {
+            let (x0, x1, wx) = xs[x];
+            let top = r0[x0] as u32 * (256 - wx) + r0[x1] as u32 * wx;
+            let bot = r1[x0] as u32 * (256 - wx) + r1[x1] as u32 * wx;
+            let v = (top * (256 - wy) + bot * wy) >> 16;
+            o[x] = (v * 4 / 3).min(255).max(c[x] as u32) as u8;
+        }
+    }
+    out
+}
+
+// what the chrome looks like, to skip re-rastering it (it changes on a route
+// change or resize, not on a page step)
+fn part_key(sc: &Scene, part: &ScenePart) -> String {
+    let mut k = format!("{:.0}x{:.0}", sc.vw, sc.vh);
+    for g in part.glyphs.iter().chain(&part.words) {
+        k.push_str(&format!("|{}@{}:{:.1},{:.1}", g.t, g.f, g.x, g.y));
+    }
+    for b in &part.boxes {
+        k.push_str(&format!("|{:.1},{:.1},{:.1},{:.1},{:.1}", b.x, b.y, b.w, b.h, b.r));
+    }
+    k
+}
+
+// the field texture for a scene: page in RG, chrome in BA
+fn raster_scene(
+    ctx: &web_sys::CanvasRenderingContext2d,
+    w: u32,
+    h: u32,
+    sc: &Scene,
+    chrome_cache: &mut Option<(String, Vec<u8>, Vec<u8>)>,
+) -> Vec<u8> {
+    let k = w as f64 / sc.vw;
+    let key = part_key(sc, &sc.chrome);
+    if chrome_cache.as_ref().map(|c| c.0 != key).unwrap_or(true) {
+        let chrome = draw_part(ctx, w, h, sc, &sc.chrome);
+        let (cs, csolid) = (channel(&chrome, 0), channel(&chrome, 1));
+        *chrome_cache = Some((key, halo(&csolid, w, h, k), cs));
+    }
+    let (_, cb, cs) = chrome_cache.as_ref().unwrap();
+    let page = draw_part(ctx, w, h, sc, &sc.page);
+    let psolid = channel(&page, 1);
+    let pb = halo(&psolid, w, h, k);
+    let mut out = Vec::with_capacity(page.len());
+    for i in 0..pb.len() {
+        out.extend_from_slice(&[pb[i], page[i * 4], cb[i], cs[i]]);
+    }
+    out
+}
+
+// the wake SDF of the page (what a sliding page plows with)
+fn scene_sdf(ctx: &web_sys::CanvasRenderingContext2d, w: u32, h: u32, sc: &Scene, maxdist: f32) -> Vec<u8> {
+    let solid = channel(&draw_part(ctx, w, h, sc, &sc.page), 1);
+    coverage_to_sdf(&solid, w, h, w as f32, maxdist)
 }
 
 #[wasm_bindgen(start)]
@@ -1256,8 +1446,15 @@ async fn run() {
         document.create_element("canvas").unwrap().dyn_into().unwrap();
     fcanvas.set_width(field_w);
     fcanvas.set_height(field_h);
-    let fctx: web_sys::CanvasRenderingContext2d =
-        fcanvas.get_context("2d").unwrap().unwrap().dyn_into().unwrap();
+    // read back on every scene swap: keep it CPU-side (willReadFrequently)
+    let rf = js_sys::Object::new();
+    js_sys::Reflect::set(&rf, &"willReadFrequently".into(), &true.into()).ok();
+    let fctx: web_sys::CanvasRenderingContext2d = fcanvas
+        .get_context_with_context_options("2d", &rf)
+        .unwrap()
+        .unwrap()
+        .dyn_into()
+        .unwrap();
 
     // mouse/touch → NDC, drives the particle PERTURBATION (the primary interaction now
     // that dragging/nav is parked). `drag`.2 is just "a finger/mouse is down" → press wake.
@@ -1532,9 +1729,9 @@ async fn run() {
 
     // MENU + placeholder map directions baked ONCE into a 3x3 world atlas:
     // centre cell empty (the name shows from the field), 8 fixed panels around
-    let menu_entries = menu_atlas_entries(field_w, field_h, &init_east);
-    let (menu_blur, menu_sharp) = raster_atlas(&fctx, field_w, field_h, &menu_entries);
-    let menu_zero = vec![0u8; menu_blur.len()];
+    // parked (menu_du = 5: always off screen): blank, not rastered
+    let menu_zero = vec![0u8; (field_w * field_h) as usize];
+    let _ = &init_east;
     let menu_tex = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("menu"),
         size: wgpu::Extent3d { width: field_w, height: field_h, depth_or_array_layers: 1 },
@@ -1547,7 +1744,7 @@ async fn run() {
     });
     let menu_view = menu_tex.create_view(&wgpu::TextureViewDescriptor::default());
     upload_field(&queue, &menu_tex, field_w, field_h,
-        &pack_rgba(&menu_blur, &menu_sharp, &menu_zero, &menu_zero));
+        &pack_rgba(&menu_zero, &menu_zero, &menu_zero, &menu_zero));
 
     // WAKE SDF: a low-res distance field of name+phrase (RG=outward dir, B=dist),
     // re-baked per phrase at runtime so it always matches the responsive layout.
@@ -1559,13 +1756,19 @@ async fn run() {
         document.create_element("canvas").unwrap().dyn_into().unwrap();
     scanvas.set_width(sdf_w);
     scanvas.set_height(sdf_h);
-    let sctx: web_sys::CanvasRenderingContext2d =
-        scanvas.get_context("2d").unwrap().unwrap().dyn_into().unwrap();
+    let sctx: web_sys::CanvasRenderingContext2d = scanvas
+        .get_context_with_context_options("2d", &rf)
+        .unwrap()
+        .unwrap()
+        .dyn_into()
+        .unwrap();
     // SECTION CAMERA: bake the (prototype) section title once → its stroke-
     // centerline path (the camera spine) + a wake-format SDF (rendered crisp when
     // scaled up, and later fed to the wake). Square raster so path and SDF share
     // isotropic coords.
-    let (title_w, title_h) = (2048u32, 2048u32); // higher res → finer edge steps
+    // parked (titlex.w = 0 every frame): a blank 4x4 instead of a 2048² bake,
+    // which cost the first frame a full-res distance transform
+    let (title_w, title_h) = (4u32, 4u32);
     let title_sdf_bytes = {
         let pcanvas: web_sys::HtmlCanvasElement =
             document.create_element("canvas").unwrap().dyn_into().unwrap();
@@ -1573,7 +1776,8 @@ async fn run() {
         pcanvas.set_height(title_h);
         let pctx: web_sys::CanvasRenderingContext2d =
             pcanvas.get_context("2d").unwrap().unwrap().dyn_into().unwrap();
-        bake_title(&pctx, title_w, title_h, "BUILDS")
+        let _ = &pctx;
+        vec![0u8; (title_w * title_h * 4) as usize]
     };
     let title_sdf_tex = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("title-sdf"),
@@ -1626,8 +1830,8 @@ async fn run() {
         view_formats: &[],
     });
     let menu_sdf_view = menu_sdf_tex.create_view(&wgpu::TextureViewDescriptor::default());
-    upload_field(&queue, &menu_sdf_tex, sdf_w, sdf_h,
-        &bake_atlas_sdf(&sctx, sdf_w, sdf_h, SDF_MAXDIST, &init_east));
+    // parked too (pad0 = 9: never sampled)
+    upload_field(&queue, &menu_sdf_tex, sdf_w, sdf_h, &vec![0u8; (sdf_w * sdf_h * 4) as usize]);
 
     // ---- bind group layouts ----
     let common_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -1970,6 +2174,9 @@ async fn run() {
     let mut phase_start = t0;
     let mut phrase_cy = phrase_cy0 as f32;
     let mut presented = false; // site.ready() once the first frame is on screen
+    let mut scene_seen: f64 = 0.0; // the __SCENE gen in the field now
+    let mut scene_drawn = false; // __SCENE_DRAWN published
+    let mut chrome_cache: Option<(String, Vec<u8>, Vec<u8>)> = None; // the nav + pager, rastered
 
     let f = Rc::new(RefCell::new(None::<Closure<dyn FnMut()>>));
     let g = f.clone();
@@ -2010,7 +2217,35 @@ async fn run() {
         let phrase_op: f32;
         let phrase_w: f32;
         let phrase_z: f32;
-        if it < INTRO_DUR {
+        // the site scene (content.js) replaces the phrase cycle: page in RG,
+        // chrome in BA, re-rastered whenever the page publishes a new one
+        let smode = scene_mode();
+        let (s_dv, s_vy, s_op) = if smode { scene_t() } else { (0.0, 0.0, 1.0) };
+        if smode {
+            let g = scene_gen();
+            if g > 0.0 && g != scene_seen {
+                if let Some(sc) = read_scene() {
+                    mark("stream:raster-start");
+                    let fb = raster_scene(&fctx, field_w, field_h, &sc, &mut chrome_cache);
+                    mark("stream:raster-end");
+                    upload_field(&queue, &field_tex, field_w, field_h, &fb);
+                    let sb = scene_sdf(&sctx, sdf_w, sdf_h, &sc, SDF_MAXDIST);
+                    mark("stream:sdf-end");
+                    upload_field(&queue, &sdf_tex, sdf_w, sdf_h, &sb);
+                    scene_seen = sc.gen;
+                    mark("stream:scene");
+                }
+            }
+            if !scene_drawn && scene_seen > 0.0 && it > 1.4 {
+                scene_drawn = true;
+                js_sys::Reflect::set(&win, &"__SCENE_DRAWN".into(), &scene_seen.into()).ok();
+            }
+            let on = if scene_seen > 0.0 { name_op } else { 0.0 };
+            phrase_op = on;
+            phrase_w = on;
+            phrase_z = 1.0;
+            phrase_cy = 0.5;
+        } else if it < INTRO_DUR {
             // hold the cycle frozen; the first phrase fades in last
             phase = 0;
             phase_start = now;
@@ -2127,13 +2362,15 @@ async fn run() {
             phrase_cy,
             bg_fade,
             part_fade,
-            name_op,
+            name_op: if smode { if scene_seen > 0.0 { name_op * s_op } else { 0.0 } } else { name_op },
             intro_glow,
             // nav offsets NEUTRALIZED (parked): text fixed, menu off-screen, no plow/push
             text_du: 0.0,
-            text_dv: 0.0,
+            // the site scene's page slide (content.js): the page layer moves
+            // through the stream, and plows it while it does
+            text_dv: s_dv,
             text_vx: 0.0,
-            text_vy: 0.0,
+            text_vy: s_vy,
             menu_du: 5.0,
             menu_dv: 5.0,
             pad0: 9.0,
@@ -2235,6 +2472,7 @@ async fn run() {
             frame.present();
             if !presented {
                 presented = true;
+                mark("stream:first-frame");
                 site_call("ready", &[]);
             }
         }

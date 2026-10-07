@@ -5,7 +5,7 @@ import { test as base, expect, request as pwRequest, type Frame, type Page, type
 export const MAIN = process.env.E2E_MAIN_ORIGIN ?? "http://localhost:8090";
 export const UC = process.env.E2E_USERCONTENT_ORIGIN ?? "http://127.0.0.1:8091";
 export const DEFAULT_REF = "builtin/site";
-export const BUILTINS = ["builtin/site", "builtin/particle-stream"] as const;
+export const BUILTINS = ["builtin/site", "builtin/particle-stream", "builtin/stream"] as const;
 
 // Worst case to settle: the 10s ready timeout for the picked front end, then
 // again for the fallback, plus page load.
