@@ -164,27 +164,26 @@
     return out;
   }
 
-  // the list is one surface: its label, the titles with their meta, and "All work"
+  // the titles are big enough to stand in the stream on their own: relief
+  // type, no surface (client and year are on each project's page)
   function workList(projects, offset, heading, allLink) {
-    var pl = plate("div", "st-list");
-    if (heading) pl.append(el("p", "st-label", heading));
+    var wrap = el("div", "st-list");
+    if (heading) wrap.append(label(heading));
     var ol = el("ol", "st-work");
-    projects.forEach(function (p, i) {
+    projects.forEach(function (p) {
       var li = el("li", "st-work-item");
       var a = link("", "work/" + s(p.slug), "st-work-link");
-      a.append(el("span", "st-work-title", s(p.title) || s(p.slug)));
-      var meta = [two(offset + i), s(p.client), s(p.year)].filter(Boolean).join(" · ");
-      a.append(el("span", "st-work-meta", meta));
+      a.append(glyph("span", "st-work-title", s(p.title) || s(p.slug)));
       li.append(a);
       ol.append(li);
     });
-    pl.append(ol);
+    wrap.append(ol);
     if (allLink) {
       var more = el("p", "st-more");
-      more.append(link("All work", "work", "st-link"));
-      pl.append(more);
+      more.append(link("All work", "work", "st-link ob-word"));
+      wrap.append(more);
     }
-    return pl;
+    return wrap;
   }
 
   function experimentsScreen() {
@@ -334,7 +333,7 @@
 
   // ── the frame ──
   var stage = el("main", "st-stage");
-  var nav = el("nav", "st-nav ob-word");
+  var nav = el("nav", "st-nav");
   nav.setAttribute("aria-label", "Pages");
   var pager = el("div", "st-pager ob-word");
   var pagerN = el("span", "st-pager-n");
@@ -352,7 +351,7 @@
       if (p.slug && p.slug !== "work" && p.slug !== "experiments") items.push([p.slug, s(p.title) || p.slug]);
     });
     items.forEach(function (it) {
-      var a = link(it[1], it[0], "st-nav-link");
+      var a = link(String(it[1]).toUpperCase(), it[0], "st-nav-link ob-glyph");
       var cur = it[0] === "" ? r === "" : r === it[0] || r.indexOf(it[0] + "/") === 0;
       if (cur) a.setAttribute("aria-current", "page");
       nav.append(a);

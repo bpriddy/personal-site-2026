@@ -16,7 +16,8 @@ test.describe("builtin/stream", () => {
     await expect(f.locator(".st-screen.is-on h1")).not.toBeEmpty();
     const scene = await f.evaluate(() => (window as any).__SCENE);
     expect(scene.page.glyphs.length).toBeGreaterThan(0);
-    expect(scene.chrome.plates.length).toBeGreaterThanOrEqual(2); // nav + pager, drawn as relief plates
+    expect(scene.chrome.glyphs.length).toBeGreaterThanOrEqual(3); // the menu, in relief
+    expect(scene.chrome.plates.length).toBeGreaterThanOrEqual(1); // the pager
 
     // baked: the front end fetched no content of its own
     const fetched = await f.evaluate(() => performance.getEntriesByType("resource").map((e) => e.name));
