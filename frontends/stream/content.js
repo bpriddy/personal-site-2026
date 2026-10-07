@@ -13,7 +13,8 @@
 //              transparent once it does, and stays for selection and readers)
 //       plate  short text (.ob-word): the GPU draws its surface in the same
 //              relief as the big type; the DOM text sits on it
-//       box    block text and media: dark panels the stream flows around
+//              (block text too: its panels are plates)
+//       box    media: the stream flows around it
 //     The nav and pager are the "chrome" scene: they stay put while pages
 //     slide through the water. window.__SCENE_T carries the slide (offset,
 //     velocity, opacity) every frame, so the moving page plows the stream.
@@ -78,7 +79,8 @@
   // big display type, drawn by the GPU in relief
   function glyph(tag, cls, text) { return el(tag, "ob-glyph " + (cls || ""), s(text).toUpperCase()); }
   // a block the stream flows around
-  function box(tag, cls) { return el(tag || "div", "ob-box " + (cls || "")); }
+  // every surface that carries text is a plate, drawn in the type's relief
+  function box(tag, cls) { return el(tag || "div", "ob-word " + (cls || "")); }
   function label(text) { return el("p", "st-label ob-word", text); }
   // one relief surface for a group of short text (never several small ones side by side)
   function plate(tag, cls) { return el(tag || "div", "st-plate ob-word " + (cls || "")); }

@@ -30,7 +30,7 @@ test.describe("builtin/stream", () => {
     await page.keyboard.press("ArrowDown");
     await expect(pager).toHaveText(/^02 \/ \d\d$/);
     await f.waitForFunction((g) => (window as any).__SCENE.gen > g, scene.gen);
-    await expect(f.locator(".st-screen.is-on .ob-box").first()).toBeVisible();
+    await expect(f.locator(".st-screen.is-on .st-panel").first()).toBeVisible();
     await f.locator(".st-pager-b", { hasText: "Back" }).click();
     await expect(pager).toHaveText(/^01 \/ \d\d$/);
 
