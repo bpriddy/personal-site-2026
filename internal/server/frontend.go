@@ -35,6 +35,9 @@ type frontendResponse struct {
 	// Choices is how many front ends the rotation holds (v1.4): the parent
 	// shows its shuffle control only when there is something to shuffle to.
 	Choices int `json:"choices"`
+	// Paused (v1.12): building is paused for the budget, so the site bar's
+	// Re-imagine button can say so before the builder opens; omitted when open.
+	Paused *buildPause `json:"paused,omitempty"`
 }
 
 // apiFrontend tells the parent page which front end to load and hands it a
@@ -64,6 +67,9 @@ func (s *Server) apiFrontend(w http.ResponseWriter, r *http.Request) {
 		resp = frontendResponse{Ref: id, Serve: serve, URL: s.signedIndexURL(serve), Credit: credit, Copy: copy}
 	}
 	resp.Choices = choices
+	if !s.buildDisabled() {
+		resp.Paused = s.visitorPause(r, false)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		s.log.Error("api/frontend", "err", err)

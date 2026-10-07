@@ -39,6 +39,7 @@ const (
 	kreaPerRun   = 4
 	kreaMaxBytes = 8 << 20
 	kreaWait     = 150 * time.Second
+	kreaImageUSD = 0.03 // Krea 2 medium at 1K, per image (Krea's published price)
 	kreaBase     = "assets/images/krea/"
 )
 
@@ -151,6 +152,7 @@ func (k *Krea) Call(ctx context.Context, tool string, input json.RawMessage) (Ou
 	if err := k.Store.Put(ctx, name, img, ctype); err != nil {
 		return Output{}, Userf("Saving the image failed (%v).", err)
 	}
+	AddCost(ctx, kreaImageUSD)
 	size := ""
 	if cfg, _, err := image.DecodeConfig(bytes.NewReader(img)); err == nil {
 		size = fmt.Sprintf(", %d×%d", cfg.Width, cfg.Height)

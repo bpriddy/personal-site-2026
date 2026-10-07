@@ -71,6 +71,8 @@
       <label>{{if .Selected}}Reprompt from r{{.Selected.Number}}{{else}}Describe your front end{{end}}
         <textarea name="prompt" rows="5" required placeholder="{{if .Selected}}What should change?{{else}}e.g. A minimal, elegant dark page with my name large and my pages listed; a subtle animated WebGPU background if available{{end}}" {{if .Disabled}}disabled{{end}}></textarea>
       </label>
+      {{with .Budget}}{{if .Closed}}<p class="b-notice b-over-budget"><strong>Budget gate closed:</strong> {{.Reason}} (today {{.Today}} of {{.DailyLimit}}, this month {{.Month}} of {{.MonthlyLimit}}; one front end ≈ {{.Estimate}}). <a href="/admin/builder/#spend">Spend</a>
+        <label class="b-check"><input type="checkbox" name="overBudget" id="over-budget"> Build anyway, over budget</label></p>{{end}}{{end}}
       <button {{if .Disabled}}disabled{{end}}>{{if .Selected}}Send (new revision from r{{.Selected.Number}}){{else}}Create first revision{{end}}</button>
     </form>
     <div id="chat-stream" class="b-stream" hidden>

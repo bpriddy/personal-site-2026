@@ -107,6 +107,7 @@ const (
 	msgSlowNew     = "slow-new"
 	msgNoRevision  = "no-revision"
 	msgSubmitted   = "submitted"
+	msgPaused      = "paused" // building is paused for the budget (budget.go)
 )
 
 // buildMessage is the friendly text for a message key; "" for unknown keys,

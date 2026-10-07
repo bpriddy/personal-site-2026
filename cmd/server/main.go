@@ -96,6 +96,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	// the builder's spend limits (BUILD_BUDGET_*; Ben can change them in the admin)
+	budget, err := server.BudgetFromEnv(os.Getenv)
+	if err != nil {
+		log.Error("build budget", "err", err)
+		os.Exit(1)
+	}
+
 	// Cloud Run sends SIGTERM before stopping an instance
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -103,7 +110,7 @@ func main() {
 	obs := newObserver(cfg, st, obsStore, files, log)
 
 	srv, err := server.New(cfg, st, log, server.WithObserver(obs), server.WithBuilder(agent, files),
-		server.WithBuildLimits(limits), server.WithMedia(mediaSrc))
+		server.WithBuildLimits(limits), server.WithBudget(budget), server.WithMedia(mediaSrc))
 	if err != nil {
 		log.Error("server", "err", err)
 		os.Exit(1)

@@ -112,6 +112,8 @@
       parent: form.getAttribute("data-parent") || "",
       images: images,
       attached: attached,
+      // Ben's deliberate override of a closed budget gate (v1.12)
+      extra: (function () { var o = document.getElementById("over-budget"); return o && o.checked ? { overBudget: true } : {}; })(),
       assistantLabel: assistantLabel,
       onStatus: function (text, isError) {
         statusEl.textContent = text;

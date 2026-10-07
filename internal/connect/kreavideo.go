@@ -169,6 +169,7 @@ func (k *KreaVideo) Call(ctx context.Context, tool string, input json.RawMessage
 		k.refund(est) // nothing to pay for (best effort: a failed job usually isn't billed)
 		return Output{}, err
 	}
+	AddCost(ctx, est)
 	out.Text = fmt.Sprintf("%s\nModel %s, %ds, %s; estimated cost $%.2f.", out.Text, in.Model, in.Seconds, aspect, est)
 	return out, nil
 }

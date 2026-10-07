@@ -7,11 +7,15 @@
 //
 //   BuilderStream.run({
 //     url, prompt, parent,          // POST url, JSON {prompt, parent}
+//     extra,                        // more JSON fields (e.g. Ben's {overBudget: true})
 //     friendly, assistantLabel,     // visitors: plain words; default "Claude"
 //     onStatus(text, isError), onThinking(text), onText(text), onTool(text, cls)
-//   }) → Promise<{outcome: "revision" | "error" | "dropped", revision, number, summary, message}>
+//   }) → Promise<{outcome: "revision" | "error" | "dropped" | "canceled" | "paused", revision, number, summary, message, limit}>
 //
 // The promise never rejects; every failure ends in onStatus(text, true).
+// "paused" (v1.12): building is paused for the budget, refused up front (an
+// X-Build-Paused header, its value the limit) or by the API mid-run (a
+// "paused" event); for visitors it isn't an error, so onStatus isn't told.
 (function () {
   "use strict";
 
@@ -62,6 +66,12 @@
           result.message = ev.text || "Stopped. Nothing was changed.";
           onStatus(result.message, false);
           break;
+        case "paused":
+          result.outcome = "paused";
+          result.limit = "later";
+          result.message = ev.text || "";
+          if (!friendly) onStatus(result.message, true);
+          break;
         case "error":
           result.outcome = "error";
           result.message = failText(ev.text);
@@ -90,9 +100,18 @@
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: o.prompt, parent: o.parent || "", images: o.images || [], attached: o.attached || [] })
+      body: JSON.stringify(Object.assign({}, o.extra || {}, { prompt: o.prompt, parent: o.parent || "", images: o.images || [], attached: o.attached || [] }))
     }).then(function (r) {
       if (r.ok) streaming = true;
+      var paused = !r.ok && r.headers.get("X-Build-Paused");
+      if (paused) {
+        return r.text().then(function (t) {
+          result.outcome = "paused";
+          result.limit = paused;
+          result.message = (t || "").trim();
+          if (!friendly) onStatus(result.message, true);
+        });
+      }
       if (!r.ok) {
         return r.text().then(function (t) {
           // for visitors, only these carry a message written for them

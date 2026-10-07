@@ -508,3 +508,60 @@ html.bm-generating .bm-pill {
 .bm-gen-head { align-items: center; }
 .bm-rev-item { position: relative; }
 .bm-rev-item > .bm-copy { margin: 0 0 var(--s-3) var(--s-5); }
+
+/* ── building paused for the budget (v1.12; build-modal.js): the prompt box
+   gives way to a calm note of when the studio reopens, what still works, and
+   an idea kept in this browser. No alarm colours: a hollow dot, the Studio's
+   own type, and the accent only where something can be done ── */
+.bm-paused { display: grid; gap: var(--s-4); }
+.bm-paused > * { margin: 0; }
+.bm-paused-kicker {
+  display: inline-flex; align-items: center; gap: .6em; margin: 0;
+  font-family: var(--bm-font-mono); font-size: var(--t-meta); line-height: 1.3; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--bm-muted);
+}
+.bm-paused > .bm-paused-kicker:first-child::before {
+  content: ""; flex: none; width: 8px; height: 8px; border-radius: var(--r-pill); border: 1.5px solid var(--bm-muted);
+}
+.bm-paused-h {
+  font-family: var(--bm-font-display); font-weight: 580; font-stretch: 90%; letter-spacing: -.025em;
+  font-size: calc(var(--t-lede) * 1.05); line-height: 1.12; text-wrap: balance; color: var(--bm-fg);
+}
+.bm-paused-h:focus { outline: none; }
+.bm-paused-h:focus-visible { outline: 2px solid var(--bm-accent); outline-offset: 4px; }
+.bm-paused-text { color: var(--bm-muted); max-width: 46ch; text-wrap: pretty; font-size: var(--t-ui); }
+.bm-paused-mean { margin-top: var(--s-3); }
+.bm-paused-list { list-style: none; padding: 0; border-top: 1px solid var(--bm-rule); }
+.bm-paused-row {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s-2) var(--s-4);
+  padding: var(--s-3) 0; border-bottom: 1px solid var(--bm-rule);
+}
+.bm-paused-what { flex: 1 1 14rem; color: var(--bm-fg); text-wrap: pretty; }
+.bm-paused-row .bm-btn { flex: none; }
+.bm-idea { display: grid; gap: var(--s-3); margin-top: var(--s-3); }
+.bm-idea-form { display: grid; gap: var(--s-3); }
+.bm-idea-label { font-size: calc(var(--t-lede) * .78); }
+/* an idea, not yet a build: the box is dashed, like a new site's */
+.bm-idea .bm-input { border-style: dashed; min-height: 4.4em; }
+.bm-idea .bm-row { justify-content: flex-end; }
+.bm-idea-kept {
+  display: grid; gap: var(--s-2); padding: var(--s-4);
+  background: var(--bm-field); border: 1px dashed var(--bm-rule-strong); border-radius: var(--r-1);
+}
+.bm-idea-kept > * { margin: 0; }
+.bm-idea-quote {
+  font-family: var(--bm-font-display); font-weight: 450; font-size: calc(var(--t-lede) * .7);
+  line-height: 1.3; letter-spacing: -.005em; color: var(--bm-fg); overflow-wrap: anywhere;
+  max-height: 9.5em; overflow: auto; white-space: pre-wrap;
+}
+.bm-idea-kept .bm-fe-actions { padding-top: 0; }
+.bm-sr {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+@media (max-width: 599px) {
+  .bm-paused-h { font-size: 1.6rem; }
+  .bm-paused-row .bm-btn { width: 100%; }
+  .bm-idea .bm-row { display: grid; grid-template-columns: 1fr; }
+  .bm-idea .bm-row .bm-btn { width: 100%; min-height: 48px; }
+}

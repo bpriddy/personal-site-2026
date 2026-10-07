@@ -8,6 +8,33 @@
 {{if .Error}}<p class="b-error" role="alert">{{.Error}}</p>{{end}}
 {{if .Disabled}}<p class="b-notice">{{.Disabled}}</p>{{end}}
 {{if .RotationOverridden}}<p class="b-notice"><strong>FRONTEND_ROTATION is set:</strong> it overrides the rotation toggles below.</p>{{end}}
+{{with .Budget}}
+<section id="spend" class="b-spend">
+  <h2>Spend {{if .Closed}}<span class="b-badge b-closed">gate closed</span>{{else}}<span class="b-badge b-on">open</span>{{end}}</h2>
+  {{if .Closed}}<p class="b-notice"><strong>Building is paused for visitors:</strong> {{.Reason}}.{{if .Reopens}} It reopens {{.Reopens}}.{{end}} Visitors see “The studio is closed” and can still browse, show and submit their versions. You can still build on a front end's page with “Build anyway”.</p>{{end}}
+  {{if .APIPaused}}<form method="post" action="/admin/builder/budget/clear-api" class="b-notice b-inline-form">
+    <span><strong>The Claude API refused a run</strong> for lack of credit or a spend limit; building is paused until {{.APIUntil}} (then it tries again). Added credit or raised the limit?</span>
+    <button>Clear the pause</button></form>{{end}}
+  <table class="b-table b-spend-table">
+    <tr><th></th><th>Spent</th><th>Limit</th><th></th></tr>
+    <tr><td>Today <span class="b-muted">(UTC)</span></td><td>{{.Today}}</td><td>{{.DailyLimit}}</td>
+      <td><span class="b-meter" aria-hidden="true"><span style="width: {{.DayPct}}%"></span></span> <span class="b-muted">{{.DayRoom}}</span></td></tr>
+    <tr><td>This month</td><td>{{.Month}}</td><td>{{.MonthlyLimit}}</td>
+      <td><span class="b-meter" aria-hidden="true"><span style="width: {{.MonthPct}}%"></span></span> <span class="b-muted">{{.MonthRoom}}</span></td></tr>
+  </table>
+  <p class="b-muted">One front end ≈ <strong>{{.Estimate}}</strong> ({{.EstimateFrom}}).{{if .Running}} Runs going now: {{.Running}}, holding {{.Reserved}} more.{{end}}
+    New builds are refused when spend + runs going + one more front end would pass a limit. Spend is every run's real cost (Claude tokens, priced in <code>internal/llm/pricing.go</code>, plus generated media), counted by the UTC day and month the run started.</p>
+  <details>
+    <summary>Change the limits</summary>
+    <form method="post" action="/admin/builder/budget" class="b-budget-form">
+      <label>Daily limit (USD) <input name="daily" inputmode="decimal" value="{{.DailyInput}}" placeholder="default {{.DailyDefault}}"></label>
+      <label>Monthly limit (USD) <input name="monthly" inputmode="decimal" value="{{.MonthlyInput}}" placeholder="default {{.MonthlyDefault}}"></label>
+      <button class="b-primary">Save limits</button>
+      <p class="b-muted">Empty uses the server's default (<code>BUILD_BUDGET_DAILY_USD</code>, <code>BUILD_BUDGET_MONTHLY_USD</code>); 0 means no limit.</p>
+    </form>
+  </details>
+</section>
+{{end}}
 <form method="post" action="/admin/builder/new" class="b-create stack">
   <label for="new-prompt"><strong>Describe a new front end</strong></label>
   <textarea id="new-prompt" name="prompt" rows="4" required maxlength="8000" {{if .Disabled}}disabled{{end}}

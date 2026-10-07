@@ -671,3 +671,10 @@ html.bm-btn-status .site-bar .make-own-dot { background: var(--accent-ink); anim
   html.bm-btn-status .make-own-status { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { html.bm-generating .site-bar .make-own-dot { animation: none; } }
+
+/* building paused for the budget (v1.12, build-modal.js sets html.bm-paused):
+   the Re-imagine button stays as it is and still opens the builder; only its
+   dot goes still and hollow (its title and label say why). Subtle on purpose. */
+html.bm-paused:not(.bm-generating):not(.bm-btn-status) .site-bar .make-own-dot { background: transparent; box-shadow: inset 0 0 0 1.5px var(--fg-2); animation: none; }
+html.bm-paused:not(.bm-generating):not(.bm-btn-status) .site-bar .make-own:hover .make-own-dot, html.bm-paused:not(.bm-generating):not(.bm-btn-status) .site-bar .make-own:focus-visible .make-own-dot { box-shadow: inset 0 0 0 1.5px var(--bg); }
+@media (max-width: 599px) { html.bm-paused:not(.bm-generating) .make-own-plus { color: var(--fg-2); } }

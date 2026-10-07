@@ -101,6 +101,23 @@ func (e *UserError) Error() string { return e.Msg }
 // Userf makes a UserError.
 func Userf(format string, a ...any) error { return &UserError{Msg: fmt.Sprintf(format, a...)} }
 
+// ── per-run spend: what a connection costs ──
+
+type costKey struct{}
+
+// WithCostSink makes ctx report money spent by connections (estimated USD,
+// e.g. a generated clip) to sink: the builder adds it to the run's cost.
+func WithCostSink(ctx context.Context, sink func(usd float64)) context.Context {
+	return context.WithValue(ctx, costKey{}, sink)
+}
+
+// AddCost reports usd spent within ctx's run; without a sink it does nothing.
+func AddCost(ctx context.Context, usd float64) {
+	if sink, ok := ctx.Value(costKey{}).(func(float64)); ok && sink != nil && usd > 0 {
+		sink(usd)
+	}
+}
+
 // ── per-run budgets ──
 
 type budgetKey struct{}

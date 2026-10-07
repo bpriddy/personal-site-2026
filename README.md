@@ -97,7 +97,9 @@ Environment (both binaries): `PORT`, `APP_ENV` (`dev`|`prod`),
 (`http://localhost:8090`), `USERCONTENT_ORIGIN` (`http://127.0.0.1:8091`),
 `FRONTENDS_DIR` (`build/frontends`). Main site only: `DATABASE_URL` (required in prod), `ADMIN_USER` (`admin`),
 `ADMIN_PASSWORD` (`dev` in dev, required in prod), `FRONTEND_ROTATION` (comma-
-separated refs; overrides the rotation, used by tests).
+separated refs; overrides the rotation, used by tests), the builder's spend
+limits `BUILD_BUDGET_DAILY_USD` (`40`), `BUILD_BUDGET_MONTHLY_USD` (`400`) and
+`BUILD_COST_ESTIMATE_USD` (`4`; see docs/frontend-protocol.md, v1.12).
 
 ## Routes
 

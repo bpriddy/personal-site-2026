@@ -21,6 +21,7 @@ type Memory struct {
 	visitors    memVisitors                   // visitor_memory.go
 	projects    map[string]content.Project    // projects_memory.go
 	experience  map[string]content.Experience // experience_memory.go
+	budget      BudgetSettings                // spend_memory.go
 }
 
 func NewMemory() *Memory {

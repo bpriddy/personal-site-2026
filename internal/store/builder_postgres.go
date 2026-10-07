@@ -237,7 +237,7 @@ func (p *Postgres) FinishRun(ctx context.Context, id int64, revisionID, errMsg s
 func (p *Postgres) Runs(ctx context.Context, frontendID string, limit int) ([]Run, error) {
 	rows, err := p.pool.Query(ctx, `
 		SELECT id, frontend_id, coalesce(parent_id, ''), prompt, status, coalesce(revision_id, ''), error,
-		       started_at, finished_at
+		       started_at, finished_at, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_usd::float8
 		FROM builder_runs WHERE frontend_id = $1 ORDER BY started_at DESC, id DESC LIMIT $2`, frontendID, limit)
 	if err != nil {
 		return nil, err
@@ -246,7 +246,8 @@ func (p *Postgres) Runs(ctx context.Context, frontendID string, limit int) ([]Ru
 		var run Run
 		var fin *time.Time
 		err := r.Scan(&run.ID, &run.FrontendID, &run.ParentID, &run.Prompt, &run.Status, &run.RevisionID,
-			&run.Error, &run.StartedAt, &fin)
+			&run.Error, &run.StartedAt, &fin, &run.Cost.InputTokens, &run.Cost.OutputTokens, &run.Cost.CacheReadTokens,
+			&run.Cost.CacheWriteTokens, &run.Cost.USD)
 		if fin != nil {
 			run.FinishedAt = *fin
 		}

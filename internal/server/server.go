@@ -44,6 +44,7 @@ type Server struct {
 	// the public builder (build.go)
 	limits     BuildLimits   // build_limits.go; WithBuildLimits
 	newLimiter windowLimiter // POST /build/new per client IP
+	budget     budgetState   // budget.go; WithBudget
 
 	media media.Source // /media/...; WithMedia, default MEDIA_DIR
 }
@@ -76,6 +77,7 @@ func New(cfg config.Config, st store.Store, log *slog.Logger, opts ...Option) (*
 		rotationOverride: rot, intn: rand.IntN, now: time.Now,
 		publicCSP: publicCSP(cfg.UsercontentOrigin),
 		limits:    DefaultBuildLimits,
+		budget:    budgetState{cfg: DefaultBudget},
 	}
 	for _, o := range opts {
 		if err := o(s); err != nil {

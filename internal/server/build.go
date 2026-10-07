@@ -151,8 +151,11 @@ func (s *Server) visitorStatusOf(r *http.Request, f store.FrontendInfo) (visitor
 // The modal's view of the session's work (GET /build/api/frontends).
 type (
 	buildState struct {
-		Enabled   bool            `json:"enabled"`          // new runs can start
-		Notice    string          `json:"notice,omitempty"` // why not, or a limit already reached
+		Enabled bool   `json:"enabled"`          // new runs can start
+		Notice  string `json:"notice,omitempty"` // why not, or a limit already reached
+		// Paused (v1.12): building is paused for the budget (enabled is
+		// false); the modal draws its own state for it, so Notice is empty
+		Paused    *buildPause     `json:"paused"`
 		MaxPrompt int             `json:"maxPrompt"`
 		Live      *buildLive      `json:"live"` // what the site shows this session, if a draft
 		Frontends []buildFrontend `json:"frontends"`
@@ -245,6 +248,8 @@ func (s *Server) buildList(w http.ResponseWriter, r *http.Request) {
 	}
 	if !out.Enabled {
 		out.Notice = buildMessage(msgDisabled, s.limits)
+	} else if p := s.visitorPause(r, false); p != nil {
+		out.Enabled, out.Paused = false, p
 	} else if c, err := v.VisitorRunCounts(ctx, session, s.clientIPHash(r), s.runQuota()); err == nil {
 		// say up front when today's builds are used up
 		var qe *store.QuotaError
@@ -307,6 +312,12 @@ func (s *Server) buildNew(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	session, ip := readSession(r), s.clientIPHash(r)
+	// don't make a front end that can't be built now: building is paused
+	// (v1.12; the budget may have run out since the modal loaded)
+	if p := s.visitorPause(r, true); p != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": pausedMessage(p), "key": msgPaused, "paused": p})
+		return
+	}
 	// don't make a front end that can't be built today
 	c, err := v.VisitorRunCounts(ctx, session, ip, s.runQuota())
 	if err != nil {

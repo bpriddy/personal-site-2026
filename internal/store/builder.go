@@ -143,6 +143,7 @@ type Run struct {
 	Error      string
 	StartedAt  time.Time
 	FinishedAt time.Time // zero while running
+	Cost       RunCost   // what it has cost so far (migration 0012)
 }
 
 // RunCanceled is a canceled run's Error.

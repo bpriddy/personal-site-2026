@@ -5,13 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/anthropics/anthropic-sdk-go"
 )
 
 // ScriptedModel is a Model for tests: each Turn returns the next scripted
-// response (a Messages API response body as JSON) and records the request.
+// response (a Messages API response body as JSON, or "error:<message>" for a
+// failed call) and records the request.
 type ScriptedModel struct {
 	mu        sync.Mutex
 	Responses []string
@@ -50,6 +52,9 @@ func (m *ScriptedModel) Turn(_ context.Context, params anthropic.BetaMessageNewP
 	}
 	raw := m.Responses[0]
 	m.Responses = m.Responses[1:]
+	if msg, ok := strings.CutPrefix(raw, "error:"); ok {
+		return nil, errors.New(msg) // an API failure, e.g. a spend limit
+	}
 	var msg anthropic.BetaMessage
 	if err := json.Unmarshal([]byte(raw), &msg); err != nil {
 		return nil, fmt.Errorf("scripted model: %w", err)

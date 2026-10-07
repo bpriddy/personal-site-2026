@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	"github.com/bpriddy/personal-site-2026/internal/builder"
+	"github.com/bpriddy/personal-site-2026/internal/llm"
 	"github.com/bpriddy/personal-site-2026/internal/observer"
 	"github.com/bpriddy/personal-site-2026/internal/store"
 )
@@ -60,13 +61,23 @@ func (s *Server) Rebuild(ctx context.Context, req observer.RebuildRequest) (stor
 		s.builder.mu.Unlock()
 	}()
 
+	// the budget gate (v1.12): the observer never spends past it
+	if st, err := s.budgetStatus(ctx, true); err != nil {
+		return store.Revision{}, err
+	} else if st.Closed {
+		return store.Revision{}, fmt.Errorf("the builder's budget gate is closed (%s limit)", st.Limit)
+	}
 	runID, err := b.StartRun(ctx, store.Run{FrontendID: f.ID, ParentID: parent.ID, Prompt: req.Prompt})
 	if err != nil {
 		return store.Revision{}, err
 	}
 	started := s.now()
+	cost := s.newRunCost(ctx, runID)
 	res, err := s.builder.agent.Run(ctx, builder.Request{FrontendID: f.ID, Title: f.Title, Parent: files,
-		History: history, Prompt: req.Prompt, Content: s.siteContent(ctx), Observer: true}, func(builder.Event) {})
+		History: history, Prompt: req.Prompt, Content: s.siteContent(ctx), Observer: true, OnCost: cost.add}, func(builder.Event) {})
+	if se := llm.AsSpendLimit(err); se != nil {
+		s.noteSpendLimit(ctx, se)
+	}
 	var rev store.Revision
 	if err == nil {
 		turns := append(slices.Clone(history),

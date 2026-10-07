@@ -210,6 +210,60 @@
   var genNote = el("p", "bm-gen-note", "The prompt box opens again when it's done or canceled. Canceling keeps everything as it was.");
   gen.append(genHead, genPrompt, cancelBtn, genNote);
 
+  // building paused for the budget (v1.12): instead of the prompt, a calm
+  // note of when the studio reopens, what still works, and a place to keep
+  // an idea in this browser until then
+  var pausedBox = el("section", "bm-paused");
+  pausedBox.hidden = true;
+  pausedBox.setAttribute("aria-labelledby", "bm-paused-h");
+  var psKicker = el("p", "bm-paused-kicker", "Studio closed");
+  var psHead = el("h3", "bm-paused-h");
+  psHead.id = "bm-paused-h";
+  psHead.tabIndex = -1; // focused when the state appears, so it's read first
+  var psText = el("p", "bm-paused-text");
+  psText.id = "bm-paused-text";
+  var psMean = el("p", "bm-paused-kicker bm-paused-mean", "Meanwhile");
+  var psList = el("ul", "bm-paused-list");
+  function pausedRow(text, b) {
+    var li = el("li", "bm-paused-row");
+    li.append(el("span", "bm-paused-what", text), b);
+    psList.append(li);
+    return li;
+  }
+  var rowMine = pausedRow("Show any of your versions on the site, or send one to Ben.",
+    button("bm-btn bm-btn-outline", "Your creations", function () { openMine(); }));
+  var rowShuffle = pausedRow("See what other visitors have made.",
+    button("bm-btn bm-btn-outline", "Show another version", function () { shuffleOther(); }));
+  // keep an idea (localStorage only: nothing is queued on the server, so
+  // nothing is ever built, or spent, without the visitor there)
+  var IDEA_KEY = "bm-idea";
+  var idea = el("div", "bm-idea");
+  var ideaForm = el("div", "bm-idea-form");
+  var ideaLabel = el("label", "bm-label bm-idea-label", "Keep an idea for when it reopens");
+  ideaLabel.htmlFor = "bm-idea-input";
+  var ideaTa = el("textarea", "bm-input bm-idea-input");
+  ideaTa.id = "bm-idea-input";
+  ideaTa.rows = 2;
+  ideaTa.placeholder = "Describe the site you want — a mood, a reference, a rule.";
+  var ideaRow = el("div", "bm-row");
+  var ideaHint = el("p", "bm-keys bm-idea-hint", "Saved in this browser only");
+  var ideaSave = button("bm-btn bm-btn-primary bm-idea-save", "Keep this idea", function () { saveIdea(); });
+  ideaRow.append(ideaHint, ideaSave);
+  ideaForm.append(ideaLabel, ideaTa, ideaRow);
+  var ideaKept = el("div", "bm-idea-kept");
+  var ideaKeptHead = el("p", "bm-paused-kicker", "Your idea, kept");
+  var ideaQuote = el("p", "bm-idea-quote");
+  var ideaKeptNote = el("p", "bm-hint", "We'll keep it here, in this browser. When the studio reopens, it'll be waiting in the prompt box, ready to build.");
+  var ideaActs = el("div", "bm-fe-actions");
+  var ideaEdit = button("bm-btn bm-btn-text", "Edit it", function () { editIdea(); });
+  var ideaForget = button("bm-btn bm-btn-text", "Forget it", function () { forgetIdea(); });
+  ideaActs.append(ideaEdit, ideaForget);
+  ideaKept.append(ideaKeptHead, ideaQuote, ideaKeptNote, ideaActs);
+  var ideaNote = el("p", "bm-sr");
+  ideaNote.setAttribute("role", "status");
+  idea.append(ideaForm, ideaKept, ideaNote);
+  pausedBox.append(psKicker, psHead, psText, psMean, psList, idea);
+
   // your creations: below everything else, folded away behind its title until opened
   var mine = el("details", "bm-mine");
   var mineSum = el("summary", "bm-mine-sum");
@@ -225,7 +279,7 @@
   // the prompt comes first: it's what this dialog is for
   var composer = el("div", "bm-composer");
   composer.append(form);
-  body.append(notice, liveBox, gen, composer, intro, progress, mine);
+  body.append(notice, liveBox, gen, pausedBox, composer, intro, progress, mine);
   dialog.append(runLine, grab, head, body);
   wrap.append(backdrop, dialog);
 
@@ -310,6 +364,8 @@
         if (!r.ok) {
           var err = new Error((j && typeof j.error === "string" && j.error) || "Something went wrong. Please try again.");
           err.status = r.status;
+          err.key = j && typeof j.key === "string" ? j.key : "";
+          err.paused = j && j.paused && typeof j.paused.limit === "string" ? j.paused : null;
           throw err;
         }
         return j;
@@ -525,7 +581,7 @@
     var lf = live ? findFrontend(live.slug) : null;
     var n = state ? state.frontends.length : 0;
     headMeta.textContent = live && lf ? "Draft " + two(n - state.frontends.indexOf(lf)) + " / v" + live.number : "";
-    runState.textContent = busy ? "Working" : "Idle";
+    runState.textContent = busy ? "Working" : (state && state.paused ? "Closed" : "Idle");
     dialog.classList.toggle("bm-busy", !!busy);
     var empty = !n && !busy;
     intro.classList.toggle("bm-intro-empty", empty);
@@ -533,10 +589,193 @@
   }
   function two(n) { return (n < 10 ? "0" : "") + n; }
 
+  // ── building paused for the budget (v1.12) ──
+  // pause: {limit: "day" | "month" | "later", reopens?: ISO time}. The words
+  // say when it reopens in the visitor's own time; never why in money terms.
+  function reopensText(p) {
+    var t = p && p.reopens ? Date.parse(p.reopens) : NaN;
+    if (isNaN(t)) return "";
+    var ms = t - Date.now(), d = new Date(t);
+    var time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    if (ms <= 60 * 1000) return "any moment now";
+    if (ms < 60 * 60 * 1000) return "in under an hour";
+    if (ms < 24 * 60 * 60 * 1000) {
+      var h = Math.round(ms / 3600000);
+      return "in about " + h + (h === 1 ? " hour" : " hours") + " (" + time + " your time)";
+    }
+    // days are UTC: say the visitor's own date and time, so it's never a day off
+    return "on " + d.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" }) + ", " + time + " your time";
+  }
+  function pausedWords(p) {
+    var when = reopensText(p);
+    if (p.limit === "day") {
+      return { kicker: "Studio closed · until tomorrow", head: "The studio is closed for today.",
+        text: "Everything here is built by Claude, and today's building time is used up. It opens again " + (when || "tomorrow") + ".",
+        short: "The studio is closed for today." };
+    }
+    if (p.limit === "month") {
+      return { kicker: "Studio closed · until next month", head: "The studio is closed for the rest of the month.",
+        text: "Everything here is built by Claude, and this month's building time is used up. It opens again " + (when || "next month") + ".",
+        short: "The studio is closed until next month." };
+    }
+    return { kicker: "Studio closed", head: "The studio is closed for now.",
+      text: "Everything here is built by Claude, and building is taking a short break. " + (when ? "It opens again " + when + "." : "Check back a little later."),
+      short: "The studio is closed for now." };
+  }
+  // the site bar's Re-imagine button hints at it: a still, hollow dot, and
+  // words for screen readers and on hover; the label stays the same
+  var pauseHint = null;
+  function hintPaused(p) {
+    pauseHint = p || null;
+    root.classList.toggle("bm-paused", !!pauseHint);
+    var btn = document.getElementById("make-own");
+    if (!btn) return;
+    if (pauseHint) btn.title = pausedWords(pauseHint).short + " Your versions are still here.";
+    else btn.removeAttribute("title");
+    if (genInfo() || root.classList.contains("bm-btn-status")) return; // the build's own words win
+    btn.setAttribute("aria-label", pauseHint ? "Re-imagine this site. " + pausedWords(pauseHint).short + " You can still see your versions." : "Re-imagine this site");
+  }
+  function canShuffle() {
+    var c = window.siteHost && window.siteHost.current ? window.siteHost.current() : null;
+    return !!(c && typeof window.siteHost.shuffle === "function" && (c.choices > 1 || c.draft));
+  }
+  function shuffleOther() {
+    // close, so the other visitor's version is what they see
+    close();
+    if (canShuffle()) window.siteHost.shuffle();
+  }
+  function openMine() {
+    mine.open = true;
+    mineSum.scrollIntoView({ block: "start", behavior: "smooth" });
+    mineSum.focus({ preventScroll: true });
+  }
+  var minePausedOpened = false;
+  function renderPaused() {
+    var p = state && state.paused;
+    pausedBox.hidden = !p;
+    hintPaused(p);
+    dialog.setAttribute("aria-describedby", p ? "bm-paused-text" : "bm-desc");
+    intro.hidden = !!p;
+    if (!p) {
+      minePausedOpened = false;
+      return;
+    }
+    var w = pausedWords(p);
+    psKicker.textContent = w.kicker;
+    psHead.textContent = w.head;
+    psText.textContent = w.text;
+    var hasVersions = state.frontends.some(function (f) { return f.revisions.length > 0; });
+    rowMine.hidden = !hasVersions;
+    rowShuffle.hidden = !canShuffle();
+    if (state.maxPrompt) ideaTa.maxLength = state.maxPrompt;
+    renderIdea();
+    // with no prompt box, their creations are the thing to look at
+    if (hasVersions && !minePausedOpened) {
+      minePausedOpened = true;
+      mine.open = true;
+    }
+    // the prompt box went away under the visitor (or they just opened it):
+    // start them at the state's heading
+    var a = document.activeElement;
+    if (isOpen && (a === dialog || a === document.body || a === ta || !a || !dialog.contains(a) || (a.closest && a.closest("[hidden]")))) {
+      psHead.focus({ preventScroll: true });
+    }
+  }
+
+  // the idea kept for later: {text, savedAt} in localStorage (this browser only)
+  function readIdea() {
+    try {
+      var j = JSON.parse(localStorage.getItem(IDEA_KEY) || "null");
+      return j && typeof j.text === "string" && j.text.trim() ? j : null;
+    } catch (e) { return null; }
+  }
+  function writeIdea(text) {
+    try {
+      if (text) localStorage.setItem(IDEA_KEY, JSON.stringify({ text: text, savedAt: Date.now() }));
+      else localStorage.removeItem(IDEA_KEY);
+      return true;
+    } catch (e) { return false; }
+  }
+  var ideaEditing = false;
+  function renderIdea() {
+    var saved = readIdea();
+    var editing = !saved || ideaEditing;
+    ideaForm.hidden = !editing;
+    ideaKept.hidden = editing;
+    ideaSave.textContent = saved ? "Keep the new version" : "Keep this idea";
+    if (saved) ideaQuote.textContent = "“" + saved.text + "”";
+  }
+  function saveIdea() {
+    var text = ideaTa.value.trim();
+    if (!text) {
+      ideaNote.textContent = "Write your idea first.";
+      ideaTa.focus();
+      return;
+    }
+    if (!writeIdea(text)) {
+      ideaNote.textContent = "This browser won't keep it (its storage is off). Copy it somewhere safe.";
+      return;
+    }
+    ideaEditing = false;
+    ideaTa.value = "";
+    renderIdea();
+    ideaNote.textContent = "Kept. It'll be in the prompt box when the studio reopens.";
+    ideaEdit.focus();
+  }
+  function editIdea() {
+    var saved = readIdea();
+    ideaEditing = true;
+    ideaTa.value = saved ? saved.text : "";
+    renderIdea();
+    ideaTa.focus();
+    ideaTa.setSelectionRange(ideaTa.value.length, ideaTa.value.length);
+  }
+  function forgetIdea() {
+    writeIdea("");
+    ideaEditing = false;
+    ideaTa.value = "";
+    renderIdea();
+    ideaNote.textContent = "Forgotten.";
+    ideaTa.focus();
+  }
+  // when building is open again, a kept idea goes back into the prompt box
+  // (once per page; it stays kept until it's built or forgotten)
+  var ideaRestored = false, softNotice = "";
+  function restoreIdea() {
+    if (ideaRestored || busy || !state || !state.enabled || state.paused || genInfo()) return;
+    var saved = readIdea();
+    if (!saved || ta.value.trim()) return;
+    ideaRestored = true;
+    ta.value = saved.text;
+    softNotice = "Your saved idea is back in the box. Build it when you're ready.";
+  }
+  // a build refused because the studio just closed (or the API's limit
+  // stopped it): not an error. The prompt is kept as their idea, and the
+  // paused state takes over.
+  function pausedNow(prompt, p) {
+    if (prompt) writeIdea(prompt);
+    ta.value = "";
+    if (attach) attach.clear();
+    progress.hidden = true;
+    busy = null;
+    minBtn.hidden = true;
+    clearPill();
+    return refresh().then(function () {
+      if (state && !state.paused) state.paused = p || { limit: "later" };
+      if (state) state.enabled = false;
+      ideaEditing = false;
+      softNotice = prompt ? "The studio closed just before your build could start. Your idea is kept below." : "";
+      render();
+      if (isOpen) psHead.focus({ preventScroll: true });
+      else setPill(pausedWords(state ? state.paused : { limit: "later" }).short, true);
+    });
+  }
+
   function render() {
     if (!state) return;
     renderHead();
-    if (!busy) showNotice(state.notice || "");
+    restoreIdea();
+    if (!busy) showNotice(state.notice || softNotice || "");
     // what the site shows
     var live = state.live;
     var lf = live ? findFrontend(live.slug) : null;
@@ -544,6 +783,7 @@
     if (live) liveText.textContent = "On the site now: " + (lf ? "“" + lf.title + "”, " : "") + "version " + live.number + ". Only you can see it.";
     renderForm();
     renderList();
+    renderPaused();
     minBtn.hidden = !busy;
     applyGen();
   }
@@ -562,7 +802,7 @@
       if (f.running || (busy && busy.slug === f.slug)) li.append(el("p", "bm-fe-note bm-working", "Claude is working on a new version…"));
 
       if (!f.revisions.length) {
-        if (!f.running && !(busy && busy.slug === f.slug)) {
+        if (state.enabled && !f.running && !(busy && busy.slug === f.slug)) {
           var again = el("p", "bm-fe-note", "Not built yet. ");
           again.append(keyed(button("bm-link", "Build it", function () {
             chooseMode({ kind: "change", slug: f.slug, rev: "" });
@@ -735,8 +975,7 @@
   function clearPill() {
     clearTimeout(statusTimer);
     root.classList.remove("bm-btn-status");
-    var btn = document.getElementById("make-own");
-    if (btn && !genInfo()) btn.setAttribute("aria-label", "Re-imagine this site");
+    if (!genInfo()) hintPaused(pauseHint);
   }
 
   form.addEventListener("submit", function (e) {
@@ -748,7 +987,10 @@
       ta.focus();
       return;
     }
+    softNotice = "";
     showNotice("");
+    var kept = readIdea();
+    if (kept && kept.text.trim() === prompt) writeIdea(""); // the kept idea is being built
     resetProgress();
     var m = mode;
     busy = { slug: m.slug, title: "", prompt: prompt, startedAt: Date.now() };
@@ -789,6 +1031,8 @@
         onTool: function (text) { logStep(text); }
       }).then(function (res) { res.slug = target.slug; res.had = had; return res; });
     }).then(function (res) {
+      // the studio closed under us (the budget, or the API's own limit): not an error
+      if (res.outcome === "paused") return pausedNow(prompt, res.limit ? { limit: res.limit } : null);
       // the connection dropped mid-run: keep checking, and show the version when it lands
       if (res.outcome === "dropped") follow = { slug: res.slug, had: res.had };
       if (res.outcome !== "revision") {
@@ -814,6 +1058,7 @@
         return finish(true);
       });
     }).catch(function (err) {
+      if (err && err.key === "paused") return pausedNow(prompt, err.paused);
       // creating failed (a limit, an empty prompt, ...): its message is for the visitor
       pStatus.textContent = err && err.message ? err.message : "The builder is unavailable right now. Please try again in a little while.";
       pStatus.classList.add("bm-error");
@@ -874,7 +1119,8 @@
     setInert(true);
     refresh();
     // focus the prompt if it's usable, else the dialog itself
-    var target = !form.hidden && !ta.disabled ? ta : dialog;
+    // (paused: the state's heading, read first)
+    var target = state && state.paused ? psHead : !form.hidden && !ta.disabled ? ta : dialog;
     target.focus({ preventScroll: true });
   }
 
@@ -883,6 +1129,7 @@
   var hideTimer = 0;
   function hide() {
     isOpen = false;
+    softNotice = "";
     setTimeout(applyGen, 0); // a build still going: the pill keeps it in view
     clearTimeout(pollTimer);
     root.classList.remove("bm-open");
@@ -997,6 +1244,7 @@
   // the site changed what it shows (a reload, or the banner's Exit)
   window.addEventListener("sitehost:load", function (e) {
     var d = e.detail || {};
+    if (!state) hintPaused(d.paused || null); // once loaded, the builder's own state is fresher
     if (isOpen) { // a new iframe or banner joined the page
       setInert(false);
       setInert(true);

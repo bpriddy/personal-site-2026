@@ -372,8 +372,9 @@ namespace.
 
 - When a limit is hit, the page shows a clear message, e.g. "The builder is
   resting for today; try again tomorrow." Never an error page.
-- A model or API failure (including Anthropic's spend limit) shows "The builder
-  is unavailable right now."
+- A model or API failure shows "The builder is unavailable right now."
+  (Since v1.12, Anthropic's spend or credit limit is not a failure: it shows
+  the paused state, like the budget gate.)
 - Ben's admin builder is exempt from these limits.
 
 ## Entry point
@@ -781,3 +782,117 @@ inside every front end.
     v1.9's follow-up. The active revision and one waiting for review are
     refused, and children are re-parented. Revision files stay in storage,
     unreachable.
+
+---
+
+# v1.12 (2026-10-07): the budget gate, and building paused
+
+Every builder run's real cost is recorded, and new builds stop before Ben's
+spend limits are reached. When building is paused, visitors get a calm,
+honest state in the builder, not an error, and everything else keeps
+working.
+
+## Spend
+
+- **Cost per run:** after every model turn the server prices the response's
+  `usage` (uncached input, output, cache reads, cache writes by TTL; fast mode
+  doubles) by the model that answered, and writes the run's running total to
+  `builder_runs` (`input_tokens`, `output_tokens`, `cache_read_tokens`,
+  `cache_write_tokens`, `cost_usd`; migration 0012). Failed, canceled and
+  interrupted runs count. Generated media adds its estimated price (Krea
+  images $0.03, video clips their per-clip estimate).
+- **Prices:** one table, `internal/llm/pricing.go`, with the Claude Opus 5.5
+  rates as constants ($4 / $20 per million input / output tokens, $0.20 cache
+  reads, cache writes 1.25x input for 5 minutes and 2x for 1 hour). A model
+  missing from the table is priced at the dearest rates.
+- **Periods:** spend is summed by the UTC day and month a run started in.
+
+## The gate
+
+- **Limits:** `BUILD_BUDGET_DAILY_USD` (default 40) and
+  `BUILD_BUDGET_MONTHLY_USD` (default 400); `0` turns a limit off. Ben can
+  override either on the Builder page (stored in `builder_budget`; empty
+  means the env default).
+- **One more front end:** the 90th percentile of the cost of the last 20 runs
+  that finished with a version (nearest rank, at least $0.25); with fewer than
+  3 such runs, `BUILD_COST_ESTIMATE_USD` (default 4).
+- **Closed when** spend + what runs still going are expected to spend (an
+  estimate each, less what they've spent) + one more front end would pass
+  the daily or the monthly limit. It's checked, fresh, before every run
+  starts: visitor chats, `POST /build/api/new` (so an empty front end isn't
+  made), Ben's chats and the observer's rebuilds. The visitor-facing state
+  may be up to 15 s old.
+- **The API's own limit:** when the Claude API refuses for money (a 402
+  `billing_error`, or a message about usage limits, spend limits or a credit
+  balance too low), building pauses the same way: until the time the API
+  gives ("You will regain access on …"), else for 30 minutes, after which the
+  next run tries again (a refused request costs nothing). A run that gets
+  through ends the pause; Ben can also clear it on the Builder page.
+- **Ben:** his chats are refused too, with the numbers. The chat form then
+  offers "Build anyway, over budget" (`"overBudget": true` in the chat JSON);
+  an override is logged. The observer never overrides.
+
+## What visitors get
+
+- `GET /build/api/frontends` gains `paused`: `null`, or
+  `{"limit": "day" | "month" | "later", "reopens": "<UTC time>"}` (`reopens`
+  is the next UTC midnight for `day`, the 1st of next month for `month`, and
+  the API's reset or absent for `later`). `enabled` is then `false` and
+  `notice` empty. No amounts are ever sent to visitors.
+- `/api/frontend` gains the same `paused` (omitted when open), so the site
+  bar can hint before the builder opens; `siteHost.current()` and
+  `sitehost:load` carry it.
+- **Refusals:** `POST /build/api/new` answers 503
+  `{"error", "key": "paused", "paused": {...}}`; a chat answers 503 with an
+  `X-Build-Paused: <limit>` header and the message as text; an API limit
+  mid-run ends the stream with a `paused` event instead of `error`.
+  `builder-stream.js` reports all three as the outcome `paused`.
+- **The site bar:** unchanged; the concept line and Re-imagine stay, and
+  Re-imagine still opens the builder. `html.bm-paused` makes its dot still
+  and hollow, and its title and accessible name add "The studio is closed for
+  today." (or "until next month", "for now").
+- **The modal:** the header says Closed, and the prompt box gives way to a
+  region headed (and focused on open):
+  - day: "The studio is closed for today." / "Everything here is built by
+    Claude, and today's building time is used up. It opens again in about N
+    hours (8:00 PM your time)."
+  - month: "The studio is closed for the rest of the month." / "… this
+    month's building time is used up. It opens again on Sunday, November 1,
+    …"
+  - later: "The studio is closed for now." / "… building is taking a short
+    break. Check back a little later." (or the API's reset time)
+
+  Then "Meanwhile": "Show any of your versions on the site, or send one to
+  Ben." (Your creations, which also opens on its own) and "See what other
+  visitors have made." (Show another version: closes the modal and
+  shuffles). Showing and submitting versions work as ever; Change it and
+  Build it are hidden.
+- **Keeping an idea:** "Keep an idea for when it reopens" saves the prompt in
+  this browser only (`localStorage` `bm-idea`; nothing is queued on the
+  server, so nothing is built or spent without the visitor). Kept, it reads
+  "We'll keep it here, in this browser. When the studio reopens, it'll be
+  waiting in the prompt box, ready to build." with Edit it and Forget it.
+  When building is open again, the idea goes back into the empty prompt box
+  ("Your saved idea is back in the box. Build it when you're ready."), and
+  it's forgotten once built.
+- **A race:** a build refused because the studio closed after the modal
+  loaded isn't an error: the paused state takes over, the prompt is kept as
+  the idea, and the notice says "The studio closed just before your build
+  could start. Your idea is kept below."
+- **Dev only:** with `BUILD_BUDGET_DEV_COOKIE=1` (and not `APP_ENV=prod`), a
+  `dev_budget` cookie (`day`, `month` or `later`) forces the paused state for
+  that browser; `e2e/run.sh` sets it for `tests/budget-paused.spec.ts`.
+
+## Admin
+
+The Builder page opens with **Spend**: today's and this month's spend against
+the limits (with how many more front ends fit), the estimate of one front end
+and where it comes from, runs going now, whether the gate is open, and why
+it's closed and until when. "Change the limits" posts to
+`POST /admin/builder/budget` (`daily`, `monthly`); an API pause has "Clear the
+pause" (`POST /admin/builder/budget/clear-api`).
+
+## Not counted
+
+The observer's own checks (small, separate Claude calls) aren't builder runs
+and aren't in the spend; its rebuilds are.

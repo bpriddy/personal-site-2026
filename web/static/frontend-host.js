@@ -10,7 +10,9 @@
 // cookie and then reloading the front end in place (no page reload):
 //   siteHost.reload()     load a fresh /api/frontend into the iframe
 //   siteHost.exitDraft()  stop showing the visitor's draft (POST exit, reload)
-//   siteHost.current()    {ref, serve, draft, revision, number} of the last load
+//   siteHost.current()    {ref, serve, draft, revision, number, choices, paused} of the last load
+//                         (paused, v1.12: building is paused for the budget, {limit, reopens}, or null)
+//   siteHost.shuffle()    show another front end from the rotation
 // and fires "sitehost:load" (detail: the same object) on window whenever a
 // front end is chosen (not for the fallback).
 //
@@ -186,6 +188,7 @@
             revision: draft && typeof fe.revision === "string" ? fe.revision : "",
             number: draft && typeof fe.number === "number" ? fe.number : 0,
             choices: typeof fe.choices === "number" ? fe.choices : 0,
+            paused: fe.paused && typeof fe.paused === "object" && typeof fe.paused.limit === "string" ? fe.paused : null,
             copy: fe.copy && typeof fe.copy === "object" ? fe.copy : {}
           };
           currentCredit = !draft && typeof fe.credit === "string" ? fe.credit.trim().slice(0, 80) : "";
@@ -581,7 +584,7 @@
   }
 
   function copyInfo() {
-    return { ref: currentInfo.ref, serve: currentInfo.serve, draft: currentInfo.draft, revision: currentInfo.revision, number: currentInfo.number, choices: currentInfo.choices };
+    return { ref: currentInfo.ref, serve: currentInfo.serve, draft: currentInfo.draft, revision: currentInfo.revision, number: currentInfo.number, choices: currentInfo.choices, paused: currentInfo.paused || null };
   }
 
   window.siteHost = { reload: reloadFrontend, exitDraft: exitDraft, current: copyInfo, shuffle: shuffleFrontend };

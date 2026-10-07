@@ -16,6 +16,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 
 	"github.com/bpriddy/personal-site-2026/internal/connect"
+	"github.com/bpriddy/personal-site-2026/internal/llm"
 	"github.com/bpriddy/personal-site-2026/internal/revfiles"
 )
 
@@ -76,6 +77,10 @@ type Request struct {
 	// rebuild), on Ben's behalf. Only the label of the request in the first
 	// message changes; the system prompt stays the same (cached).
 	Observer bool
+	// OnCost, if set, is told what the run spends as it goes: each model
+	// turn's tokens and price (llm.Usage.Cost), and money connections spend
+	// (generated media; USD only).
+	OnCost func(llm.Cost)
 }
 
 // An Attachment is an image sent with a prompt: the model sees it, and can
@@ -132,6 +137,9 @@ var ErrRefused = errors.New("the model declined this request")
 // when the model calls finish with valid files, or fails.
 func (b *Builder) Run(ctx context.Context, req Request, emit func(Event)) (*Result, error) {
 	ctx = connect.WithBudget(ctx) // import limits are per run
+	if req.OnCost != nil {
+		ctx = connect.WithCostSink(ctx, func(usd float64) { req.OnCost(llm.Cost{USD: usd}) })
+	}
 	// some connections (paid video) are only for Ben's own runs
 	conns := connect.ForRun(b.cfg.Connections, req.Visitor, req.Observer)
 	ws := &workspace{ctx: ctx, files: clone(req.Parent), conns: map[string]connect.Connection{}}
@@ -178,7 +186,13 @@ func (b *Builder) Run(ctx context.Context, req Request, emit func(Event)) (*Resu
 		params.Messages = msgs
 		msg, err := b.model.Turn(ctx, params, emit)
 		if err != nil {
+			if se := llm.AsSpendLimit(err); se != nil {
+				return nil, se // the account is out of money: no retry helps
+			}
 			return nil, fmt.Errorf("model: %w", err)
+		}
+		if req.OnCost != nil {
+			req.OnCost(llm.UsageOf(msg, b.cfg.Model).Cost())
 		}
 		if msg.StopReason == anthropic.BetaStopReasonRefusal {
 			why := string(msg.StopDetails.Category)

@@ -213,6 +213,8 @@ Unsubmitted drafts are purged 30 days after their last activity.
 - **Admin auth:** Google sign-in inside the app, restricted to an allowlist of
   email addresses supplied via the `ADMIN_EMAILS` env var (not committed).
   Replaces basic auth.
-- **LLM:** Claude API, `claude-opus-5-5`, key in Secret Manager. A hard monthly
-  spend limit is set in the Anthropic Console as a safety net until the in-app
-  caps land.
+- **LLM:** Claude API, `claude-opus-5-5`, key in Secret Manager. The builder
+  records every run's cost and pauses building before Ben's daily or monthly
+  limit (protocol v1.12, "Budget"); the hard monthly spend limit in the
+  Anthropic Console stays as the safety net behind it, and when it's hit
+  visitors see the same paused state.

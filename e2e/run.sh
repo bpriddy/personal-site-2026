@@ -36,6 +36,8 @@ export APP_ENV=dev
 export BUILDER_DEMO_MODEL=1
 # slow enough (2 turns × 2s) to see, reload and cancel a build in progress (build-progress.spec.ts)
 export BUILDER_DEMO_DELAY="${BUILDER_DEMO_DELAY:-2s}"
+# a dev_budget cookie forces "building paused" for one browser (budget-paused.spec.ts; dev only)
+export BUILD_BUDGET_DEV_COOKIE=1
 export FRONTENDS_DIR="${FRONTENDS_DIR:-$ROOT/build/frontends}"
 # project media for tests/work.spec.ts (tiny generated fixtures; real media never lives in git)
 export MEDIA_DIR="$E2E_DIR/fixtures/media"
@@ -160,7 +162,7 @@ declare -A SPECS_OF=(
   [particle-stream]="tests/builtins-ready.spec.ts tests/navigation.spec.ts"
   [stream]="tests/builtins-ready.spec.ts tests/stream.spec.ts"
   [broken]="tests/fallback.spec.ts tests/contract.spec.ts"
-  [prompted]="tests/prompted.spec.ts tests/public-builder.spec.ts tests/build-progress.spec.ts"
+  [prompted]="tests/prompted.spec.ts tests/public-builder.spec.ts tests/build-progress.spec.ts tests/budget-paused.spec.ts"
   [custom]=""
 )
 if [[ -n "${FRONTEND_ROTATION:-}" ]]; then

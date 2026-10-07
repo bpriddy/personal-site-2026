@@ -19,6 +19,7 @@ import (
 
 	"github.com/bpriddy/personal-site-2026/internal/builder"
 	"github.com/bpriddy/personal-site-2026/internal/frontend"
+	"github.com/bpriddy/personal-site-2026/internal/llm"
 	"github.com/bpriddy/personal-site-2026/internal/revfiles"
 	"github.com/bpriddy/personal-site-2026/internal/store"
 )
@@ -86,6 +87,8 @@ func (s *Server) builderRoutes(admin *http.ServeMux) {
 	admin.HandleFunc("POST /admin/builder/new", s.builderNew)
 	admin.HandleFunc("POST /admin/builder/uploads", s.builderUploads)
 	admin.HandleFunc("POST /admin/builder/rotation", s.builderRotation)
+	admin.HandleFunc("POST /admin/builder/budget", s.builderBudget)
+	admin.HandleFunc("POST /admin/builder/budget/clear-api", s.builderBudgetClearAPI)
 	admin.HandleFunc("GET /admin/builder/preview", s.builderPreview)
 	admin.HandleFunc("GET /admin/builder/builtin/{name}", s.builderBuiltin)
 	admin.HandleFunc("GET /admin/builder/fe/{slug}", s.builderFrontend)
@@ -187,6 +190,11 @@ func (s *Server) builderIndex(w http.ResponseWriter, r *http.Request) {
 		}
 		prompted = append(prompted, row)
 	}
+	budget, err := s.adminBudget(r)
+	if err != nil {
+		s.fail(w, "builder: budget", err)
+		return
+	}
 	pending := 0
 	for _, sub := range subs {
 		if sub.Status == store.SubmissionPending {
@@ -195,6 +203,7 @@ func (s *Server) builderIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	s.render(w, "admin/builder.html", http.StatusOK, map[string]any{
 		"Builtins": builtins, "Prompted": prompted, "Visitors": visitors, "Submissions": subs, "Pending": pending,
+		"Budget":             budget,
 		"Disabled":           s.builderDisabledReason(),
 		"RotationOverridden": s.rotationOverride != nil, "Error": r.URL.Query().Get("error"),
 	})
@@ -397,8 +406,14 @@ func (s *Server) builderBuiltin(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, "builder: frontend", err)
 		return
 	}
+	budget, err := s.adminBudget(r)
+	if err != nil {
+		s.fail(w, "builder: budget", err)
+		return
+	}
 	s.render(w, "admin/builder_frontend.html", http.StatusOK, map[string]any{
-		"FE": f, "Builtin": true, "PreviewRef": f.ID, "Self": r.URL.Path,
+		"Budget": budget,
+		"FE":     f, "Builtin": true, "PreviewRef": f.ID, "Self": r.URL.Path,
 		"RotationOverridden": s.rotationOverride != nil,
 	})
 }
@@ -711,6 +726,8 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, f store.Fronten
 		Images []string `json:"images"`
 		// images already uploaded (/admin/builder/uploads): their /media/ paths
 		Attached []string `json:"attached"`
+		// Ben only: run even though the budget gate is closed (v1.12)
+		OverBudget bool `json:"overBudget"`
 	}
 	// room for the attached images, base64-encoded
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10+maxAttachBen*(maxAttachBytes*4/3+4))
@@ -768,6 +785,28 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, f store.Fronten
 		s.builder.mu.Unlock()
 	}()
 
+	// the budget gate (v1.12), before anything is spent: visitors get the
+	// paused state; Ben gets the numbers, and may override deliberately
+	pause, budget, err := s.gate(r)
+	if err != nil {
+		s.fail(w, "builder: budget", err)
+		return
+	}
+	if c.visitor && pause != nil {
+		w.Header().Set(pausedHeader, pause.Limit)
+		http.Error(w, pausedMessage(pause), http.StatusServiceUnavailable)
+		return
+	}
+	if !c.visitor && budget.Closed {
+		if !in.OverBudget {
+			w.Header().Set(pausedHeader, budget.Limit)
+			http.Error(w, adminBudgetRefusal(budget), http.StatusServiceUnavailable)
+			return
+		}
+		s.log.Warn("builder: Ben overrode the budget gate", "frontend", id, "limit", budget.Limit,
+			"today", budget.Today, "month", budget.Month, "estimate", budget.Estimate)
+	}
+
 	// The run outlives a closed tab: it finishes and saves its revision.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), RunTimeout)
 	defer cancel()
@@ -811,6 +850,9 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, f store.Fronten
 	go s.watchCancel(runCtx, runID, cancelRun)
 	canceled := func() bool { return runCtx.Err() != nil && ctx.Err() == nil }
 	req.Content = s.siteContent(ctx)
+	cost := s.newRunCost(ctx, runID)
+	req.OnCost = cost.add
+	defer func() { s.log.Info("builder: run cost", "run", runID, "frontend", id, "usd", cost.usd()) }()
 
 	ev := newEventStream(w)
 	stopPing := ev.keepAlive(15 * time.Second)
@@ -842,6 +884,19 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, f store.Fronten
 			s.log.Error("builder: finish run", "err", ferr)
 		}
 		text := err.Error()
+		if se := llm.AsSpendLimit(err); se != nil {
+			// the Claude API is out of money: the same paused state as our own gate
+			s.noteSpendLimit(ctx, se)
+			if c.visitor {
+				p := &buildPause{Limit: pauseLater}
+				if !se.Reset.IsZero() {
+					t := se.Reset.UTC()
+					p.Reopens = &t
+				}
+				ev.send(builder.Event{Type: "paused", Text: pausedMessage(p)})
+				return
+			}
+		}
 		if c.visitor {
 			// never show a visitor internals (API errors, spend limits, ...)
 			text = buildMessage(msgUnavailable, s.limits)
@@ -855,6 +910,10 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, f store.Fronten
 	if ferr := b.FinishRun(ctx, runID, rev.ID, ""); ferr != nil {
 		s.log.Error("builder: finish run", "err", ferr)
 	}
+	if !budget.APIPausedUntil.IsZero() {
+		s.clearAPIPause(ctx) // the API took this run: its limit is over
+	}
+	s.forgetBudget()
 	ev.send(builder.Event{Type: "revision", Revision: rev.ID, Number: rev.Number, Text: res.Summary})
 	ev.send(builder.Event{Type: "done"})
 }

@@ -101,3 +101,17 @@
 /* Copy on Ben's prompts in the conversation */
 .b-who { display: flex; align-items: center; gap: var(--s-2); }
 .admin .b-copy { min-height: 24px; padding: 0 8px; margin-left: auto; font-size: .7rem; }
+
+/* Spend (v1.12): the builder's spend against Ben's limits, and the gate */
+.b-spend { display: grid; gap: var(--s-2); }
+.b-spend h2 { display: flex; align-items: center; gap: var(--s-3); }
+.admin .b-closed { color: var(--accent); border-color: var(--accent); }
+.b-spend-table td { vertical-align: middle; }
+.b-meter { display: inline-block; vertical-align: middle; width: 8rem; height: 6px; border-radius: 3px; background: var(--rule); overflow: hidden; }
+.b-meter > span { display: block; height: 100%; background: var(--fg); }
+.b-budget-form { display: flex; flex-wrap: wrap; align-items: end; gap: var(--s-2) var(--s-4); margin-top: var(--s-3); }
+.b-budget-form label { display: grid; gap: var(--s-1); }
+.b-budget-form input { width: 10rem; }
+.b-budget-form .b-muted { flex-basis: 100%; margin: 0; }
+.admin .b-inline-form { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-4); }
+.b-over-budget .b-check { display: flex; align-items: center; gap: var(--s-2); margin-top: var(--s-2); font-weight: 600; }
