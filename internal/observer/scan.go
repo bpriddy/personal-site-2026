@@ -26,6 +26,8 @@ const FieldThreshold = 0.25
 // from this table is taken to render none. Keep it in step with the code.
 var builtinReads = map[string][]string{
 	"builtin/site": {contract.Pages, contract.Experiments, contract.Projects, contract.Experience},
+	// the site version of Particle Stream (frontends/stream/content.js)
+	"builtin/stream": {contract.Pages, contract.Experiments, contract.Projects, contract.Experience},
 }
 
 // oneAccessor names the host API's one-item accessor for a collection.

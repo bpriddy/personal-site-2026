@@ -357,6 +357,10 @@
       site.theme("dark");
       render(init.route);
       site.onRoute(render);
+      // the content is on screen: ready now (the protocol's order). The stream
+      // fades in behind it when the GPU is set up, however long that takes on
+      // this machine; the wasm's own ready after its first frame is a no-op then.
+      site.ready();
     } catch (e) {
       site.reportError(e);
     }
