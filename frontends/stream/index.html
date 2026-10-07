@@ -158,6 +158,12 @@
       @font-face { font-family: "Geist Mono"; src: url("/fonts/geist-mono.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
       :root {
         --panel: rgba(9, 8, 7, 0.86);
+        /* plates: the GPU draws them in the type's relief; this is their
+           colour only until it does (or without WebGPU) */
+        --plate: #e6e0d2;
+        --plate-ink: #17130f;
+        --plate-dim: #5b5248;
+        --plate-accent: #a34a12;
         --line: rgba(232, 226, 214, 0.14);
         --pad: clamp(18px, 5vw, 72px);
         --top: calc(76px + env(safe-area-inset-top));
@@ -190,8 +196,8 @@
       .st-label { color: var(--dim); }
       .st-soon { color: var(--accent); font-size: 14px; }
       /* short text sits on a pill (measured as a box) */
-      .ob-word, .st-nav, .st-pager {
-        background: var(--panel); border-radius: 16px; padding: 7px 14px;
+      .ob-word {
+        background: var(--plate); color: var(--plate-ink); border-radius: 3px; padding: 7px 14px;
         width: fit-content; box-sizing: border-box;
       }
       .st-panel {
@@ -237,7 +243,12 @@
         background: none; border: 0; padding: 0 0 2px; cursor: pointer; text-decoration: none;
         border-bottom: 1px solid rgba(242,163,94,.5);
       }
-      .st-link.ob-word { background: var(--panel); border: 0; padding: 8px 16px; }
+      .st-link.ob-word { border: 0; padding: 8px 16px; color: var(--plate-ink); }
+      html.gpu-type .ob-word { background: transparent; }
+      .ob-word.st-label, .ob-word.st-work-meta, .ob-word .st-pager-n, .st-meta .ob-word dt, .ob-word .st-nav-link { color: var(--plate-dim); }
+      .ob-word.st-tagline, .ob-word.st-soon, .st-work-link:hover .st-work-meta, .st-work-link:focus-visible .st-work-meta,
+      .st-link.ob-word:hover, .st-link.ob-word:focus-visible, .ob-word .st-pager-b:not(:disabled):hover, .ob-word .st-pager-b:focus-visible { color: var(--plate-accent); }
+      .ob-word .st-nav-link:hover, .ob-word .st-nav-link:focus-visible, .ob-word .st-nav-link[aria-current="page"], .ob-word .st-pager-b, .ob-word.st-now { color: var(--plate-ink); }
       .st-link:hover, .st-link:focus-visible { border-bottom-color: var(--accent); color: var(--accent); }
       .st-next-link { text-decoration: none; color: inherit; }
       .st-more { margin: 4px 0 0; }

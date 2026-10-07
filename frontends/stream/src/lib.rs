@@ -1062,6 +1062,7 @@ struct ScenePart {
     glyphs: Vec<SceneText>,
     words: Vec<SceneText>,
     boxes: Vec<SceneBox>,
+    plates: Vec<SceneBox>, // short text's surfaces: drawn in relief, like glyphs
 }
 struct Scene {
     gen: f64,
@@ -1107,13 +1108,12 @@ fn scene_gen() -> f64 {
 }
 fn read_part(o: &JsValue) -> ScenePart {
     let text = |v: &JsValue| SceneText { t: js_s(v, "t"), f: js_s(v, "f"), x: js_f(v, "x"), y: js_f(v, "y") };
+    let rect = |v: &JsValue| SceneBox { x: js_f(v, "x"), y: js_f(v, "y"), w: js_f(v, "w"), h: js_f(v, "h"), r: js_f(v, "r") };
     ScenePart {
         glyphs: js_arr(o, "glyphs").iter().map(text).collect(),
         words: js_arr(o, "words").iter().map(text).collect(),
-        boxes: js_arr(o, "boxes")
-            .iter()
-            .map(|v| SceneBox { x: js_f(v, "x"), y: js_f(v, "y"), w: js_f(v, "w"), h: js_f(v, "h"), r: js_f(v, "r") })
-            .collect(),
+        boxes: js_arr(o, "boxes").iter().map(rect).collect(),
+        plates: js_arr(o, "plates").iter().map(rect).collect(),
     }
 }
 fn read_scene() -> Option<Scene> {
@@ -1164,7 +1164,7 @@ fn word_rect(ctx: &web_sys::CanvasRenderingContext2d, w: &SceneText) -> (f64, f6
 }
 
 // draw one part of the scene into a w x h canvas spanning the viewport, hard
-// edged, in two colour channels: R = the glyphs (the type the GPU draws),
+// edged, in two colour channels: R = the glyphs and plates (what the GPU draws in relief),
 // G = everything solid (glyphs, pills, panels, media). One readback for both.
 fn draw_part(ctx: &web_sys::CanvasRenderingContext2d, w: u32, h: u32, sc: &Scene, part: &ScenePart) -> Vec<u8> {
     let (wf, hf) = (w as f64, h as f64);
@@ -1182,6 +1182,9 @@ fn draw_part(ctx: &web_sys::CanvasRenderingContext2d, w: u32, h: u32, sc: &Scene
     for g in &part.glyphs {
         ctx.set_font(&g.f);
         ctx.fill_text(&g.t, g.x, g.y).ok();
+    }
+    for p in &part.plates {
+        round_rect(ctx, p.x, p.y, p.w, p.h, p.r);
     }
     ctx.set_fill_style_str("#00ff00");
     for wd in &part.words {
@@ -1296,7 +1299,7 @@ fn part_key(sc: &Scene, part: &ScenePart) -> String {
     for g in part.glyphs.iter().chain(&part.words) {
         k.push_str(&format!("|{}@{}:{:.1},{:.1}", g.t, g.f, g.x, g.y));
     }
-    for b in &part.boxes {
+    for b in part.boxes.iter().chain(&part.plates) {
         k.push_str(&format!("|{:.1},{:.1},{:.1},{:.1},{:.1}", b.x, b.y, b.w, b.h, b.r));
     }
     k

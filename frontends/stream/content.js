@@ -11,8 +11,9 @@
 //     always agree:
 //       glyph  big type: the GPU draws it in relief (the DOM copy turns
 //              transparent once it does, and stays for selection and readers)
-//       box    everything else: block text and media sit in panels, short
-//              text on pills (.ob-word); the stream flows around them
+//       plate  short text (.ob-word): the GPU draws its surface in the same
+//              relief as the big type; the DOM text sits on it
+//       box    block text and media: dark panels the stream flows around
 //     The nav and pager are the "chrome" scene: they stay put while pages
 //     slide through the water. window.__SCENE_T carries the slide (offset,
 //     velocity, opacity) every frame, so the moving page plows the stream.
@@ -318,9 +319,9 @@
 
   // ── the frame ──
   var stage = el("main", "st-stage");
-  var nav = el("nav", "st-nav ob-box");
+  var nav = el("nav", "st-nav ob-word");
   nav.setAttribute("aria-label", "Pages");
-  var pager = el("div", "st-pager ob-box");
+  var pager = el("div", "st-pager ob-word");
   var pagerN = el("span", "st-pager-n");
   var prevB = el("button", "st-pager-b", "Back");
   prevB.type = "button"; prevB.setAttribute("aria-label", "Previous screen");
@@ -375,7 +376,7 @@
     return out;
   }
   function describe(root, dy) {
-    var out = { glyphs: [], words: [], boxes: [] };
+    var out = { glyphs: [], words: [], boxes: [], plates: [] };
     function add(kind, e) {
       var f = fontOf(e);
       lines(e, f).forEach(function (l) { out[kind].push({ t: l.t, f: f, x: l.x, y: l.y - dy }); });
@@ -388,7 +389,7 @@
       var r = e.getBoundingClientRect();
       if (r.width < 1 || r.height < 1) return;
       var rad = parseFloat(getComputedStyle(e).borderTopLeftRadius) || 0;
-      out.boxes.push({ x: r.left, y: r.top - dy, w: r.width, h: r.height, r: rad });
+      out[e.classList.contains("ob-word") ? "plates" : "boxes"].push({ x: r.left, y: r.top - dy, w: r.width, h: r.height, r: rad });
     });
     return out;
   }
@@ -398,7 +399,7 @@
     var sc = screens[index];
     if (!sc) return;
     var chrome = describe(nav, 0), p = describe(pager, 0);
-    chrome.boxes = chrome.boxes.concat(p.boxes);
+    chrome.plates = chrome.plates.concat(p.plates);
     window.__SCENE = {
       gen: ++sceneGen,
       vw: window.innerWidth,
