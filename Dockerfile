@@ -16,6 +16,7 @@ WORKDIR /src
 COPY scripts/build-frontends.sh scripts/
 COPY site/ site/
 COPY experiments/ experiments/
+COPY frontends/ frontends/
 RUN bash scripts/build-frontends.sh
 
 # ── Go binaries ──────────────────────────────────────────────────────────────

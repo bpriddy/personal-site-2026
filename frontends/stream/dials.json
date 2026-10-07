@@ -1,0 +1,23 @@
+{
+  "rot_speed": 0.27,
+  "rot_depth": 3.2,
+  "stream": 0.28,
+  "turb": 0.6,
+  "eddy": 0.7,
+  "spark": 1.05,
+  "bg_freq": 2.6,
+  "text_sat": 0.72,
+  "bg_speed": 2.5,
+  "perturb": 1.1,
+  "wake": 1.6,
+  "porosity": 0.48,
+  "name_lead": 1,
+  "commit": 0.2,
+  "menu_lerp": 1,
+  "wake_width": 0.03,
+  "scroll": 1,
+  "entry_slide": 0.35,
+  "entry_zoom": 0.43,
+  "expand": 2.0,
+  "bump": 0.12
+}

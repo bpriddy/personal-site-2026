@@ -22,11 +22,12 @@ func builderConformance(t *testing.T, newStore func(t *testing.T) Builder) {
 		st := newStore(t)
 		fes, err := st.BuilderFrontends(ctx)
 		must(t, err)
-		if len(fes) != 2 || fes[0].ID != "builtin/particle-stream" || fes[1].ID != "builtin/site" {
+		if len(fes) != 3 || fes[0].ID != "builtin/particle-stream" || fes[1].ID != "builtin/site" || fes[2].ID != "builtin/stream" {
 			t.Fatalf("frontends = %+v", fes)
 		}
 		for _, f := range fes {
-			if f.Kind != KindBuiltin || f.ActiveRevision != "" || !f.InRotation {
+			// builtin/stream (migration 0011) starts out of the rotation
+			if f.Kind != KindBuiltin || f.ActiveRevision != "" || f.InRotation == (f.ID == "builtin/stream") {
 				t.Fatalf("seeded builtin = %+v", f)
 			}
 		}
@@ -220,7 +221,7 @@ func builderConformance(t *testing.T, newStore func(t *testing.T) Builder) {
 		// it is a registered front end for the CMS store too (rotation toggle)
 		if s, ok := st.(Store); ok {
 			fes, _ := s.Frontends(ctx)
-			if len(fes) != 3 || fes[2].Ref != "fe/dark" {
+			if len(fes) != 4 || fes[3].Ref != "fe/dark" {
 				t.Fatalf("Store.Frontends = %+v", fes)
 			}
 			must(t, s.SetFrontendInRotation(ctx, "fe/dark", true))

@@ -41,6 +41,7 @@ func NewMemory() *Memory {
 		frontends: map[string]content.Frontend{
 			"builtin/site":            {Ref: "builtin/site", Title: "Site", InRotation: true, UpdatedAt: now},
 			"builtin/particle-stream": {Ref: "builtin/particle-stream", Title: "Particle Stream", InRotation: true, UpdatedAt: now},
+			"builtin/stream":          {Ref: "builtin/stream", Title: "Particle Stream (site)", UpdatedAt: now},
 		},
 	}
 }

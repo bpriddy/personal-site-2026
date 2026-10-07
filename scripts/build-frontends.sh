@@ -3,7 +3,8 @@
 # into the dev FRONTENDS_DIR layout (docs/frontend-protocol.md, "Refs and files"):
 #
 #   site/                          → build/frontends/builtin/site/
-#   experiments/particle-stream/   → build/frontends/builtin/particle-stream/
+#   experiments/particle-stream/   → build/frontends/builtin/particle-stream/  (the experiment, kept as is)
+#   frontends/stream/              → build/frontends/builtin/stream/           (its site version)
 #
 # Needs Rust + wasm32-unknown-unknown + trunk (scripts/dev-setup.sh).
 set -euo pipefail
@@ -30,5 +31,6 @@ build() { # <crate dir> <ref name>
 
 build site site
 build experiments/particle-stream particle-stream
+build frontends/stream stream
 
 echo "built front ends in $out"

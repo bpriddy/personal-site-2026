@@ -25,7 +25,7 @@ func conformance(t *testing.T, newStore func(t *testing.T) Store) {
 			t.Fatalf("experiments = %+v, %v", exps, err)
 		}
 		fes, err := st.Frontends(ctx)
-		if err != nil || len(fes) != 2 {
+		if err != nil || len(fes) != 3 || fes[2].Ref != "builtin/stream" || fes[2].InRotation {
 			t.Fatalf("frontends = %+v, %v", fes, err)
 		}
 		if fes[0].Ref != "builtin/particle-stream" || fes[1].Ref != "builtin/site" || !fes[0].InRotation || !fes[1].InRotation {
