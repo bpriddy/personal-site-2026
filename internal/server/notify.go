@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"html"
 	"net/http"
 	"strings"
@@ -15,7 +16,7 @@ import (
 // "Email me when it's ready" (protocol v1.13). While a visitor's build runs,
 // the modal offers to email them when it ends. The address is stored with the
 // run only until the email goes out (store.Notifies); the email's link opens
-// the build on any device for a week (notify.Link).
+// the build in whichever browser opens it, which becomes its owner (notify.Link).
 
 const (
 	// NotifyLinkTTL is how long an email's link works after the build ends.
@@ -52,7 +53,7 @@ func (s *Server) notifyRoutes(mux *http.ServeMux) {
 	post := func(h http.HandlerFunc) http.Handler { return cop.Handler(s.withSession(h)) }
 	mux.Handle("POST /build/api/fe/{slug}/notify", post(s.buildNotify))
 	mux.Handle("DELETE /build/api/fe/{slug}/notify", post(s.buildNotifyClear))
-	mux.HandleFunc("GET /build/open/{token}", s.buildOpen)
+	mux.HandleFunc("GET /build/open/{token}", s.withSession(s.buildOpen))
 	if o, ok := s.notify.mailer.(*notify.Outbox); ok && s.cfg.Dev() {
 		// dev and e2e only: what the dev mailer "sent"
 		mux.HandleFunc("GET /dev/outbox", func(w http.ResponseWriter, r *http.Request) {
@@ -99,11 +100,6 @@ func (s *Server) buildNotify(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "There's no build running to email you about.", http.StatusConflict)
 		return
 	}
-	sid, err := r.Cookie(sidCookie)
-	if err != nil || !sidPattern.MatchString(sid.Value) {
-		buildNotFound(w)
-		return
-	}
 	hash := notify.AddressHash(addr)
 	if cur, err := ns.RunNotify(r.Context(), run.ID); err != nil || string(cur.AddressHash) != string(hash) {
 		n, err := ns.NotifyCount(r.Context(), hash, s.now().Add(-24*time.Hour))
@@ -116,8 +112,7 @@ func (s *Server) buildNotify(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	tok, err := notify.Seal(s.cfg.SigningKey, notify.Link{SID: sid.Value, Frontend: f.ID,
-		Expires: s.now().Add(RunTimeout + NotifyLinkTTL)})
+	tok, err := notify.Seal(s.cfg.SigningKey, notify.Link{Frontend: f.ID, Expires: s.now().Add(RunTimeout + NotifyLinkTTL)})
 	if err != nil {
 		s.fail(w, "build: notify link", err)
 		return
@@ -150,31 +145,37 @@ func (s *Server) buildNotifyClear(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// buildOpen is an email's link: it signs this browser in as the visitor who
-// asked (their sid), shows their newest version live, and opens the modal.
+// buildOpen is an email's link: it hands the build to this browser (the
+// browser that had it loses it), shows its newest version live, and opens
+// the modal. Opened again elsewhere within the week, it moves again.
 func (s *Server) buildOpen(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	l, err := notify.Open(s.cfg.SigningKey, r.PathValue("token"), s.now())
-	if err != nil || !sidPattern.MatchString(l.SID) {
+	v := s.visitorStore()
+	if err != nil || v == nil || !frontend.IsPrompted(l.Frontend) {
 		http.Redirect(w, r, "/?build=expired", http.StatusFound)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: sidCookie, Value: l.SID, Path: "/", MaxAge: int(sidMaxAge / time.Second),
-		HttpOnly: true, Secure: !s.cfg.Dev(), SameSite: http.SameSiteLaxMode})
-	if v := s.visitorStore(); v != nil && frontend.IsPrompted(l.Frontend) {
-		if f, err := v.OwnedFrontend(r.Context(), l.Frontend, hashSID(l.SID)); err == nil {
-			if revs, err := s.builderStore().Revisions(r.Context(), f.ID); err == nil && len(revs) > 0 {
-				newest := revs[0]
-				for _, rv := range revs[1:] {
-					if rv.Number > newest.Number {
-						newest = rv
-					}
-				}
-				http.SetCookie(w, &http.Cookie{Name: liveCookie, Value: f.ID + ":" + newest.ID, Path: "/",
-					HttpOnly: true, Secure: !s.cfg.Dev(), SameSite: http.SameSiteLaxMode})
+	session := readSession(r) // withSession made sure there is one
+	if err := v.TransferFrontend(r.Context(), l.Frontend, session); errors.Is(err, store.ErrNotFound) {
+		http.Redirect(w, r, "/?build=expired", http.StatusFound) // deleted since
+		return
+	} else if err != nil {
+		s.fail(w, "build: open link", err)
+		return
+	}
+	s.log.Info("build: link handed over", "frontend", l.Frontend)
+	// show its newest version on the site
+	if revs, err := s.builderStore().Revisions(r.Context(), l.Frontend); err == nil && len(revs) > 0 {
+		newest := revs[0]
+		for _, rv := range revs[1:] {
+			if rv.Number > newest.Number {
+				newest = rv
 			}
 		}
+		http.SetCookie(w, &http.Cookie{Name: liveCookie, Value: l.Frontend + ":" + newest.ID, Path: "/",
+			HttpOnly: true, Secure: !s.cfg.Dev(), SameSite: http.SameSiteLaxMode})
 	}
 	http.Redirect(w, r, "/?build=1", http.StatusFound)
 }
@@ -224,7 +225,7 @@ func runNotice(to, outcome, link string) notify.Message {
 		lead = "Something went wrong and your build stopped before it was done. Anything you made before is still there."
 		cta = "Try again"
 	}
-	text := lead + "\n\n" + cta + ": " + link + "\n\nThe link opens it in any browser for the next 7 days.\n\n— benpriddy.com\n\n" + footer + "\n"
+	text := lead + "\n\n" + cta + ": " + link + "\n\nThe link works for 7 days. Your build moves to the browser you open it in.\n\n— benpriddy.com\n\n" + footer + "\n"
 	esc := html.EscapeString
 	htm := `<!doctype html><html><body style="margin:0;padding:32px 20px;background:#FAFAF8;font:16px/1.5 -apple-system,system-ui,sans-serif;color:#17130f">` +
 		`<div style="max-width:520px;margin:0 auto">` +
@@ -232,7 +233,7 @@ func runNotice(to, outcome, link string) notify.Message {
 		`<h1 style="margin:0 0 16px;font-size:24px;line-height:1.2">` + esc(subject) + `</h1>` +
 		`<p style="margin:0 0 24px">` + esc(lead) + `</p>` +
 		`<p style="margin:0 0 24px"><a href="` + esc(link) + `" style="display:inline-block;padding:12px 20px;background:#17130f;color:#FAFAF8;text-decoration:none;border-radius:4px;font-weight:600">` + esc(cta) + `</a></p>` +
-		`<p style="margin:0 0 32px;color:#5b5248;font-size:14px">The link opens it in any browser for the next 7 days.</p>` +
+		`<p style="margin:0 0 32px;color:#5b5248;font-size:14px">The link works for 7 days. Your build moves to the browser you open it in.</p>` +
 		`<p style="margin:0;color:#7a7066;font-size:12px">` + esc(footer) + `</p>` +
 		`</div></body></html>`
 	return notify.Message{To: to, Subject: subject, Text: text, HTML: htm}

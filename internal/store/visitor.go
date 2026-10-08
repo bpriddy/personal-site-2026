@@ -22,6 +22,11 @@ type Visitors interface {
 	// OwnedFrontend returns the front end if session owns it. ErrNotFound if it
 	// doesn't exist or has another owner (or none), so ownership never leaks.
 	OwnedFrontend(ctx context.Context, id string, session []byte) (FrontendInfo, error)
+	// TransferFrontend makes session the owner of a visitor's front end
+	// (recording the session if it is new); the previous owner loses it
+	// (protocol v1.13, an email's link). ErrNotFound unless the front end
+	// exists and a visitor owns it: Ben's own and the built-ins never move.
+	TransferFrontend(ctx context.Context, id string, session []byte) error
 	// SessionFrontends lists the session's front ends, most recently updated first.
 	SessionFrontends(ctx context.Context, session []byte) ([]FrontendInfo, error)
 	// VisitorFrontendIDs returns the IDs of every front end a visitor owns.

@@ -12,12 +12,10 @@ import (
 	"time"
 )
 
-// Link is what an email's "open your build" link carries: the visitor's
-// session (the raw sid cookie, so the link signs the device that opens it in
-// as them) and the front end. It is sealed (AES-GCM), not just signed: the
-// sid must never be readable from the URL.
+// Link is what an email's "open your build" link carries: the front end it
+// hands over to whichever browser opens it. Sealed (AES-GCM), so it can't be
+// forged or pointed at another build, and the URL says nothing readable.
 type Link struct {
-	SID      string    `json:"s"`
 	Frontend string    `json:"f"`
 	Expires  time.Time `json:"e"`
 }

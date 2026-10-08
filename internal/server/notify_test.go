@@ -129,23 +129,34 @@ func TestBuildNotifyReady(t *testing.T) {
 		t.Error("address kept after sending")
 	}
 
-	// the link, on another device: signs it in as a, shows the new version
-	phone := &visitor{e: e, ip: "192.0.2.9", cookies: map[string]string{}}
+	// the link, on another device: the build moves there, with its new version live
+	phone := e.visitor(3, "192.0.2.9")
 	open := phone.do("GET", strings.TrimPrefix(link, "https://example.com"), nil)
 	if open.Code != http.StatusFound || open.Header().Get("Location") != "/?build=1" {
 		t.Fatalf("open: %d %s", open.Code, open.Header().Get("Location"))
 	}
-	var sid, live string
-	for _, c := range open.Result().Cookies() {
-		switch c.Name {
-		case sidCookie:
-			sid = c.Value
-		case liveCookie:
-			live = c.Value
-		}
+	if live := phone.cookies[liveCookie]; !strings.HasPrefix(live, "fe/"+slug+":") {
+		t.Fatalf("live on the phone = %q", live)
 	}
-	if sid != a.sid || !strings.HasPrefix(live, "fe/"+slug+":") {
-		t.Fatalf("open cookies: sid %q live %q", sid, live)
+	if fs := phone.state(t).Frontends; len(fs) != 1 || fs[0].Slug != slug {
+		t.Fatalf("phone's creations = %+v", fs)
+	}
+	// and the browser that made it has lost it, live view included
+	if fs := a.state(t).Frontends; len(fs) != 0 {
+		t.Fatalf("old browser still has %+v", fs)
+	}
+	if rec := a.chatRaw(slug, "more", ""); rec.Code != 404 {
+		t.Errorf("old browser can still build on it: %d", rec.Code)
+	}
+	// opened back on the first browser, it moves back
+	a.do("GET", strings.TrimPrefix(link, "https://example.com"), nil)
+	if fs := a.state(t).Frontends; len(fs) != 1 || len(phone.state(t).Frontends) != 0 {
+		t.Fatal("the link didn't hand it back")
+	}
+	// a link to a front end that's gone, or not a visitor's, says expired
+	tok, _ := notify.Seal(testKey, notify.Link{Frontend: "fe/gone", Expires: time.Now().Add(time.Hour)})
+	if rec := phone.do("GET", "/build/open/"+tok, nil); rec.Header().Get("Location") != "/?build=expired" {
+		t.Errorf("gone: %s", rec.Header().Get("Location"))
 	}
 	if bad := phone.do("GET", "/build/open/garbage", nil); bad.Header().Get("Location") != "/?build=expired" {
 		t.Errorf("bad link: %d %s", bad.Code, bad.Header().Get("Location"))

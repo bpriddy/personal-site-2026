@@ -32,6 +32,26 @@ func (p *Postgres) CreateVisitorFrontend(ctx context.Context, id, title string, 
 	})
 }
 
+func (p *Postgres) TransferFrontend(ctx context.Context, id string, session []byte) error {
+	if len(session) == 0 {
+		return ErrNotFound
+	}
+	return pgx.BeginFunc(ctx, p.pool, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, upsertSession, session); err != nil {
+			return err
+		}
+		tag, err := tx.Exec(ctx, `UPDATE frontends SET owner_session = $2
+			WHERE ref = $1 AND owner_session IS NOT NULL`, id, session)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return ErrNotFound
+		}
+		return nil
+	})
+}
+
 func (p *Postgres) OwnedFrontend(ctx context.Context, id string, session []byte) (FrontendInfo, error) {
 	if len(session) == 0 {
 		return FrontendInfo{}, ErrNotFound

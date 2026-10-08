@@ -5,7 +5,7 @@ import { test, expect, ROTATION, MAIN } from "./support";
 
 test.skip(ROTATION.length > 0, "needs the rotation from the store (run.sh phase prompted)");
 
-test("a build counts down from 15:00 and emails when it's ready; the link opens it elsewhere", async ({ page, browser, request }) => {
+test("a build counts down from 15:00 and emails when it's ready; the link hands it to another browser", async ({ page, browser, request }) => {
   const before = ((await (await request.get(`${MAIN}/dev/outbox`)).json()) ?? []).length;
   await page.goto("/");
   await page.locator("#make-own").click();
@@ -41,16 +41,19 @@ test("a build counts down from 15:00 and emails when it's ready; the link opens 
   expect(msg.Subject).toBe("Your version of benpriddy.com is ready");
   const link = /https?:\/\/\S+\/build\/open\/\S+/.exec(msg.Text)![0];
 
-  // on another device: the link opens the builder with the new version live
+  // on another device: the build moves there, with the new version live
   const phone = await browser.newContext();
   const p2 = await phone.newPage();
   await p2.goto(link);
   await expect(p2).toHaveURL(new RegExp(`^${MAIN}/$`));
   await expect(p2.getByRole("dialog", { name: "Re-imagine this site" })).toBeVisible();
   const list = await p2.evaluate(() => fetch("/build/api/frontends", { cache: "no-store" }).then((r) => r.json()));
-  expect(list.frontends.length).toBeGreaterThan(0);
+  expect(list.frontends.length).toBe(1);
   expect(list.live).not.toBeNull();
   await phone.close();
+  // and the browser that made it no longer has it
+  const mine = await page.evaluate(() => fetch("/build/api/frontends", { cache: "no-store" }).then((r) => r.json()));
+  expect(mine.frontends.map((f: any) => f.slug)).not.toContain(list.frontends[0].slug);
 });
 
 test("an expired or broken link says so", async ({ page }) => {

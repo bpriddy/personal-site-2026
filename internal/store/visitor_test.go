@@ -79,6 +79,35 @@ func visitorConformance(t *testing.T, newStore func(t *testing.T) visitorStore) 
 		}
 	})
 
+	t.Run("transfer", func(t *testing.T) {
+		st := newStore(t)
+		must(t, st.CreateVisitorFrontend(ctx, "fe/moving", "Moving", a))
+		must(t, st.CreateVisitorFrontend(ctx, "fe/staying", "Staying", a))
+		must(t, st.TransferFrontend(ctx, "fe/moving", b))
+		if _, err := st.OwnedFrontend(ctx, "fe/moving", a); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("old owner still owns it: %v", err)
+		}
+		if _, err := st.OwnedFrontend(ctx, "fe/moving", b); err != nil {
+			t.Fatalf("new owner: %v", err)
+		}
+		if fes, _ := st.SessionFrontends(ctx, a); len(fes) != 1 || fes[0].ID != "fe/staying" {
+			t.Fatalf("old owner's others = %+v", fes)
+		}
+		must(t, st.TransferFrontend(ctx, "fe/moving", a)) // and back
+		if _, err := st.OwnedFrontend(ctx, "fe/moving", a); err != nil {
+			t.Fatalf("back: %v", err)
+		}
+		must(t, st.CreatePromptedFrontend(ctx, "fe/bens", "Ben's"))
+		for _, id := range []string{"fe/bens", "builtin/site", "fe/none"} {
+			if err := st.TransferFrontend(ctx, id, b); !errors.Is(err, ErrNotFound) {
+				t.Errorf("TransferFrontend(%s): %v", id, err)
+			}
+		}
+		if err := st.TransferFrontend(ctx, "fe/moving", nil); !errors.Is(err, ErrNotFound) {
+			t.Errorf("to no session: %v", err)
+		}
+	})
+
 	t.Run("run limits", func(t *testing.T) {
 		st := newStore(t)
 		must(t, st.CreateVisitorFrontend(ctx, "fe/a", "A", a))

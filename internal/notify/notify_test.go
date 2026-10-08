@@ -15,16 +15,16 @@ import (
 func TestLinkRoundTrip(t *testing.T) {
 	key := []byte("secret")
 	now := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
-	l := Link{SID: "0123456789abcdef0123456789abcdef", Frontend: "fe/x", Expires: now.Add(time.Hour)}
+	l := Link{Frontend: "fe/a-quiet-page", Expires: now.Add(time.Hour)}
 	tok, err := Seal(key, l)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(tok, l.SID) {
-		t.Fatal("sid readable in the token")
+	if strings.Contains(tok, "quiet") {
+		t.Fatal("front end readable in the token")
 	}
 	got, err := Open(key, tok, now)
-	if err != nil || got.SID != l.SID || got.Frontend != l.Frontend {
+	if err != nil || got.Frontend != l.Frontend {
 		t.Fatalf("open: %+v %v", got, err)
 	}
 	if _, err := Open(key, tok, now.Add(2*time.Hour)); !errors.Is(err, ErrExpired) {

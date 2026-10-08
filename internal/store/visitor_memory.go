@@ -43,6 +43,17 @@ func (m *Memory) CreateVisitorFrontend(_ context.Context, id, title string, sess
 	return nil
 }
 
+func (m *Memory) TransferFrontend(_ context.Context, id string, session []byte) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.visitors.init()
+	if _, ok := m.frontends[id]; !ok || m.visitors.owner[id] == nil || len(session) == 0 {
+		return ErrNotFound
+	}
+	m.visitors.owner[id] = slices.Clone(session)
+	return nil
+}
+
 func (m *Memory) OwnedFrontend(_ context.Context, id string, session []byte) (FrontendInfo, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

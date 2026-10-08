@@ -923,12 +923,15 @@ constant); the admin builder shows the same countdown next to its run status.
   ready" or, if it failed, "Your build of benpriddy.com didn't finish". A
   canceled run sends nothing. The email carries nothing the visitor typed (an
   address someone else entered gets a plain, harmless note).
-- **The link:** `GET /build/open/{token}`. The token is sealed (AES-GCM, a key
-  derived from `FRONTEND_SIGNING_KEY`) and holds the visitor's sid and front
-  end; it works for 7 days after the build. Opening it sets the sid cookie (this
-  device is now that visitor), shows their newest version live (`fe_live`) and
-  opens the modal (`/?build=1`). A bad or old link goes to `/?build=expired`:
-  "That link has expired. Anything you made in this browser is below."
+- **The link hands the build over:** `GET /build/open/{token}`. The token is
+  sealed (AES-GCM, a key derived from `FRONTEND_SIGNING_KEY`) and names only
+  the front end; it works for 7 days after the build. Opening it makes the
+  opening browser's session the front end's owner (`TransferFrontend`; the
+  browser that had it loses it, its live view included, and its other
+  creations stay put), shows its newest version live (`fe_live`) and opens the
+  modal (`/?build=1`). Opened again elsewhere, it moves again. A bad or old
+  link, or one to a build that's gone, goes to `/?build=expired`: "That link
+  has expired. Anything you made in this browser is below."
 - **Storage:** `build_notifications` (migration 0013): the address and the
   link token only until the email goes out (or the request is withdrawn or
   the run canceled); a hash of the address stays, for the daily cap.
