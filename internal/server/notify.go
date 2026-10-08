@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"errors"
 	"html"
 	"net/http"
 	"strings"
@@ -15,8 +14,8 @@ import (
 
 // "Email me when it's ready" (protocol v1.13). While a visitor's build runs,
 // the modal offers to email them when it ends. The address is stored with the
-// run only until the email goes out (store.Notifies); the email's link opens
-// the build in whichever browser opens it, which becomes its owner (notify.Link).
+// run only until the email goes out (store.Notifies). The email's link asks
+// the browser that opens it whether to move the build there (notify.Link).
 
 const (
 	// NotifyLinkTTL is how long an email's link works after the build ends.
@@ -53,7 +52,10 @@ func (s *Server) notifyRoutes(mux *http.ServeMux) {
 	post := func(h http.HandlerFunc) http.Handler { return cop.Handler(s.withSession(h)) }
 	mux.Handle("POST /build/api/fe/{slug}/notify", post(s.buildNotify))
 	mux.Handle("DELETE /build/api/fe/{slug}/notify", post(s.buildNotifyClear))
-	mux.HandleFunc("GET /build/open/{token}", s.withSession(s.buildOpen))
+	mux.HandleFunc("GET /build/open/{token}", s.buildOpen)
+	mux.HandleFunc("GET /build/api/claim", s.withSession(s.buildClaim))
+	mux.Handle("POST /build/api/claim", post(s.buildClaimAccept))
+	mux.Handle("DELETE /build/api/claim", post(s.buildClaimDecline))
 	if o, ok := s.notify.mailer.(*notify.Outbox); ok && s.cfg.Dev() {
 		// dev and e2e only: what the dev mailer "sent"
 		mux.HandleFunc("GET /dev/outbox", func(w http.ResponseWriter, r *http.Request) {
@@ -145,39 +147,99 @@ func (s *Server) buildNotifyClear(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// buildOpen is an email's link: it hands the build to this browser (the
-// browser that had it loses it), shows its newest version live, and opens
-// the modal. Opened again elsewhere within the week, it moves again.
+// claimCookie holds an email link's token between the click and the
+// visitor's answer (v1.13): the link itself moves nothing.
+const claimCookie = "build_claim"
+
+// buildOpen is an email's link. It moves nothing: it keeps the token for an
+// hour and opens the builder, which asks "Move it to this browser?".
 func (s *Server) buildOpen(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Referrer-Policy", "no-referrer")
-	l, err := notify.Open(s.cfg.SigningKey, r.PathValue("token"), s.now())
-	v := s.visitorStore()
-	if err != nil || v == nil || !frontend.IsPrompted(l.Frontend) {
+	tok := r.PathValue("token")
+	if _, err := notify.Open(s.cfg.SigningKey, tok, s.now()); err != nil {
 		http.Redirect(w, r, "/?build=expired", http.StatusFound)
 		return
 	}
-	session := readSession(r) // withSession made sure there is one
-	if err := v.TransferFrontend(r.Context(), l.Frontend, session); errors.Is(err, store.ErrNotFound) {
-		http.Redirect(w, r, "/?build=expired", http.StatusFound) // deleted since
-		return
-	} else if err != nil {
-		s.fail(w, "build: open link", err)
+	http.SetCookie(w, &http.Cookie{Name: claimCookie, Value: tok, Path: "/", MaxAge: 3600,
+		HttpOnly: true, Secure: !s.cfg.Dev(), SameSite: http.SameSiteLaxMode})
+	http.Redirect(w, r, "/?build=claim", http.StatusFound)
+}
+
+func (s *Server) clearClaim(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{Name: claimCookie, Value: "", Path: "/", MaxAge: -1,
+		HttpOnly: true, Secure: !s.cfg.Dev(), SameSite: http.SameSiteLaxMode})
+}
+
+// pendingClaim is the build an email link offers this browser, if the link
+// is still good and the build still a visitor's.
+func (s *Server) pendingClaim(r *http.Request) (store.FrontendInfo, bool) {
+	c, err := r.Cookie(claimCookie)
+	v := s.visitorStore()
+	if err != nil || v == nil {
+		return store.FrontendInfo{}, false
+	}
+	l, err := notify.Open(s.cfg.SigningKey, c.Value, s.now())
+	if err != nil || !frontend.IsPrompted(l.Frontend) {
+		return store.FrontendInfo{}, false
+	}
+	ids, err := v.VisitorFrontendIDs(r.Context())
+	if err != nil || !ids[l.Frontend] {
+		return store.FrontendInfo{}, false
+	}
+	f, err := s.builderStore().BuilderFrontend(r.Context(), l.Frontend)
+	if err != nil {
+		return store.FrontendInfo{}, false
+	}
+	return f, true
+}
+
+// buildClaim is the offer: {expired} or {slug, title, here} (here: this
+// browser already has it).
+func (s *Server) buildClaim(w http.ResponseWriter, r *http.Request) {
+	f, ok := s.pendingClaim(r)
+	if !ok {
+		s.clearClaim(w)
+		writeJSON(w, http.StatusOK, map[string]any{"expired": true})
 		return
 	}
-	s.log.Info("build: link handed over", "frontend", l.Frontend)
-	// show its newest version on the site
-	if revs, err := s.builderStore().Revisions(r.Context(), l.Frontend); err == nil && len(revs) > 0 {
+	_, err := s.visitorStore().OwnedFrontend(r.Context(), f.ID, readSession(r))
+	writeJSON(w, http.StatusOK, map[string]any{"slug": strings.TrimPrefix(f.ID, "fe/"), "title": f.Title, "here": err == nil})
+}
+
+// buildClaimAccept moves the build to this browser (the browser that had it
+// loses it, live view included) and shows its newest version on the site.
+func (s *Server) buildClaimAccept(w http.ResponseWriter, r *http.Request) {
+	f, ok := s.pendingClaim(r)
+	if !ok {
+		s.clearClaim(w)
+		writeJSON(w, http.StatusGone, map[string]string{"error": "That link has expired."})
+		return
+	}
+	if err := s.visitorStore().TransferFrontend(r.Context(), f.ID, readSession(r)); err != nil {
+		s.fail(w, "build: claim", err)
+		return
+	}
+	s.log.Info("build: moved by an email link", "frontend", f.ID)
+	s.clearClaim(w)
+	if revs, err := s.builderStore().Revisions(r.Context(), f.ID); err == nil && len(revs) > 0 {
 		newest := revs[0]
 		for _, rv := range revs[1:] {
 			if rv.Number > newest.Number {
 				newest = rv
 			}
 		}
-		http.SetCookie(w, &http.Cookie{Name: liveCookie, Value: l.Frontend + ":" + newest.ID, Path: "/",
+		http.SetCookie(w, &http.Cookie{Name: liveCookie, Value: f.ID + ":" + newest.ID, Path: "/",
 			HttpOnly: true, Secure: !s.cfg.Dev(), SameSite: http.SameSiteLaxMode})
 	}
-	http.Redirect(w, r, "/?build=1", http.StatusFound)
+	writeJSON(w, http.StatusOK, map[string]string{"slug": strings.TrimPrefix(f.ID, "fe/")})
+}
+
+// buildClaimDecline forgets the offer ("Not now"); the link still works.
+func (s *Server) buildClaimDecline(w http.ResponseWriter, r *http.Request) {
+	s.clearClaim(w)
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // Run outcomes for the email.

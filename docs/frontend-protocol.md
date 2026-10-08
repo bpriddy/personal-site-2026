@@ -923,15 +923,23 @@ constant); the admin builder shows the same countdown next to its run status.
   ready" or, if it failed, "Your build of benpriddy.com didn't finish". A
   canceled run sends nothing. The email carries nothing the visitor typed (an
   address someone else entered gets a plain, harmless note).
-- **The link hands the build over:** `GET /build/open/{token}`. The token is
-  sealed (AES-GCM, a key derived from `FRONTEND_SIGNING_KEY`) and names only
-  the front end; it works for 7 days after the build. Opening it makes the
-  opening browser's session the front end's owner (`TransferFrontend`; the
-  browser that had it loses it, its live view included, and its other
-  creations stay put), shows its newest version live (`fe_live`) and opens the
-  modal (`/?build=1`). Opened again elsewhere, it moves again. A bad or old
-  link, or one to a build that's gone, goes to `/?build=expired`: "That link
-  has expired. Anything you made in this browser is below."
+- **The link asks before moving anything:** `GET /build/open/{token}`. The
+  token is sealed (AES-GCM, a key derived from `FRONTEND_SIGNING_KEY`), names
+  only the front end, and works for 7 days after the build. Opening it keeps
+  the token for an hour (the `build_claim` cookie) and goes to `/?build=claim`:
+  the builder asks "Move “<title>” to this browser?" ("It was built in another
+  browser. Move it here and you'll find it in this browser from now on. The
+  other browser won't have it anymore.") with **Move it here** and **Not now**.
+  - `GET /build/api/claim` → `{slug, title, here}` or `{expired: true}`
+    (`here`: this browser already has it; then it's simply shown).
+  - `POST /build/api/claim` moves it (`TransferFrontend`: the browser that had
+    it loses it, live view included; its other creations stay), shows its
+    newest version live (`fe_live`) and the page reloads to `/?build=1`.
+  - `DELETE /build/api/claim` is Not now: nothing moves ("Okay, it stays where
+    it is. The link in your email works for 7 days if you change your mind.").
+  Opened again elsewhere, the link can move it again. A bad or old link, or one
+  to a build that's gone, says "That link has expired. Anything you made in
+  this browser is below."
 - **Storage:** `build_notifications` (migration 0013): the address and the
   link token only until the email goes out (or the request is withdrawn or
   the run canceled); a hash of the address stays, for the daily cap.

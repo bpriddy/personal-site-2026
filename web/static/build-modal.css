@@ -592,3 +592,16 @@ html.bm-generating .bm-pill {
   .bm-idea .bm-row { display: grid; grid-template-columns: 1fr; }
   .bm-idea .bm-row .bm-btn { width: 100%; min-height: 48px; }
 }
+
+/* an email's link asks before moving a build here (v1.13) */
+.bm-claim {
+  display: grid; gap: var(--s-4); padding: var(--s-5); margin-bottom: var(--s-2);
+  background: var(--bm-field); border: 1px solid var(--bm-rule-strong); border-radius: var(--r-1);
+}
+.bm-claim[hidden] { display: none; }
+.bm-claim > * { margin: 0; }
+.bm-claim-row { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.bm-claim-row .bm-btn { min-height: 44px; }
+html.bm-claiming .bm-composer, html.bm-claiming .bm-intro, html.bm-claiming .bm-progress,
+html.bm-claiming .bm-mine, html.bm-claiming .bm-paused, html.bm-claiming .bm-live { display: none; }
+.bm-claim .bm-paused-h:focus-visible { outline: none; } /* focused so it is read first, not as a control */

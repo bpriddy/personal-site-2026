@@ -129,11 +129,41 @@ func TestBuildNotifyReady(t *testing.T) {
 		t.Error("address kept after sending")
 	}
 
-	// the link, on another device: the build moves there, with its new version live
+	// the link, on another device, moves nothing by itself: it asks
 	phone := e.visitor(3, "192.0.2.9")
-	open := phone.do("GET", strings.TrimPrefix(link, "https://example.com"), nil)
-	if open.Code != http.StatusFound || open.Header().Get("Location") != "/?build=1" {
-		t.Fatalf("open: %d %s", open.Code, open.Header().Get("Location"))
+	path := strings.TrimPrefix(link, "https://example.com")
+	open := phone.do("GET", path, nil)
+	if open.Code != http.StatusFound || open.Header().Get("Location") != "/?build=claim" || phone.cookies[claimCookie] == "" {
+		t.Fatalf("open: %d %s %v", open.Code, open.Header().Get("Location"), phone.cookies)
+	}
+	if len(a.state(t).Frontends) != 1 || len(phone.state(t).Frontends) != 0 {
+		t.Fatal("the link moved the build before anyone said yes")
+	}
+	type claimOffer struct {
+		Slug, Title   string
+		Here, Expired bool
+	}
+	var offer claimOffer
+	getOffer := func(v *visitor) {
+		offer = claimOffer{}
+		json.Unmarshal(v.do("GET", "/build/api/claim", nil).Body.Bytes(), &offer)
+	}
+	getOffer(phone)
+	if offer.Slug != slug || offer.Title == "" || offer.Here || offer.Expired {
+		t.Fatalf("offer = %+v", offer)
+	}
+	// Not now: nothing moves, the offer's gone, the link still works
+	if rec := phone.do("DELETE", "/build/api/claim", nil, "Sec-Fetch-Site", "same-origin"); rec.Code != http.StatusNoContent {
+		t.Fatalf("decline: %d", rec.Code)
+	}
+	getOffer(phone)
+	if !offer.Expired || len(a.state(t).Frontends) != 1 {
+		t.Fatalf("after decline: %+v", offer)
+	}
+	// yes: it moves, with its newest version live
+	phone.do("GET", path, nil)
+	if rec := phone.post("/build/api/claim", nil); rec.Code != 200 {
+		t.Fatalf("accept: %d %s", rec.Code, rec.Body)
 	}
 	if live := phone.cookies[liveCookie]; !strings.HasPrefix(live, "fe/"+slug+":") {
 		t.Fatalf("live on the phone = %q", live)
@@ -141,22 +171,41 @@ func TestBuildNotifyReady(t *testing.T) {
 	if fs := phone.state(t).Frontends; len(fs) != 1 || fs[0].Slug != slug {
 		t.Fatalf("phone's creations = %+v", fs)
 	}
-	// and the browser that made it has lost it, live view included
+	if _, ok := phone.cookies[claimCookie]; ok {
+		t.Error("claim kept after accepting")
+	}
+	// and the browser that made it has lost it
 	if fs := a.state(t).Frontends; len(fs) != 0 {
 		t.Fatalf("old browser still has %+v", fs)
 	}
 	if rec := a.chatRaw(slug, "more", ""); rec.Code != 404 {
 		t.Errorf("old browser can still build on it: %d", rec.Code)
 	}
-	// opened back on the first browser, it moves back
-	a.do("GET", strings.TrimPrefix(link, "https://example.com"), nil)
-	if fs := a.state(t).Frontends; len(fs) != 1 || len(phone.state(t).Frontends) != 0 {
+	// the first browser can take it back with the same link
+	a.do("GET", path, nil)
+	getOffer(a)
+	if offer.Here || offer.Expired {
+		t.Fatalf("offer back = %+v", offer)
+	}
+	a.post("/build/api/claim", nil)
+	if len(a.state(t).Frontends) != 1 || len(phone.state(t).Frontends) != 0 {
 		t.Fatal("the link didn't hand it back")
 	}
-	// a link to a front end that's gone, or not a visitor's, says expired
+	// opened where it already is: here
+	a.do("GET", path, nil)
+	getOffer(a)
+	if !offer.Here {
+		t.Errorf("offer where it already is = %+v", offer)
+	}
+	// a stranger can't accept without the link; a link to a build that's gone says expired
+	if rec := e.visitor(4, "192.0.2.4").post("/build/api/claim", nil); rec.Code != http.StatusGone {
+		t.Errorf("accept with no link: %d", rec.Code)
+	}
 	tok, _ := notify.Seal(testKey, notify.Link{Frontend: "fe/gone", Expires: time.Now().Add(time.Hour)})
-	if rec := phone.do("GET", "/build/open/"+tok, nil); rec.Header().Get("Location") != "/?build=expired" {
-		t.Errorf("gone: %s", rec.Header().Get("Location"))
+	phone.do("GET", "/build/open/"+tok, nil)
+	getOffer(phone)
+	if !offer.Expired {
+		t.Errorf("gone: %+v", offer)
 	}
 	if bad := phone.do("GET", "/build/open/garbage", nil); bad.Header().Get("Location") != "/?build=expired" {
 		t.Errorf("bad link: %d %s", bad.Code, bad.Header().Get("Location"))

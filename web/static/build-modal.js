@@ -312,7 +312,25 @@
   // the prompt comes first: it's what this dialog is for
   var composer = el("div", "bm-composer");
   composer.append(form);
-  body.append(notice, liveBox, gen, pausedBox, composer, intro, progress, mine);
+  // an email's link (v1.13): "Move this build to this browser?" — nothing
+  // moves until the visitor says yes
+  var claimBox = el("section", "bm-claim");
+  claimBox.hidden = true;
+  claimBox.setAttribute("aria-labelledby", "bm-claim-h");
+  var clKicker = el("p", "bm-paused-kicker", "From your email");
+  var clHead = el("h3", "bm-paused-h");
+  clHead.id = "bm-claim-h";
+  clHead.tabIndex = -1;
+  var clText = el("p", "bm-paused-text", "It was built in another browser. Move it here and you'll find it in this browser from now on. The other browser won't have it anymore.");
+  var clRow = el("div", "bm-claim-row");
+  var clYes = button("bm-btn bm-btn-primary", "Move it here", function () { acceptClaim(); });
+  var clNo = button("bm-btn", "Not now", function () { declineClaim(); });
+  clRow.append(clYes, clNo);
+  var clErr = el("p", "bm-gen-notify-err");
+  clErr.setAttribute("role", "alert");
+  clErr.hidden = true;
+  claimBox.append(clKicker, clHead, clText, clRow, clErr);
+  body.append(notice, claimBox, liveBox, gen, pausedBox, composer, intro, progress, mine);
   dialog.append(runLine, grab, head, body);
   wrap.append(backdrop, dialog);
 
@@ -611,6 +629,43 @@
   }
 
   // ── rendering ──
+  function showClaim(on) {
+    claimBox.hidden = !on;
+    root.classList.toggle("bm-claiming", on);
+  }
+  function loadClaim() {
+    fetch(API + "/claim", { credentials: "same-origin", cache: "no-store" }).then(function (r) { return r.json(); }).then(function (c) {
+      if (!c || c.expired) {
+        softNotice = "That link has expired. Anything you made in this browser is below.";
+        showNotice(softNotice);
+        return;
+      }
+      if (c.here) { acceptClaim(); return; } // already in this browser: just show it
+      clHead.textContent = "Move \u201c" + (c.title || c.slug) + "\u201d to this browser?";
+      showClaim(true);
+      clHead.focus({ preventScroll: true });
+    }).catch(function () { /* the builder still works */ });
+  }
+  function acceptClaim() {
+    clYes.disabled = clNo.disabled = true;
+    clErr.hidden = true;
+    api("/claim", {}).then(function () {
+      // the site reloads with the build live, and the builder open on it
+      location.replace("/?build=1");
+    }).catch(function (err) {
+      clYes.disabled = clNo.disabled = false;
+      clErr.textContent = err && err.message ? err.message : "Couldn't move it. Please try again.";
+      clErr.hidden = false;
+    });
+  }
+  function declineClaim() {
+    fetch(API + "/claim", { method: "DELETE", credentials: "same-origin", cache: "no-store" }).catch(function () {});
+    showClaim(false);
+    softNotice = "Okay, it stays where it is. The link in your email works for 7 days if you change your mind.";
+    showNotice(softNotice);
+    dialog.focus({ preventScroll: true });
+  }
+
   function showNotice(text) {
     notice.textContent = text || "";
     notice.hidden = !text;
@@ -1388,13 +1443,14 @@
   try {
     var params = new URLSearchParams(location.search);
     if (params.has("build")) {
-      var expired = params.get("build") === "expired";
+      var expired = params.get("build") === "expired", claim = params.get("build") === "claim";
       params.delete("build");
       var qs = params.toString();
       history.replaceState(history.state, "", location.pathname + (qs ? "?" + qs : "") + location.hash);
       open();
       // an email's link that's too old (v1.13)
       if (expired) { softNotice = "That link has expired. Anything you made in this browser is below."; showNotice(softNotice); }
+      if (claim) loadClaim();
     }
   } catch (e) { /* an old browser: the button still works */ }
 })();

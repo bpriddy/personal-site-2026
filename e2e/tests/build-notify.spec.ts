@@ -5,7 +5,7 @@ import { test, expect, ROTATION, MAIN } from "./support";
 
 test.skip(ROTATION.length > 0, "needs the rotation from the store (run.sh phase prompted)");
 
-test("a build counts down from 15:00 and emails when it's ready; the link hands it to another browser", async ({ page, browser, request }) => {
+test("a build counts down from 15:00 and emails when it's ready; the link asks, then hands it to another browser", async ({ page, browser, request }) => {
   const before = ((await (await request.get(`${MAIN}/dev/outbox`)).json()) ?? []).length;
   await page.goto("/");
   await page.locator("#make-own").click();
@@ -41,19 +41,36 @@ test("a build counts down from 15:00 and emails when it's ready; the link hands 
   expect(msg.Subject).toBe("Your version of benpriddy.com is ready");
   const link = /https?:\/\/\S+\/build\/open\/\S+/.exec(msg.Text)![0];
 
-  // on another device: the build moves there, with the new version live
+  // on another device the link asks first; Not now leaves it where it is
   const phone = await browser.newContext();
   const p2 = await phone.newPage();
+  const slugs = async (pg: any) => (await pg.evaluate(() => fetch("/build/api/frontends", { cache: "no-store" }).then((r) => r.json()))).frontends.map((f: any) => f.slug);
+  const mineBefore = await slugs(page);
   await p2.goto(link);
+  const d2 = p2.getByRole("dialog", { name: "Re-imagine this site" });
+  const ask = d2.getByRole("region", { name: /Move “.+” to this browser\?/ });
+  await expect(ask).toBeVisible();
+  await expect(ask.getByRole("heading")).toBeFocused();
+  if (process.env.E2E_SHOT_DIR) await p2.screenshot({ path: `${process.env.E2E_SHOT_DIR}/claim-ask.png` });
+  await ask.getByRole("button", { name: "Not now" }).click();
+  await expect(ask).toBeHidden();
+  await expect(d2).toContainText("it stays where it is");
+  expect(await slugs(p2)).toEqual([]);
+  expect(await slugs(page)).toEqual(mineBefore);
+
+  // the link again, and yes: it moves, and the site shows it
+  await p2.goto(link);
+  await d2.getByRole("button", { name: "Move it here" }).click();
   await expect(p2).toHaveURL(new RegExp(`^${MAIN}/$`));
-  await expect(p2.getByRole("dialog", { name: "Re-imagine this site" })).toBeVisible();
+  await expect(d2).toBeVisible();
+  await expect(d2.getByRole("region", { name: /to this browser/ })).toBeHidden();
+  const moved = await slugs(p2);
+  expect(moved.length).toBe(1);
   const list = await p2.evaluate(() => fetch("/build/api/frontends", { cache: "no-store" }).then((r) => r.json()));
-  expect(list.frontends.length).toBe(1);
   expect(list.live).not.toBeNull();
   await phone.close();
   // and the browser that made it no longer has it
-  const mine = await page.evaluate(() => fetch("/build/api/frontends", { cache: "no-store" }).then((r) => r.json()));
-  expect(mine.frontends.map((f: any) => f.slug)).not.toContain(list.frontends[0].slug);
+  expect(await slugs(page)).not.toContain(moved[0]);
 });
 
 test("an expired or broken link says so", async ({ page }) => {
