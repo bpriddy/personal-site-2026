@@ -11,6 +11,7 @@ import (
 
 	"github.com/bpriddy/personal-site-2026/internal/builder"
 	"github.com/bpriddy/personal-site-2026/internal/frontend"
+	"github.com/bpriddy/personal-site-2026/internal/notify"
 	"github.com/bpriddy/personal-site-2026/internal/store"
 )
 
@@ -155,9 +156,11 @@ type (
 		Notice  string `json:"notice,omitempty"` // why not, or a limit already reached
 		// Paused (v1.12): building is paused for the budget (enabled is
 		// false); the modal draws its own state for it, so Notice is empty
-		Paused    *buildPause     `json:"paused"`
-		MaxPrompt int             `json:"maxPrompt"`
-		Live      *buildLive      `json:"live"` // what the site shows this session, if a draft
+		Paused    *buildPause `json:"paused"`
+		MaxPrompt int         `json:"maxPrompt"`
+		Live      *buildLive  `json:"live"` // what the site shows this session, if a draft
+		// Notify (v1.13): the modal can offer to email the visitor when a build ends
+		Notify    bool            `json:"notify"`
 		Frontends []buildFrontend `json:"frontends"`
 	}
 	buildLive struct {
@@ -180,6 +183,7 @@ type (
 	buildRun struct {
 		Prompt    string    `json:"prompt"`
 		StartedAt time.Time `json:"startedAt"`
+		Notify    string    `json:"notify,omitempty"` // v1.13: the masked address it'll email, if asked
 	}
 	buildRevision struct {
 		ID           string    `json:"id"`
@@ -194,7 +198,7 @@ type (
 // buildList is the session's front ends with their revisions and statuses,
 // what the site is showing them, and whether they can build right now.
 func (s *Server) buildList(w http.ResponseWriter, r *http.Request) {
-	out := buildState{Enabled: !s.buildDisabled(), MaxPrompt: s.limits.MaxPrompt, Frontends: []buildFrontend{}}
+	out := buildState{Enabled: !s.buildDisabled(), MaxPrompt: s.limits.MaxPrompt, Frontends: []buildFrontend{}, Notify: s.notifyStore() != nil}
 	v := s.visitorStore()
 	if v == nil {
 		out.Notice = buildMessage(msgDisabled, s.limits)
@@ -230,6 +234,11 @@ func (s *Server) buildList(w http.ResponseWriter, r *http.Request) {
 			runs[0].Status == store.RunRunning && s.now().Sub(runs[0].StartedAt) < RunTimeout+time.Minute {
 			running = true
 			run = &buildRun{Prompt: runs[0].Prompt, StartedAt: runs[0].StartedAt}
+			if ns := s.notifyStore(); ns != nil {
+				if n, err := ns.RunNotify(ctx, runs[0].ID); err == nil {
+					run.Notify = notify.Mask(n.Email)
+				}
+			}
 		}
 		numbers := map[string]int{}
 		for _, rv := range revs {

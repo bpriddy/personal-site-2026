@@ -896,3 +896,44 @@ pause" (`POST /admin/builder/budget/clear-api`).
 
 The observer's own checks (small, separate Claude calls) aren't builder runs
 and aren't in the spend; its rebuilds are.
+
+# v1.13 (2026-10-08): a countdown, and "email me when it's ready"
+
+## Countdown
+
+While a build runs, the modal's build card counts down from **15:00** from the
+run's start time on the server (so it survives a reload): "14:32 left. Builds
+usually take 10–15 minutes." It never goes negative: at 0:00 it reads "Any
+minute now / Taking a little longer than usual." The estimate is naive (a
+constant); the admin builder shows the same countdown next to its run status.
+
+## Email when it ends (visitors only)
+
+- **Offer:** the build card shows "You don't have to wait here. We can email
+  you when it's ready." with one email field and Email me ("Only used to tell
+  you about this build, then deleted."). Set, it reads "We'll email b•••@x.com
+  when it's ready." with Change and Don't email me. Only when the server can
+  send email (`buildState.notify`).
+- **API:** `POST /build/api/fe/{slug}/notify` `{email}` for the front end's
+  running run → `{notify: "<masked address>"}`; 400 for a bad address, 409 if
+  nothing is running, 429 once an address has had 5 requests in 24 hours, 503
+  without a mailer. `DELETE` the same path withdraws it. The list's running
+  `run` carries `notify` (masked) when set.
+- **Sending:** when the run ends, once: "Your version of benpriddy.com is
+  ready" or, if it failed, "Your build of benpriddy.com didn't finish". A
+  canceled run sends nothing. The email carries nothing the visitor typed (an
+  address someone else entered gets a plain, harmless note).
+- **The link:** `GET /build/open/{token}`. The token is sealed (AES-GCM, a key
+  derived from `FRONTEND_SIGNING_KEY`) and holds the visitor's sid and front
+  end; it works for 7 days after the build. Opening it sets the sid cookie (this
+  device is now that visitor), shows their newest version live (`fe_live`) and
+  opens the modal (`/?build=1`). A bad or old link goes to `/?build=expired`:
+  "That link has expired. Anything you made in this browser is below."
+- **Storage:** `build_notifications` (migration 0013): the address and the
+  link token only until the email goes out (or the request is withdrawn or
+  the run canceled); a hash of the address stays, for the daily cap.
+- **Mailer:** SendGrid (`SENDGRID_API_KEY`, from secret `sendgrid-api-key`;
+  `NOTIFY_FROM`, default `info@lanterns.build`; `NOTIFY_FROM_NAME`, default
+  `benpriddy.com`), click and open tracking off. Without a key the offer is
+  hidden; in dev an outbox only logs, and `GET /dev/outbox` lists what it
+  "sent" (for e2e).

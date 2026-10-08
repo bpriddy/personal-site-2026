@@ -40,7 +40,7 @@
       switch (ev.type) {
         case "status":
           if (friendly) {
-            onStatus(ev.tool ? who + " is writing your front end…" : who + " is working on it. This usually takes a minute or two…", false);
+            onStatus(ev.tool ? who + " is writing your front end…" : who + " is working on it. This usually takes 10–15 minutes…", false);
           } else {
             onStatus(ev.text || "", false);
           }

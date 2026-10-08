@@ -853,6 +853,11 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, f store.Fronten
 	cost := s.newRunCost(ctx, runID)
 	req.OnCost = cost.add
 	defer func() { s.log.Info("builder: run cost", "run", runID, "frontend", id, "usd", cost.usd()) }()
+	// v1.13: email the visitor who asked, once the run has ended (any way)
+	outcome := notifyFailed
+	if c.visitor {
+		defer func() { go s.sendRunNotice(runID, outcome) }()
+	}
 
 	ev := newEventStream(w)
 	stopPing := ev.keepAlive(15 * time.Second)
@@ -865,6 +870,7 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, f store.Fronten
 		if ferr := b.FinishRun(ctx, runID, "", store.RunCanceled); ferr != nil {
 			s.log.Error("builder: finish run", "err", ferr)
 		}
+		outcome = notifyCanceled
 		ev.send(builder.Event{Type: "canceled", Text: "Stopped. Nothing was changed."})
 		ev.send(builder.Event{Type: "done"})
 		return
@@ -910,6 +916,7 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, f store.Fronten
 	if ferr := b.FinishRun(ctx, runID, rev.ID, ""); ferr != nil {
 		s.log.Error("builder: finish run", "err", ferr)
 	}
+	outcome = notifyReady
 	if !budget.APIPausedUntil.IsZero() {
 		s.clearAPIPause(ctx) // the API took this run: its limit is over
 	}

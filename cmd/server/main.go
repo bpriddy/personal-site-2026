@@ -20,6 +20,7 @@ import (
 	"github.com/bpriddy/personal-site-2026/internal/connect"
 	"github.com/bpriddy/personal-site-2026/internal/llm"
 	"github.com/bpriddy/personal-site-2026/internal/media"
+	"github.com/bpriddy/personal-site-2026/internal/notify"
 	"github.com/bpriddy/personal-site-2026/internal/observer"
 	"github.com/bpriddy/personal-site-2026/internal/revfiles"
 	"github.com/bpriddy/personal-site-2026/internal/server"
@@ -110,7 +111,8 @@ func main() {
 	obs := newObserver(cfg, st, obsStore, files, log)
 
 	srv, err := server.New(cfg, st, log, server.WithObserver(obs), server.WithBuilder(agent, files),
-		server.WithBuildLimits(limits), server.WithBudget(budget), server.WithMedia(mediaSrc))
+		server.WithBuildLimits(limits), server.WithBudget(budget), server.WithMedia(mediaSrc),
+		server.WithMailer(newMailer(cfg, log)))
 	if err != nil {
 		log.Error("server", "err", err)
 		os.Exit(1)
@@ -214,4 +216,27 @@ func connections(src media.Source, publicOrigin string, log *slog.Logger) []conn
 	}
 	log.Info("builder: connections", "on", strings.Join(names, ","))
 	return out
+}
+
+// newMailer is how build emails go out (protocol v1.13): SendGrid when
+// SENDGRID_API_KEY is set (from secret sendgrid-api-key in prod), else in dev
+// an outbox that only logs (GET /dev/outbox), else none: the offer is hidden.
+func newMailer(cfg config.Config, log *slog.Logger) notify.Mailer {
+	if key := os.Getenv("SENDGRID_API_KEY"); key != "" {
+		from := os.Getenv("NOTIFY_FROM")
+		if from == "" {
+			from = "info@lanterns.build"
+		}
+		name := os.Getenv("NOTIFY_FROM_NAME")
+		if name == "" {
+			name = "benpriddy.com"
+		}
+		log.Info("notify: sendgrid", "from", from)
+		return &notify.SendGrid{Key: key, From: from, FromName: name}
+	}
+	if cfg.Dev() {
+		return &notify.Outbox{Log: log}
+	}
+	log.Warn("notify: no SENDGRID_API_KEY; build emails are off")
+	return nil
 }

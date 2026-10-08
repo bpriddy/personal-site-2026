@@ -115,3 +115,4 @@
 .b-budget-form .b-muted { flex-basis: 100%; margin: 0; }
 .admin .b-inline-form { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-4); }
 .b-over-budget .b-check { display: flex; align-items: center; gap: var(--s-2); margin-top: var(--s-2); font-weight: 600; }
+.b-countdown { margin-left: 1em; font-family: ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; color: var(--muted, #666); }

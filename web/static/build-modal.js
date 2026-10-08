@@ -93,7 +93,7 @@
 
   var body = el("div", "bm-body");
   var intro = el("div", "bm-intro");
-  var desc = el("p", "bm-desc", "Claude builds it in a minute or two, with Ben's real pages inside, and it appears right here on the site. Only you can see it until you send it to Ben.");
+  var desc = el("p", "bm-desc", "Claude builds it in about 10\u201315 minutes, with Ben's real pages inside, and it appears right here on the site. Only you can see it until you send it to Ben.");
   desc.id = "bm-desc";
   var starters = el("div", "bm-starters");
   starters.setAttribute("role", "group");
@@ -201,14 +201,47 @@
   gen.setAttribute("aria-label", "Build in progress");
   var genHead = el("div", "bm-gen-head");
   var genLabel = el("p", "bm-gen-label", "Building your version");
-  var genTime = el("span", "bm-gen-time");
   var genCopy = copyButton(function () { var g = genInfo(); return g ? g.prompt : ""; }, "Copy the prompt being built");
-  genHead.append(genLabel, genTime, genCopy);
+  genHead.append(genLabel, genCopy);
   var genPrompt = el("p", "bm-gen-prompt");
+  // a naive countdown from 15:00 (v1.13): builds take 10–15 minutes
+  var GEN_ESTIMATE = 15 * 60;
+  var genClock = el("div", "bm-gen-clock");
+  var genTime = el("span", "bm-gen-time");
+  genTime.setAttribute("role", "timer");
+  var genClockNote = el("span", "bm-gen-clock-note");
+  genClock.append(genTime, genClockNote);
+  // "email me when it's ready" (v1.13): offered while it builds, if the
+  // server can send email
+  var genNotify = el("form", "bm-gen-notify");
+  genNotify.noValidate = true;
+  var gnLead = el("p", "bm-gen-notify-lead", "You don't have to wait here. We can email you when it's ready.");
+  var gnRow = el("div", "bm-gen-notify-row");
+  var gnInput = el("input", "bm-gen-notify-input");
+  gnInput.type = "email";
+  gnInput.name = "email";
+  gnInput.autocomplete = "email";
+  gnInput.placeholder = "you@example.com";
+  gnInput.setAttribute("aria-label", "Your email");
+  var gnSend = el("button", "bm-btn bm-btn-primary bm-gen-notify-send", "Email me");
+  gnSend.type = "submit";
+  gnRow.append(gnInput, gnSend);
+  var gnFine = el("p", "bm-gen-notify-fine", "Only used to tell you about this build, then deleted.");
+  var gnErr = el("p", "bm-gen-notify-err");
+  gnErr.setAttribute("role", "alert");
+  gnErr.hidden = true;
+  var gnDone = el("div", "bm-gen-notify-done");
+  var gnDoneText = el("p", "bm-gen-notify-done-text");
+  gnDoneText.setAttribute("aria-live", "polite");
+  var gnChange = button("bm-link", "Change", function () { notifyEditing = true; applyGen(); gnInput.focus(); });
+  var gnStop = button("bm-link", "Don't email me", function () { unsetNotify(); });
+  gnDone.append(gnDoneText, gnChange, gnStop);
+  genNotify.append(gnLead, gnRow, gnFine, gnErr, gnDone);
+  genNotify.addEventListener("submit", function (e) { e.preventDefault(); setNotify(); });
   var cancelBtn = button("bm-btn bm-cancel", "Cancel this build", function () { cancelGen(); });
   cancelBtn.prepend(iconCross());
   var genNote = el("p", "bm-gen-note", "The prompt box opens again when it's done or canceled. Canceling keeps everything as it was.");
-  gen.append(genHead, genPrompt, cancelBtn, genNote);
+  gen.append(genHead, genPrompt, genClock, genNotify, cancelBtn, genNote);
 
   // building paused for the budget (v1.12): instead of the prompt, a calm
   // note of when the studio reopens, what still works, and a place to keep
@@ -447,18 +480,94 @@
   // list (a reload, another tab): {slug, prompt, startedAt (ms)}, or null
   var GEN_KEY = "bm-generating";
   var canceling = false, genTimer = 0;
+  // the address a build will email, as the server masks it: slug → "b•••@x.com"
+  // ("" = none); what we set here wins over a list that hasn't caught up
+  var notifySet = {}, notifyEditing = false, notifyBusy = false;
   function genInfo() {
-    if (busy) return { slug: busy.slug, prompt: busy.prompt || "", startedAt: busy.startedAt || 0 };
-    if (!state) return null;
-    for (var i = 0; i < state.frontends.length; i++) {
-      var f = state.frontends[i];
-      if (f.running) return { slug: f.slug, prompt: f.run ? f.run.prompt : "", startedAt: f.run ? Date.parse(f.run.startedAt) || 0 : 0 };
+    var g = null;
+    if (busy) g = { slug: busy.slug, prompt: busy.prompt || "", startedAt: busy.startedAt || 0, notify: "" };
+    else if (state) {
+      for (var i = 0; i < state.frontends.length; i++) {
+        var f = state.frontends[i];
+        if (f.running) { g = { slug: f.slug, prompt: f.run ? f.run.prompt : "", startedAt: f.run ? Date.parse(f.run.startedAt) || 0 : 0, notify: f.run && f.run.notify || "" }; break; }
+      }
     }
-    return null;
+    if (g && state && !busy) {
+      // a streamed build's run is in the list too: take its server start time and address
+      var lf = findFrontend(g.slug);
+      if (lf && lf.run && lf.run.notify) g.notify = lf.run.notify;
+    }
+    if (g && busy) {
+      var bf = findFrontend(busy.slug);
+      if (bf && bf.running && bf.run) {
+        g.startedAt = Date.parse(bf.run.startedAt) || g.startedAt;
+        g.notify = bf.run.notify || "";
+      }
+    }
+    if (g && Object.prototype.hasOwnProperty.call(notifySet, g.slug)) g.notify = notifySet[g.slug];
+    return g;
   }
-  function elapsed(ms) {
-    var s = Math.max(0, Math.round((Date.now() - ms) / 1000));
-    return s < 60 ? s + "s" : Math.floor(s / 60) + "m " + (s % 60 < 10 ? "0" : "") + (s % 60) + "s";
+  function clock(startedAt) {
+    var left = GEN_ESTIMATE - Math.max(0, Math.round((Date.now() - startedAt) / 1000));
+    if (left <= 0) return { text: "Any minute now", note: "Taking a little longer than usual.", over: true };
+    var m = Math.floor(left / 60), s = left % 60;
+    return { text: m + ":" + (s < 10 ? "0" : "") + s, note: "left. Builds usually take 10\u201315 minutes.", over: false };
+  }
+  function tickClock(g) {
+    var c = clock(g.startedAt || Date.now());
+    genTime.textContent = c.text;
+    genClockNote.textContent = c.note;
+    genClock.classList.toggle("bm-over", c.over);
+  }
+  function renderNotify(g) {
+    var on = !!(state && state.notify);
+    genNotify.hidden = !on;
+    if (!on) return;
+    var has = !!g.notify && !notifyEditing;
+    gnLead.hidden = has;
+    gnRow.hidden = has;
+    gnFine.hidden = has;
+    gnDone.hidden = !has;
+    if (has) gnDoneText.textContent = "We'll email " + g.notify + " when it's ready.";
+    gnSend.disabled = notifyBusy;
+    gnInput.disabled = notifyBusy;
+  }
+  function setNotify() {
+    var g = genInfo();
+    var email = gnInput.value.trim();
+    if (!g || notifyBusy) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      gnErr.textContent = "That doesn't look like an email address.";
+      gnErr.hidden = false;
+      gnInput.focus();
+      return;
+    }
+    notifyBusy = true;
+    gnErr.hidden = true;
+    applyGen();
+    var slug = g.slug;
+    api("/fe/" + encodeURIComponent(slug) + "/notify", { email: email }).then(function (res) {
+      notifySet[slug] = res && res.notify || "";
+      notifyEditing = false;
+      gnInput.value = "";
+    }).catch(function (err) {
+      gnErr.textContent = err && err.message ? err.message : "Couldn't save that. Please try again.";
+      gnErr.hidden = false;
+    }).then(function () {
+      notifyBusy = false;
+      applyGen();
+      if (!gnDone.hidden) gnChange.focus();
+    });
+  }
+  function unsetNotify() {
+    var g = genInfo();
+    if (!g || notifyBusy) return;
+    notifyBusy = true;
+    var slug = g.slug;
+    fetch(API + "/fe/" + encodeURIComponent(slug) + "/notify", { method: "DELETE", credentials: "same-origin", cache: "no-store" })
+      .then(function (r) { if (r.ok) notifySet[slug] = ""; })
+      .catch(function () {})
+      .then(function () { notifyBusy = false; notifyEditing = false; applyGen(); gnInput.focus(); });
   }
   function applyGen() {
     var g = genInfo();
@@ -469,15 +578,18 @@
       canceling = false;
       clearInterval(genTimer);
       genTimer = 0;
+      notifySet = {};
+      notifyEditing = false;
+      gnErr.hidden = true;
       return;
     }
     genPrompt.textContent = g.prompt ? "\u201c" + g.prompt + "\u201d" : "";
     genPrompt.hidden = !g.prompt;
     cancelBtn.disabled = canceling;
     cancelBtn.lastChild.textContent = canceling ? "Canceling\u2026" : "Cancel this build";
-    var tick = function () { genTime.textContent = g.startedAt ? elapsed(g.startedAt) : ""; };
-    tick();
-    if (!genTimer) genTimer = setInterval(function () { var c = genInfo(); if (c && c.startedAt) genTime.textContent = elapsed(c.startedAt); }, 1000);
+    tickClock(g);
+    renderNotify(g);
+    if (!genTimer) genTimer = setInterval(function () { var c = genInfo(); if (c) tickClock(c); }, 1000);
     // the site bar's Re-imagine button says Building… (open or not)
     setPill("Building\u2026", false);
   }
@@ -1276,10 +1388,13 @@
   try {
     var params = new URLSearchParams(location.search);
     if (params.has("build")) {
+      var expired = params.get("build") === "expired";
       params.delete("build");
       var qs = params.toString();
       history.replaceState(history.state, "", location.pathname + (qs ? "?" + qs : "") + location.hash);
       open();
+      // an email's link that's too old (v1.13)
+      if (expired) { softNotice = "That link has expired. Anything you made in this browser is below."; showNotice(softNotice); }
     }
   } catch (e) { /* an old browser: the button still works */ }
 })();

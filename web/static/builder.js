@@ -36,6 +36,28 @@
   cancelBtn.textContent = "Cancel run";
   cancelBtn.hidden = true;
   statusEl.after(cancelBtn);
+
+  // a naive countdown from 15:00 while a run streams here (v1.13)
+  var countEl = document.createElement("span");
+  countEl.className = "b-countdown";
+  countEl.setAttribute("role", "timer");
+  countEl.hidden = true;
+  statusEl.after(countEl);
+  var countTimer = 0;
+  function countdown(on) {
+    clearInterval(countTimer);
+    countEl.hidden = !on;
+    if (!on) return;
+    var t0 = Date.now();
+    var tick = function () {
+      var left = 15 * 60 - Math.round((Date.now() - t0) / 1000);
+      countEl.textContent = left > 0
+        ? Math.floor(left / 60) + ":" + (left % 60 < 10 ? "0" : "") + (left % 60) + " left (about 10\u201315 min)"
+        : "any minute now";
+    };
+    tick();
+    countTimer = setInterval(tick, 1000);
+  }
   cancelBtn.addEventListener("click", function () {
     cancelBtn.disabled = true;
     cancelBtn.textContent = "Canceling…";
@@ -103,6 +125,7 @@
     cancelBtn.hidden = false;
     cancelBtn.disabled = false;
     cancelBtn.textContent = "Cancel run";
+    countdown(true);
     thinkingEl.textContent = textEl.textContent = "";
     toolsEl.replaceChildren();
 
@@ -131,6 +154,7 @@
         toolsEl.appendChild(li);
       }
     }).then(function (res) {
+      countdown(false);
       if (res.outcome === "revision") {
         statusEl.textContent = "Saved r" + res.number + ". Loading the preview…";
         addTurn("assistant", res.summary);

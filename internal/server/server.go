@@ -47,6 +47,8 @@ type Server struct {
 	budget     budgetState   // budget.go; WithBudget
 
 	media media.Source // /media/...; WithMedia, default MEDIA_DIR
+
+	notify notifyState // notify.go; WithMailer
 }
 
 // WithMedia sets where /media/... comes from (default: the MEDIA_DIR directory).
@@ -158,6 +160,7 @@ func (s *Server) routes() {
 	s.builderRoutes(admin)
 	s.reviewRoutes(admin)
 	s.buildRoutes(s.mux)
+	s.notifyRoutes(s.mux)
 	s.observerRoutes(s.mux, admin)
 	s.mux.Handle("/admin/", auth.Basic(s.cfg.AdminUser, s.cfg.AdminPassword, guarded))
 }

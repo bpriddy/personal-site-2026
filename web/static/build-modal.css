@@ -440,7 +440,34 @@ html.bm-generating .bm-progress, html.bm-generating .bm-mine, html.bm-generating
   content: ""; width: 8px; height: 8px; border-radius: var(--r-pill); background: var(--bm-accent);
   animation: bm-blink 1.2s steps(2, jump-none) infinite;
 }
-.bm-gen-time { font-family: var(--bm-font-mono); font-size: var(--t-meta); color: var(--bm-muted); font-variant-numeric: tabular-nums; }
+/* the countdown (v1.13): a naive 15:00, then "any minute now" */
+.bm-gen-clock { display: flex; flex-wrap: wrap; align-items: baseline; gap: .2em .6em; }
+.bm-gen-time {
+  font-family: var(--bm-font-mono); font-size: calc(var(--t-lede) * 1.6); font-weight: 500; line-height: 1;
+  letter-spacing: -.02em; color: var(--bm-fg); font-variant-numeric: tabular-nums;
+}
+.bm-gen-clock-note { color: var(--bm-muted); font-size: var(--t-ui); }
+.bm-gen-clock.bm-over .bm-gen-time { font-family: var(--bm-font-display); font-size: calc(var(--t-lede) * 1.1); font-weight: 600; letter-spacing: -.01em; }
+/* "email me when it's ready" (v1.13) */
+.bm-gen-notify {
+  display: grid; gap: var(--s-2); padding: var(--s-4); margin: 0;
+  background: color-mix(in oklab, var(--bm-accent) 9%, var(--bm-field));
+  border: 1px solid color-mix(in oklab, var(--bm-accent) 35%, transparent); border-radius: var(--r-1);
+}
+.bm-gen-notify[hidden], .bm-gen-notify [hidden] { display: none; }
+.bm-gen-notify-lead { margin: 0; font-weight: 600; color: var(--bm-fg); }
+.bm-gen-notify-row { display: flex; gap: var(--s-2); }
+.bm-gen-notify-input {
+  flex: 1 1 auto; min-width: 0; min-height: 44px; padding: 0 var(--s-3);
+  font: inherit; color: var(--bm-fg); background: var(--bm-bg);
+  border: 1px solid var(--bm-rule-strong); border-radius: var(--r-1);
+}
+.bm-gen-notify-input:focus-visible { outline: 2px solid var(--bm-accent); outline-offset: 1px; }
+.bm-gen-notify-send { flex: none; min-height: 44px; }
+.bm-gen-notify-fine { margin: 0; color: var(--bm-muted); font-size: var(--t-meta); }
+.bm-gen-notify-err { margin: 0; color: #B42318; font-size: var(--t-ui); }
+.bm-gen-notify-done { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s-2) var(--s-4); }
+.bm-gen-notify-done-text { margin: 0; flex: 1 1 100%; font-weight: 600; color: var(--bm-fg); }
 .bm-gen-prompt {
   margin: 0; font-family: var(--bm-font-display); font-weight: 520; font-stretch: 94%;
   font-size: calc(var(--t-lede) * .9); line-height: 1.25; letter-spacing: -.015em; overflow-wrap: anywhere;

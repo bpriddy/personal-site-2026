@@ -162,7 +162,7 @@ declare -A SPECS_OF=(
   [particle-stream]="tests/builtins-ready.spec.ts tests/navigation.spec.ts"
   [stream]="tests/builtins-ready.spec.ts tests/stream.spec.ts"
   [broken]="tests/fallback.spec.ts tests/contract.spec.ts"
-  [prompted]="tests/prompted.spec.ts tests/public-builder.spec.ts tests/build-progress.spec.ts tests/budget-paused.spec.ts"
+  [prompted]="tests/prompted.spec.ts tests/public-builder.spec.ts tests/build-progress.spec.ts tests/budget-paused.spec.ts tests/build-notify.spec.ts"
   [custom]=""
 )
 if [[ -n "${FRONTEND_ROTATION:-}" ]]; then

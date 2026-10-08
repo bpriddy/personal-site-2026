@@ -22,6 +22,7 @@ type Memory struct {
 	projects    map[string]content.Project    // projects_memory.go
 	experience  map[string]content.Experience // experience_memory.go
 	budget      BudgetSettings                // spend_memory.go
+	notifies    map[int64]*memNotify          // notify_memory.go
 }
 
 func NewMemory() *Memory {
