@@ -115,6 +115,8 @@ func (s *Server) routes() {
 	fonts := http.StripPrefix("/static/fonts/", http.FileServerFS(web.Fonts))
 	s.mux.Handle("GET /static/fonts/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		// open (OFL) fonts, loadable from anywhere: the build emails use them
+		w.Header().Set("Access-Control-Allow-Origin", "*")
 		fonts.ServeHTTP(w, r)
 	}))
 	// project and experiment media, for the transcript (docs/frontend-protocol.md, v1.4)

@@ -2,7 +2,8 @@ package server
 
 import (
 	"context"
-	"html"
+	_ "embed"
+	"html/template"
 	"net/http"
 	"strings"
 	"time"
@@ -266,37 +267,51 @@ func (s *Server) sendRunNotice(runID int64, outcome string) {
 		return
 	}
 	link := strings.TrimRight(s.cfg.MainOrigin, "/") + "/build/open/" + n.Link
-	if err := s.notify.mailer.Send(ctx, runNotice(n.Email, outcome, link)); err != nil {
+	if err := s.notify.mailer.Send(ctx, runNotice(s.cfg.MainOrigin, n.Email, outcome, link)); err != nil {
 		s.log.Error("notify: send", "run", runID, "outcome", outcome, "err", err)
 		return
 	}
 	s.log.Info("notify: sent", "run", runID, "outcome", outcome)
 }
 
-// runNotice is the email. It carries nothing the visitor typed: an address
-// someone else entered gets a plain, harmless note.
-func runNotice(to, outcome, link string) notify.Message {
-	const footer = "You're getting this because you asked to be emailed when your build of benpriddy.com finished. We don't keep your address."
-	var subject, lead, cta string
-	if outcome == notifyReady {
-		subject = "Your version of benpriddy.com is ready"
-		lead = "Your build is done. Only you can see it until you send it to Ben."
-		cta = "See your version"
+// runNotice is the email. It carries nothing the visitor typed (not even the
+// build's title, which comes from their prompt): an address someone else
+// entered gets a plain, harmless note. The HTML is emails/build.html.
+func runNotice(origin, to, outcome, link string) notify.Message {
+	origin = strings.TrimRight(origin, "/")
+	d := noticeData{Origin: origin, Link: link, Ready: outcome == notifyReady,
+		Note:   "The link works for 7 days. Open it on any device and we'll ask before moving your build to that browser.",
+		Footer: "You're getting this because you asked to be emailed when your build finished. We don't keep your address."}
+	if d.Ready {
+		d.Subject = "Your version of benpriddy.com is ready"
+		d.Preheader = "Claude finished building it. Only you can see it until you send it to Ben."
+		d.Kicker = "Your build \u00b7 Ready"
+		d.Heading = "Your version of the site is ready."
+		d.Lead = "Claude finished building it, with Ben's real work inside. It's on the site now, and only you can see it until you send it to Ben."
+		d.CTA = "See your version"
 	} else {
-		subject = "Your build of benpriddy.com didn't finish"
-		lead = "Something went wrong and your build stopped before it was done. Anything you made before is still there."
-		cta = "Try again"
+		d.Subject = "Your build of benpriddy.com didn't finish"
+		d.Preheader = "Something went wrong partway. Anything you made before is still there."
+		d.Kicker = "Your build \u00b7 Didn't finish"
+		d.Heading = "Your build didn't finish."
+		d.Lead = "Something went wrong and it stopped before it was done. Anything you made before is still there, and you can try again."
+		d.CTA = "Try again"
 	}
-	text := lead + "\n\n" + cta + ": " + link + "\n\nThe link works for 7 days. Your build moves to the browser you open it in.\n\n— benpriddy.com\n\n" + footer + "\n"
-	esc := html.EscapeString
-	htm := `<!doctype html><html><body style="margin:0;padding:32px 20px;background:#FAFAF8;font:16px/1.5 -apple-system,system-ui,sans-serif;color:#17130f">` +
-		`<div style="max-width:520px;margin:0 auto">` +
-		`<p style="margin:0 0 8px;font:12px/1.4 ui-monospace,Menlo,monospace;letter-spacing:.12em;text-transform:uppercase;color:#7a7066">benpriddy.com</p>` +
-		`<h1 style="margin:0 0 16px;font-size:24px;line-height:1.2">` + esc(subject) + `</h1>` +
-		`<p style="margin:0 0 24px">` + esc(lead) + `</p>` +
-		`<p style="margin:0 0 24px"><a href="` + esc(link) + `" style="display:inline-block;padding:12px 20px;background:#17130f;color:#FAFAF8;text-decoration:none;border-radius:4px;font-weight:600">` + esc(cta) + `</a></p>` +
-		`<p style="margin:0 0 32px;color:#5b5248;font-size:14px">The link works for 7 days. Your build moves to the browser you open it in.</p>` +
-		`<p style="margin:0;color:#7a7066;font-size:12px">` + esc(footer) + `</p>` +
-		`</div></body></html>`
-	return notify.Message{To: to, Subject: subject, Text: text, HTML: htm}
+	var htm strings.Builder
+	if err := noticeHTML.Execute(&htm, d); err != nil {
+		htm.Reset() // can't happen with this fixed template; the text part still goes
+	}
+	text := d.Heading + "\n\n" + d.Lead + "\n\n" + d.CTA + ": " + link + "\n\n" + d.Note +
+		"\n\n\u2014 benpriddy.com\nBen Priddy \u00b7 Creative technology / AI\n\n" + d.Footer + "\n"
+	return notify.Message{To: to, Subject: d.Subject, Text: text, HTML: htm.String()}
 }
+
+type noticeData struct {
+	Origin, Link, Subject, Preheader, Kicker, Heading, Lead, CTA, Note, Footer string
+	Ready                                                                      bool
+}
+
+//go:embed emails/build.html
+var noticeHTMLSrc string
+
+var noticeHTML = template.Must(template.New("build").Parse(noticeHTMLSrc))

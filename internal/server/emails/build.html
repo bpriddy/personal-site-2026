@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+<title>{{.Subject}}</title>
+<style>
+  @font-face { font-family: "Newsreader"; src: url("{{.Origin}}/static/fonts/newsreader-roman.woff2") format("woff2"); font-weight: 300 400; }
+  @font-face { font-family: "Instrument Sans"; src: url("{{.Origin}}/static/fonts/instrument-sans-roman.woff2") format("woff2"); font-weight: 400 600; }
+  @font-face { font-family: "Geist Mono"; src: url("{{.Origin}}/static/fonts/geist-mono.woff2") format("woff2"); font-weight: 100 900; }
+  body { margin: 0; padding: 0; background: #F1EEE7; -webkit-text-size-adjust: 100%; }
+  a { color: #151513; }
+  @media (max-width: 600px) {
+    .card { padding: 32px 24px !important; }
+    .h1 { font-size: 34px !important; }
+    .wide { display: none !important; }
+  }
+</style>
+</head>
+<body style="margin:0;padding:0;background:#F1EEE7;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#F1EEE7;">{{.Preheader}}&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#F1EEE7" style="background:#F1EEE7;">
+<tr><td align="center" style="padding:40px 16px 48px;">
+  <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:560px;">
+    <tr><td style="padding:0 2px 14px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+        <td style="font-family:'Geist Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:11px;line-height:16px;letter-spacing:.14em;text-transform:uppercase;color:#151513;">
+          <a href="{{.Origin}}/" style="color:#151513;text-decoration:none;">benpriddy.com</a>
+        </td>
+        <td class="wide" align="right" style="font-family:'Geist Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:11px;line-height:16px;letter-spacing:.14em;text-transform:uppercase;color:#8A867D;">
+          Re-imagined by its visitors
+        </td>
+      </tr></table>
+    </td></tr>
+    <tr><td style="font-size:0;line-height:0;" bgcolor="#D9400B">{{if .Ready}}<img src="{{.Origin}}/static/email/stripes.png" width="560" height="14" alt="" style="display:block;width:100%;max-width:560px;height:14px;border:0;">{{else}}<div style="height:3px;background:#151513;font-size:0;line-height:0;">&nbsp;</div>{{end}}</td></tr>
+    <tr><td class="card" bgcolor="#FFFFFF" style="background:#FFFFFF;padding:44px 40px 40px;border:1px solid #DCD8CF;border-top:0;">
+      <p style="margin:0 0 18px;font-family:'Geist Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:11px;line-height:16px;letter-spacing:.14em;text-transform:uppercase;color:{{if .Ready}}#D9400B{{else}}#55524B{{end}};">{{.Kicker}}</p>
+      <h1 class="h1" style="margin:0 0 20px;font-family:Newsreader,Georgia,'Times New Roman',serif;font-weight:400;font-size:42px;line-height:1.04;letter-spacing:-.02em;color:#151513;">{{.Heading}}</h1>
+      <p style="margin:0 0 32px;font-family:'Instrument Sans',-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:17px;line-height:1.55;color:#55524B;">{{.Lead}}</p>
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+        <td bgcolor="#151513" style="background:#151513;border-radius:3px;">
+          <a href="{{.Link}}" style="display:inline-block;padding:15px 24px;font-family:'Instrument Sans',-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;line-height:18px;font-weight:600;color:#F1EEE7;text-decoration:none;border-radius:3px;">{{.CTA}}&nbsp;&nbsp;&rarr;</a>
+        </td>
+      </tr></table>
+      <p style="margin:28px 0 0;padding-top:20px;border-top:1px solid #E8E4DB;font-family:'Instrument Sans',-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:13px;line-height:1.55;color:#8A867D;">{{.Note}}</p>
+    </td></tr>
+    <tr><td style="padding:24px 2px 0;font-family:'Geist Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:11px;line-height:17px;letter-spacing:.04em;color:#8A867D;">
+      Ben Priddy &middot; Creative technology / AI<br>
+      {{.Footer}}
+    </td></tr>
+  </table>
+</td></tr>
+</table>
+</body>
+</html>
