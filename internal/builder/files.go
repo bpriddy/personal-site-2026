@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"regexp"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -111,6 +112,10 @@ func Validate(files revfiles.Files) error {
 			}
 		}
 	}
+	if bad := ClassicRelativeImports(files); len(bad) > 0 {
+		problems = append(problems, "plain <script> files that import() a relative path ("+strings.Join(bad, ", ")+
+			"): in the sandbox a classic script can't resolve \"./x.js\", so that import fails and its part never loads; load them with <script type=\"module\" src=...>")
+	}
 	if errs := SyntaxErrors(files); len(errs) > 0 {
 		problems = append(problems, "scripts that won't parse (a browser runs none of their code, so the site falls back): "+strings.Join(errs, "; "))
 	}
@@ -179,6 +184,37 @@ func clone(files revfiles.Files) revfiles.Files {
 	out := make(revfiles.Files, len(files))
 	for n, b := range files {
 		out[n] = slices.Clone(b)
+	}
+	return out
+}
+
+var (
+	scriptOpenTag  = regexp.MustCompile(`(?is)<script\b([^>]*)>`)
+	scriptSrc      = regexp.MustCompile(`(?i)\bsrc\s*=\s*["']?([^"'\s>]+)`)
+	scriptModule   = regexp.MustCompile(`(?i)\btype\s*=\s*["']?module\b`)
+	relativeImport = regexp.MustCompile("\\bimport\\s*\\(\\s*[\"'`]\\.{1,2}/")
+)
+
+// ClassicRelativeImports lists the files index.html loads as classic
+// (non-module) scripts that call import() with a relative path. In the
+// sandboxed iframe a classic script is CORS-cross-origin, so its base URL is
+// about:blank and "./x.js" can't resolve: the import always fails.
+func ClassicRelativeImports(files revfiles.Files) []string {
+	index, ok := files["index.html"]
+	if !ok {
+		return nil
+	}
+	var out []string
+	for _, m := range scriptOpenTag.FindAllSubmatch(index, -1) {
+		attrs := m[1]
+		src := scriptSrc.FindSubmatch(attrs)
+		if src == nil || scriptModule.Match(attrs) {
+			continue
+		}
+		name := strings.TrimPrefix(string(src[1]), "./")
+		if body, ok := files[name]; ok && relativeImport.Match(body) && !slices.Contains(out, name) {
+			out = append(out, name)
+		}
 	}
 	return out
 }

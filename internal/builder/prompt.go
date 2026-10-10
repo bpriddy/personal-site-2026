@@ -21,7 +21,7 @@ The site's pages are served by Ben's server. Each page embeds one front end, ful
 - Reference your own files with relative paths only ("app.js", "./shaders/bg.wgsl", "style.css"), never with a leading "/" and never with a full URL. The exceptions are served by the host itself: the host API, always "/site-host.js", the house fonts under "/fonts/", and the content's media under "/media/" (use the src and poster paths exactly as the content gives them).
 - No storage: localStorage, sessionStorage, IndexedDB and cookies throw or don't exist. Don't use them (if you must, wrap in try/catch and work without them).
 - No forms, popups, alerts/confirm/prompt, top navigation, window.open, location changes or history.pushState. Navigation goes through site.navigate; links that leave the site (a project's link, its YouTube film) go through site.openExternal. YouTube can't be embedded (frame-src 'none').
-- Inline <script> and <style> are allowed. ES modules are allowed (<script type="module">), including relative imports of your own files.
+- Inline <script> and <style> are allowed. ES modules are allowed (<script type="module">), including relative imports of your own files. A dynamic import() of your own file needs a module script: in the sandbox, a plain <script> can't resolve "./x.js" (the import fails and that part never loads), so load any script that imports with type="module".
 - WebGPU may or may not be available (many visitors have no GPU, navigator.gpu may be missing, requestAdapter() may resolve null, requestDevice() may throw). WebGPU is always optional: the front end must work and show the content without it. Feature-detect, wrap GPU setup in try/catch, and fall back to CSS/Canvas 2D or simply no effect.
 
 # The host API: /site-host.js
