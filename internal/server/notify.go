@@ -290,7 +290,7 @@ func runNotice(origin, to, outcome, link, prompt string) notify.Message {
 		d.Preheader = "Your version finished generating. Go check it out!"
 		d.Kicker = "Your build \u00b7 Ready"
 		d.Heading = "Your version of the site is ready."
-		d.Lead = "Claude finished building it, with Ben's real work inside. It's on the site now, and only you can see it until you send it to Ben."
+		d.Lead = "Only you can see it unless you want to submit it. Click this link to open the session."
 		d.CTA = "See your version"
 	} else {
 		d.Subject = "Your build of benpriddy.com didn't finish"
