@@ -226,7 +226,7 @@
   var gnSend = el("button", "bm-btn bm-btn-primary bm-gen-notify-send", "Email me");
   gnSend.type = "submit";
   gnRow.append(gnInput, gnSend);
-  var gnFine = el("p", "bm-gen-notify-fine", "Only used to tell you about this build, then deleted.");
+  var gnFine = el("p", "bm-gen-notify-fine", "We'll email you when it's done. Ben will see your address too.");
   var gnErr = el("p", "bm-gen-notify-err");
   gnErr.setAttribute("role", "alert");
   gnErr.hidden = true;

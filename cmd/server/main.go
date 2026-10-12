@@ -112,7 +112,7 @@ func main() {
 
 	srv, err := server.New(cfg, st, log, server.WithObserver(obs), server.WithBuilder(agent, files),
 		server.WithBuildLimits(limits), server.WithBudget(budget), server.WithMedia(mediaSrc),
-		server.WithMailer(newMailer(cfg, log)))
+		server.WithMailer(newMailer(cfg, log)), server.WithAdminAlerts(os.Getenv("ADMIN_NOTIFY_EMAIL")))
 	if err != nil {
 		log.Error("server", "err", err)
 		os.Exit(1)

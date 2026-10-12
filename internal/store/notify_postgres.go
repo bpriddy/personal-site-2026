@@ -29,7 +29,7 @@ func (p *Postgres) RunNotify(ctx context.Context, runID int64) (RunNotify, error
 	n := RunNotify{RunID: runID}
 	err := p.pool.QueryRow(ctx, `
 		SELECT email, link, address_hash, created_at FROM build_notifications
-		WHERE run_id = $1 AND email IS NOT NULL`, runID).Scan(&n.Email, &n.Link, &n.AddressHash, &n.CreatedAt)
+		WHERE run_id = $1 AND sent_at IS NULL`, runID).Scan(&n.Email, &n.Link, &n.AddressHash, &n.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return RunNotify{}, ErrNotFound
 	}
@@ -37,7 +37,7 @@ func (p *Postgres) RunNotify(ctx context.Context, runID int64) (RunNotify, error
 }
 
 func (p *Postgres) ClearRunNotify(ctx context.Context, runID int64) error {
-	_, err := p.pool.Exec(ctx, `DELETE FROM build_notifications WHERE run_id = $1 AND email IS NOT NULL`, runID)
+	_, err := p.pool.Exec(ctx, `DELETE FROM build_notifications WHERE run_id = $1 AND sent_at IS NULL`, runID)
 	return err
 }
 
@@ -45,9 +45,9 @@ func (p *Postgres) TakeRunNotify(ctx context.Context, runID int64, outcome strin
 	n := RunNotify{RunID: runID}
 	// the old values come back from a self-join on the locked row
 	err := p.pool.QueryRow(ctx, `
-		UPDATE build_notifications b SET email = NULL, link = NULL, sent_at = now(), outcome = $2
+		UPDATE build_notifications b SET link = NULL, sent_at = now(), outcome = $2
 		FROM (SELECT run_id, email, link, address_hash, created_at FROM build_notifications
-		      WHERE run_id = $1 AND email IS NOT NULL FOR UPDATE) old
+		      WHERE run_id = $1 AND sent_at IS NULL FOR UPDATE) old
 		WHERE b.run_id = old.run_id
 		RETURNING old.email, old.link, old.address_hash, old.created_at`, runID, outcome).
 		Scan(&n.Email, &n.Link, &n.AddressHash, &n.CreatedAt)

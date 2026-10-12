@@ -6,8 +6,8 @@ import (
 )
 
 // Notifies stores "email me when it's ready" requests for builder runs
-// (migration 0013; protocol v1.13). The address and the open-link token are
-// kept only until the notice is taken. Memory and Postgres implement it
+// (migrations 0013-0014; protocol v1.13). Once the notice is taken, the
+// open-link token is cleared; the address is kept. Memory and Postgres implement it
 // alongside Builder; the server finds it with a type assertion.
 type Notifies interface {
 	// SetRunNotify records (or replaces) the request for n.RunID.
@@ -19,8 +19,9 @@ type Notifies interface {
 	// ClearRunNotify removes a run's pending request (the visitor changed
 	// their mind). No error if there is none.
 	ClearRunNotify(ctx context.Context, runID int64) error
-	// TakeRunNotify atomically returns a run's pending request and clears
-	// its address and link, recording outcome. ok is false if there was none.
+	// TakeRunNotify atomically returns a run's pending request and marks it
+	// sent (clearing the link, keeping the address), recording outcome. ok is
+	// false if there was none.
 	TakeRunNotify(ctx context.Context, runID int64, outcome string) (n RunNotify, ok bool, err error)
 	// NotifyCount counts requests for an address (by hash) made at or after
 	// since, taken or not.

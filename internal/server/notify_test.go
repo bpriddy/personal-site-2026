@@ -51,12 +51,24 @@ func newNotifyEnv(t *testing.T) (*builderEnv, *gatedModel, *notify.Outbox) {
 	m := &gatedModel{ScriptedModel: env.model, started: make(chan struct{}, 1), release: make(chan struct{})}
 	out := &notify.Outbox{}
 	s, err := New(cfg, env.st, slog.New(slog.NewTextHandler(io.Discard, nil)),
-		WithBuilder(builder.New(m, builder.Config{Model: "claude-opus-5-5"}), revfiles.NewDir(dir)), WithMailer(out))
+		WithBuilder(builder.New(m, builder.Config{Model: "claude-opus-5-5"}), revfiles.NewDir(dir)), WithMailer(out),
+		WithAdminAlerts("ben@example.com"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	env.s = s
 	return env, m, out
+}
+
+// to picks the messages sent to one address.
+func to(msgs []notify.Message, addr string) []notify.Message {
+	var out []notify.Message
+	for _, m := range msgs {
+		if m.To == addr {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // waitSent waits for the outbox to hold n messages (sending is async).
@@ -109,10 +121,23 @@ func TestBuildNotifyReady(t *testing.T) {
 	if evs := sseEvents(t, (<-done).Body.String()); eventOf(evs, "revision") == nil {
 		t.Fatalf("no revision: %+v", evs)
 	}
-	msgs := waitSent(t, out, 1)
-	msg := msgs[0]
-	if msg.To != "ben@example.com" || !strings.Contains(msg.Subject, "ready") {
-		t.Fatalf("message = %+v", msg)
+	msgs := waitSent(t, out, 3) // Ben: a new build; the visitor; Ben: the visitor was emailed
+	var msg notify.Message
+	for _, m := range msgs {
+		if strings.Contains(m.Subject, "is ready") {
+			msg = m
+		}
+	}
+	if !strings.Contains(msg.Subject, "ready") {
+		t.Fatalf("no ready email: %+v", msgs)
+	}
+	var newBuild, emailed bool
+	for _, m := range msgs {
+		newBuild = newBuild || (strings.HasPrefix(m.Subject, "New build: ") && strings.Contains(m.Text, "SECRET PROMPT WORDS") && strings.Contains(m.Text, "/admin/builder/fe/"+slug))
+		emailed = emailed || (m.Subject == "Visitor emailed: ben@example.com" && strings.Contains(m.Text, "it was ready"))
+	}
+	if !newBuild || !emailed {
+		t.Fatalf("admin alerts: new build %v, emailed %v: %+v", newBuild, emailed, msgs)
 	}
 	// led by the visitor's prompt, quoted
 	if !strings.Contains(msg.Text, "\u201cSECRET PROMPT WORDS\u201d") || !strings.Contains(msg.HTML, "SECRET PROMPT WORDS") {
@@ -124,10 +149,10 @@ func TestBuildNotifyReady(t *testing.T) {
 	}
 	link := strings.Fields(msg.Text[i:])[0]
 
-	// taken: the address is gone from the store, and it's sent once
+	// taken: no longer pending, so it's sent once
 	runs, _ := e.st.Runs(context.Background(), "fe/"+slug, 1)
 	if _, err := e.st.RunNotify(context.Background(), runs[0].ID); err == nil {
-		t.Error("address kept after sending")
+		t.Error("still pending after sending")
 	}
 
 	// the link, on another device, moves nothing by itself: it asks
@@ -212,8 +237,8 @@ func TestBuildNotifyReady(t *testing.T) {
 		t.Errorf("bad link: %d %s", bad.Code, bad.Header().Get("Location"))
 	}
 	time.Sleep(50 * time.Millisecond)
-	if n := len(out.Sent()); n != 1 {
-		t.Errorf("%d emails, want 1", n)
+	if n := len(out.Sent()); n != 3 {
+		t.Errorf("%d emails, want 3", n)
 	}
 }
 
@@ -233,8 +258,12 @@ func TestBuildNotifyFailedAndCanceled(t *testing.T) {
 	}
 	close(m.release)
 	<-done
-	if msg := waitSent(t, out, 1)[0]; !strings.Contains(msg.Subject, "didn't finish") || !strings.Contains(msg.Text, "/build/open/") {
-		t.Fatalf("failed message = %+v", msg)
+	sent := waitSent(t, out, 2) // the visitor; Ben: the visitor was emailed (no "new build": it failed)
+	if msg := to(sent, "v@example.com"); len(msg) != 1 || !strings.Contains(msg[0].Subject, "didn't finish") || !strings.Contains(msg[0].Text, "/build/open/") {
+		t.Fatalf("failed message = %+v", sent)
+	}
+	if a := to(sent, "ben@example.com"); len(a) != 1 || !strings.Contains(a[0].Text, "it didn't finish") {
+		t.Fatalf("admin alert = %+v", sent)
 	}
 
 	// asking, then withdrawing: nothing is sent; asking again works
@@ -252,7 +281,7 @@ func TestBuildNotifyFailedAndCanceled(t *testing.T) {
 	close(m.release)
 	<-done
 	time.Sleep(50 * time.Millisecond)
-	if n := len(out.Sent()); n != 1 {
+	if n := len(to(out.Sent(), "v@example.com")); n != 1 {
 		t.Fatalf("withdrawn request sent: %d emails", n)
 	}
 }

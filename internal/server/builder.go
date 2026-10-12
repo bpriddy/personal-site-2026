@@ -854,9 +854,11 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, f store.Fronten
 	req.OnCost = cost.add
 	defer func() { s.log.Info("builder: run cost", "run", runID, "frontend", id, "usd", cost.usd()) }()
 	// v1.13: email the visitor who asked, once the run has ended (any way)
+	// and tell Ben: a visitor built a site; a visitor was emailed (with their address)
 	outcome := notifyFailed
+	var built store.Revision
 	if c.visitor {
-		defer func() { go s.sendRunNotice(runID, outcome, in.Prompt) }()
+		defer func() { go s.afterVisitorRun(runID, outcome, in.Prompt, f, built, cost.usd()) }()
 	}
 
 	ev := newEventStream(w)
@@ -916,7 +918,7 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, f store.Fronten
 	if ferr := b.FinishRun(ctx, runID, rev.ID, ""); ferr != nil {
 		s.log.Error("builder: finish run", "err", ferr)
 	}
-	outcome = notifyReady
+	outcome, built = notifyReady, rev
 	if !budget.APIPausedUntil.IsZero() {
 		s.clearAPIPause(ctx) // the API took this run: its limit is over
 	}

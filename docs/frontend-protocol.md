@@ -910,9 +910,9 @@ constant); the admin builder shows the same countdown next to its run status.
 ## Email when it ends (visitors only)
 
 - **Offer:** the build card shows "You don't have to wait here. We can email
-  you when it's ready." with one email field and Email me ("Only used to tell
-  you about this build, then deleted."). Set, it reads "We'll email b•••@x.com
-  when it's ready." with Change and Don't email me. Only when the server can
+  you when it's ready." with one email field and Email me ("We'll email you
+  when it's done. Ben will see your address too."). Set, it reads "We'll
+  email b•••@x.com when it's ready." with Change and Don't email me. Only when the server can
   send email (`buildState.notify`).
 - **API:** `POST /build/api/fe/{slug}/notify` `{email}` for the front end's
   running run → `{notify: "<masked address>"}`; 400 for a bad address, 409 if
@@ -943,9 +943,15 @@ constant); the admin builder shows the same countdown next to its run status.
   Opened again elsewhere, the link can move it again. A bad or old link, or one
   to a build that's gone, says "That link has expired. Anything you made in
   this browser is below."
-- **Storage:** `build_notifications` (migration 0013): the address and the
-  link token only until the email goes out (or the request is withdrawn or
-  the run canceled); a hash of the address stays, for the daily cap.
+- **Storage:** `build_notifications` (migrations 0013–0014): the address is
+  kept (since 2026-10-12, at Ben's request; the offer says "Ben will see your
+  address too"); the link token only until the email goes out. A request is
+  pending while `sent_at` is NULL; withdrawn or canceled ones are deleted. A
+  hash of the address serves the daily cap.
+- **Alerts for Ben** (`ADMIN_NOTIFY_EMAIL`; empty means none): "New build:
+  <title>" when a visitor's build finishes (prompt, version, cost, admin link),
+  and "Visitor emailed: <address>" when a visitor's email goes out (prompt,
+  how the build ended, admin link).
 - **Mailer:** SendGrid (`SENDGRID_API_KEY`, from secret `sendgrid-api-key`;
   `NOTIFY_FROM`, default `info@lanterns.build`; `NOTIFY_FROM_NAME`, default
   `benpriddy.com`), click and open tracking off. Without a key the offer is

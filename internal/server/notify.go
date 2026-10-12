@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	_ "embed"
+	"fmt"
 	"html/template"
 	"net/http"
 	"strings"
@@ -26,9 +27,20 @@ const (
 	NotifyPerAddressDaily = 5
 )
 
-// notifyState is the mailer (nil: the offer isn't shown).
+// notifyState is the mailer (nil: the offer isn't shown) and where Ben's
+// alerts go ("": none).
 type notifyState struct {
 	mailer notify.Mailer
+	admin  string
+}
+
+// WithAdminAlerts sends Ben an email when a visitor builds a site, and when a
+// visitor is emailed (with their address). ADMIN_NOTIFY_EMAIL.
+func WithAdminAlerts(addr string) Option {
+	return func(s *Server) error {
+		s.notify.admin = strings.TrimSpace(addr)
+		return nil
+	}
 }
 
 // WithMailer turns on build emails.
@@ -250,28 +262,53 @@ const (
 	notifyCanceled = "canceled" // no email: the visitor stopped it
 )
 
-// sendRunNotice emails the visitor who asked about runID, once, if they did.
-func (s *Server) sendRunNotice(runID int64, outcome, prompt string) {
+// afterVisitorRun runs once a visitor's run has ended: Ben hears about a new
+// build, the visitor gets their email if they asked, and Ben hears about that.
+func (s *Server) afterVisitorRun(runID int64, outcome, prompt string, f store.FrontendInfo, rev store.Revision, usd float64) {
+	if outcome == notifyReady {
+		s.alertAdmin(adminBuildAlert(s.cfg.MainOrigin, s.notify.admin, prompt, f, rev, usd))
+	}
+	if to, sent := s.sendRunNotice(runID, outcome, prompt); sent {
+		s.alertAdmin(adminEmailedAlert(s.cfg.MainOrigin, s.notify.admin, prompt, f, outcome, to))
+	}
+}
+
+// alertAdmin sends Ben an alert, if alerts are on.
+func (s *Server) alertAdmin(m notify.Message) {
+	if s.notify.mailer == nil || s.notify.admin == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := s.notify.mailer.Send(ctx, m); err != nil {
+		s.log.Error("notify: admin alert", "subject", m.Subject, "err", err)
+	}
+}
+
+// sendRunNotice emails the visitor who asked about runID, once, if they did,
+// and returns their address if it went out.
+func (s *Server) sendRunNotice(runID int64, outcome, prompt string) (string, bool) {
 	ns := s.notifyStore()
 	if ns == nil {
-		return
+		return "", false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	n, ok, err := ns.TakeRunNotify(ctx, runID, outcome)
 	if err != nil {
 		s.log.Error("notify: take", "run", runID, "err", err)
-		return
+		return "", false
 	}
 	if !ok || outcome == notifyCanceled {
-		return
+		return "", false
 	}
 	link := strings.TrimRight(s.cfg.MainOrigin, "/") + "/build/open/" + n.Link
 	if err := s.notify.mailer.Send(ctx, runNotice(s.cfg.MainOrigin, n.Email, outcome, link, prompt)); err != nil {
 		s.log.Error("notify: send", "run", runID, "outcome", outcome, "err", err)
-		return
+		return "", false
 	}
 	s.log.Info("notify: sent", "run", runID, "outcome", outcome)
+	return n.Email, true
 }
 
 // noticePromptMax caps how much of the visitor's prompt the email quotes.
@@ -284,7 +321,7 @@ func runNotice(origin, to, outcome, link, prompt string) notify.Message {
 	origin = strings.TrimRight(origin, "/")
 	d := noticeData{Origin: origin, Link: link, Ready: outcome == notifyReady, Prompt: noticePrompt(prompt),
 		Note:   "The link works for 7 days. Open it on any device and we'll ask before moving your build to that browser.",
-		Footer: "You're getting this because you asked to be emailed when your build finished. We don't keep your address."}
+		Footer: "You're getting this because you asked to be emailed when your build finished."}
 	if d.Ready {
 		d.Subject = "Your version of benpriddy.com is ready"
 		d.Preheader = "Your version finished generating. Go check it out!"
@@ -342,3 +379,48 @@ type noticeData struct {
 var noticeHTMLSrc string
 
 var noticeHTML = template.Must(template.New("build").Parse(noticeHTMLSrc))
+
+// adminBuildAlert tells Ben a visitor built a site.
+func adminBuildAlert(origin, to, prompt string, f store.FrontendInfo, rev store.Revision, usd float64) notify.Message {
+	origin = strings.TrimRight(origin, "/")
+	slug := strings.TrimPrefix(f.ID, "fe/")
+	d := noticeData{Origin: origin, Ready: true, Prompt: noticePrompt(prompt),
+		Link:      origin + "/admin/builder/fe/" + slug,
+		Subject:   "New build: " + f.Title,
+		Preheader: "A visitor built a version of the site.",
+		Kicker:    "Admin \u00b7 New build",
+		Heading:   "A visitor built a site.",
+		Lead:      fmt.Sprintf("\u201c%s\u201d, version %d. It cost $%.2f.", f.Title, rev.Number, usd),
+		CTA:       "Open it in the admin",
+		Footer:    "Sent to you as the admin of benpriddy.com (ADMIN_NOTIFY_EMAIL)."}
+	return adminMessage(to, d)
+}
+
+// adminEmailedAlert tells Ben a visitor was emailed about their build, and
+// who they are.
+func adminEmailedAlert(origin, to, prompt string, f store.FrontendInfo, outcome, visitor string) notify.Message {
+	origin = strings.TrimRight(origin, "/")
+	slug := strings.TrimPrefix(f.ID, "fe/")
+	how := "it was ready"
+	if outcome != notifyReady {
+		how = "it didn't finish"
+	}
+	d := noticeData{Origin: origin, Ready: true, Prompt: noticePrompt(prompt),
+		Link:      origin + "/admin/builder/fe/" + slug,
+		Subject:   "Visitor emailed: " + visitor,
+		Preheader: visitor + " asked to be emailed about their build.",
+		Kicker:    "Admin \u00b7 Visitor emailed",
+		Heading:   visitor,
+		Lead:      fmt.Sprintf("Asked to be emailed about \u201c%s\u201d, and got the email: %s.", f.Title, how),
+		CTA:       "Open it in the admin",
+		Footer:    "Sent to you as the admin of benpriddy.com (ADMIN_NOTIFY_EMAIL)."}
+	return adminMessage(to, d)
+}
+
+func adminMessage(to string, d noticeData) notify.Message {
+	d.PromptSize, d.PromptClass = 28, "prompt-s"
+	var htm strings.Builder
+	noticeHTML.Execute(&htm, d)
+	text := d.Heading + "\n\n\u201c" + d.Prompt + "\u201d\n\n" + d.Lead + "\n\n" + d.CTA + ": " + d.Link + "\n"
+	return notify.Message{To: to, Subject: d.Subject, Text: text, HTML: htm.String()}
+}

@@ -61,7 +61,7 @@ func (m *Memory) TakeRunNotify(_ context.Context, runID int64, outcome string) (
 	}
 	out := r.RunNotify
 	r.taken, r.outcome = true, outcome
-	r.Email, r.Link = "", ""
+	r.Link = "" // the address is kept
 	return out, true, nil
 }
 
