@@ -114,8 +114,9 @@ func TestBuildNotifyReady(t *testing.T) {
 	if msg.To != "ben@example.com" || !strings.Contains(msg.Subject, "ready") {
 		t.Fatalf("message = %+v", msg)
 	}
-	if strings.Contains(msg.Text, "SECRET") || strings.Contains(msg.HTML, "SECRET") {
-		t.Error("the email carries what the visitor typed")
+	// led by the visitor's prompt, quoted
+	if !strings.Contains(msg.Text, "\u201cSECRET PROMPT WORDS\u201d") || !strings.Contains(msg.HTML, "SECRET PROMPT WORDS") {
+		t.Error("the email doesn't quote the prompt")
 	}
 	i := strings.Index(msg.Text, "https://example.com/build/open/")
 	if i < 0 {
@@ -296,5 +297,27 @@ func TestBuildNotifyOff(t *testing.T) {
 	json.Unmarshal(a.do("GET", "/dev/outbox", nil).Body.Bytes(), &body)
 	if body != nil {
 		t.Error("/dev/outbox served without an outbox")
+	}
+}
+
+// The prompt the email quotes is plain text: escaped, one line, capped.
+func TestRunNoticePrompt(t *testing.T) {
+	m := runNotice("https://example.com", "v@example.com", notifyReady, "https://example.com/build/open/x",
+		"<script>alert(1)</script>\n  a <b>bold</b>   idea")
+	if !strings.Contains(m.HTML, "font-size:42px") || !strings.Contains(m.HTML, `class="prompt"`) {
+		t.Error("prompt not sized")
+	}
+	if strings.Contains(m.HTML, "<script>alert") || strings.Contains(m.HTML, "<b>bold") {
+		t.Fatal("prompt not escaped")
+	}
+	if !strings.Contains(m.Text, "\u201c<script>alert(1)</script> a <b>bold</b> idea\u201d") {
+		t.Fatalf("text = %q", m.Text)
+	}
+	long := strings.Repeat("smoke ", 100)
+	if p := noticePrompt(long); len([]rune(p)) != noticePromptMax || !strings.HasSuffix(p, "\u2026") {
+		t.Fatalf("long prompt: %d %q", len([]rune(p)), p[len(p)-10:])
+	}
+	if m := runNotice("https://example.com", "v@example.com", notifyFailed, "l", ""); !strings.Contains(m.HTML, "Your build didn&#39;t finish.") {
+		t.Error("no-prompt layout")
 	}
 }

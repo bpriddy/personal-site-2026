@@ -921,8 +921,11 @@ constant); the admin builder shows the same countdown next to its run status.
   `run` carries `notify` (masked) when set.
 - **Sending:** when the run ends, once: "Your version of benpriddy.com is
   ready" or, if it failed, "Your build of benpriddy.com didn't finish". A
-  canceled run sends nothing. The email carries nothing the visitor typed (an
-  address someone else entered gets a plain, harmless note).
+  canceled run sends nothing. The email leads with the visitor's prompt,
+  quoted in large type (plain text, escaped, one line, at most 280
+  characters); its preview line is "Your version finished generating. Go
+  check it out!". The site's look: paper, the building stripes, Newsreader,
+  Instrument Sans, Geist Mono (`internal/server/emails/build.html`).
 - **The link asks before moving anything:** `GET /build/open/{token}`. The
   token is sealed (AES-GCM, a key derived from `FRONTEND_SIGNING_KEY`), names
   only the front end, and works for 7 days after the build. Opening it keeps

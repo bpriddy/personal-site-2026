@@ -856,7 +856,7 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, f store.Fronten
 	// v1.13: email the visitor who asked, once the run has ended (any way)
 	outcome := notifyFailed
 	if c.visitor {
-		defer func() { go s.sendRunNotice(runID, outcome) }()
+		defer func() { go s.sendRunNotice(runID, outcome, in.Prompt) }()
 	}
 
 	ev := newEventStream(w)

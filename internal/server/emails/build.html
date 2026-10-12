@@ -14,7 +14,11 @@
   a { color: #151513; }
   @media (max-width: 600px) {
     .card { padding: 32px 24px !important; }
-    .h1 { font-size: 34px !important; }
+    .h1 { font-size: 30px !important; }
+    .sub { font-size: 19px !important; }
+    .prompt { font-size: 32px !important; }
+    .prompt-s { font-size: 26px !important; }
+    .prompt-xs { font-size: 21px !important; }
     .wide { display: none !important; }
   }
 </style>
@@ -37,7 +41,8 @@
     <tr><td style="font-size:0;line-height:0;" bgcolor="#D9400B">{{if .Ready}}<img src="{{.Origin}}/static/email/stripes.png" width="560" height="14" alt="" style="display:block;width:100%;max-width:560px;height:14px;border:0;">{{else}}<div style="height:3px;background:#151513;font-size:0;line-height:0;">&nbsp;</div>{{end}}</td></tr>
     <tr><td class="card" bgcolor="#FFFFFF" style="background:#FFFFFF;padding:44px 40px 40px;border:1px solid #DCD8CF;border-top:0;">
       <p style="margin:0 0 18px;font-family:'Geist Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:11px;line-height:16px;letter-spacing:.14em;text-transform:uppercase;color:{{if .Ready}}#D9400B{{else}}#55524B{{end}};">{{.Kicker}}</p>
-      <h1 class="h1" style="margin:0 0 20px;font-family:Newsreader,Georgia,'Times New Roman',serif;font-weight:400;font-size:42px;line-height:1.04;letter-spacing:-.02em;color:#151513;">{{.Heading}}</h1>
+      {{if .Prompt}}<p class="{{.PromptClass}}" style="margin:0 0 28px;font-family:Newsreader,Georgia,'Times New Roman',serif;font-weight:400;font-size:{{.PromptSize}}px;line-height:1.12;letter-spacing:-.02em;color:#151513;">&ldquo;{{.Prompt}}&rdquo;</p>
+      <h1 class="sub" style="margin:0 0 14px;font-family:'Instrument Sans',-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-weight:600;font-size:22px;line-height:1.25;letter-spacing:-.01em;color:#151513;">{{.Heading}}</h1>{{else}}<h1 class="h1" style="margin:0 0 20px;font-family:Newsreader,Georgia,'Times New Roman',serif;font-weight:400;font-size:42px;line-height:1.04;letter-spacing:-.02em;color:#151513;">{{.Heading}}</h1>{{end}}
       <p style="margin:0 0 32px;font-family:'Instrument Sans',-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:17px;line-height:1.55;color:#55524B;">{{.Lead}}</p>
       <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
         <td bgcolor="#151513" style="background:#151513;border-radius:3px;">

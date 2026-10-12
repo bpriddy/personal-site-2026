@@ -251,7 +251,7 @@ const (
 )
 
 // sendRunNotice emails the visitor who asked about runID, once, if they did.
-func (s *Server) sendRunNotice(runID int64, outcome string) {
+func (s *Server) sendRunNotice(runID int64, outcome, prompt string) {
 	ns := s.notifyStore()
 	if ns == nil {
 		return
@@ -267,24 +267,27 @@ func (s *Server) sendRunNotice(runID int64, outcome string) {
 		return
 	}
 	link := strings.TrimRight(s.cfg.MainOrigin, "/") + "/build/open/" + n.Link
-	if err := s.notify.mailer.Send(ctx, runNotice(s.cfg.MainOrigin, n.Email, outcome, link)); err != nil {
+	if err := s.notify.mailer.Send(ctx, runNotice(s.cfg.MainOrigin, n.Email, outcome, link, prompt)); err != nil {
 		s.log.Error("notify: send", "run", runID, "outcome", outcome, "err", err)
 		return
 	}
 	s.log.Info("notify: sent", "run", runID, "outcome", outcome)
 }
 
-// runNotice is the email. It carries nothing the visitor typed (not even the
-// build's title, which comes from their prompt): an address someone else
-// entered gets a plain, harmless note. The HTML is emails/build.html.
-func runNotice(origin, to, outcome, link string) notify.Message {
+// noticePromptMax caps how much of the visitor's prompt the email quotes.
+const noticePromptMax = 280
+
+// runNotice is the email, led by the visitor's own prompt (Ben's call,
+// 2026-10-11): quoted as plain text, escaped, at most noticePromptMax
+// characters. The HTML is emails/build.html.
+func runNotice(origin, to, outcome, link, prompt string) notify.Message {
 	origin = strings.TrimRight(origin, "/")
-	d := noticeData{Origin: origin, Link: link, Ready: outcome == notifyReady,
+	d := noticeData{Origin: origin, Link: link, Ready: outcome == notifyReady, Prompt: noticePrompt(prompt),
 		Note:   "The link works for 7 days. Open it on any device and we'll ask before moving your build to that browser.",
 		Footer: "You're getting this because you asked to be emailed when your build finished. We don't keep your address."}
 	if d.Ready {
 		d.Subject = "Your version of benpriddy.com is ready"
-		d.Preheader = "Claude finished building it. Only you can see it until you send it to Ben."
+		d.Preheader = "Your version finished generating. Go check it out!"
 		d.Kicker = "Your build \u00b7 Ready"
 		d.Heading = "Your version of the site is ready."
 		d.Lead = "Claude finished building it, with Ben's real work inside. It's on the site now, and only you can see it until you send it to Ben."
@@ -297,16 +300,40 @@ func runNotice(origin, to, outcome, link string) notify.Message {
 		d.Lead = "Something went wrong and it stopped before it was done. Anything you made before is still there, and you can try again."
 		d.CTA = "Try again"
 	}
+	switch n := len([]rune(d.Prompt)); {
+	case n > 160:
+		d.PromptSize, d.PromptClass = 24, "prompt-xs"
+	case n > 80:
+		d.PromptSize, d.PromptClass = 32, "prompt-s"
+	default:
+		d.PromptSize, d.PromptClass = 42, "prompt"
+	}
 	var htm strings.Builder
 	if err := noticeHTML.Execute(&htm, d); err != nil {
 		htm.Reset() // can't happen with this fixed template; the text part still goes
 	}
-	text := d.Heading + "\n\n" + d.Lead + "\n\n" + d.CTA + ": " + link + "\n\n" + d.Note +
+	head := d.Heading
+	if d.Prompt != "" {
+		head = "\u201c" + d.Prompt + "\u201d\n\n" + d.Heading
+	}
+	text := head + "\n\n" + d.Lead + "\n\n" + d.CTA + ": " + link + "\n\n" + d.Note +
 		"\n\n\u2014 benpriddy.com\nBen Priddy \u00b7 Creative technology / AI\n\n" + d.Footer + "\n"
 	return notify.Message{To: to, Subject: d.Subject, Text: text, HTML: htm.String()}
 }
 
+// noticePrompt is the prompt as the email quotes it: one line, trimmed,
+// cut at noticePromptMax with an ellipsis.
+func noticePrompt(p string) string {
+	p = strings.Join(strings.Fields(p), " ")
+	if r := []rune(p); len(r) > noticePromptMax {
+		p = strings.TrimSpace(string(r[:noticePromptMax-1])) + "\u2026"
+	}
+	return p
+}
+
 type noticeData struct {
+	Prompt, PromptClass                                                        string
+	PromptSize                                                                 int
 	Origin, Link, Subject, Preheader, Kicker, Heading, Lead, CTA, Note, Footer string
 	Ready                                                                      bool
 }
