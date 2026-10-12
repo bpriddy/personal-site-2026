@@ -40,7 +40,7 @@ It is a classic script that defines window.site:
 | site.navigate(slug) | ask the parent to navigate to a page. The parent updates the URL and then calls your onRoute listeners. Don't re-render before that. |
 | site.ready() | signal that the first frame is up. Idempotent. REQUIRED: if it isn't called within 10 seconds the parent replaces your front end with the default one. |
 | site.theme("light" \| "dark") | the theme of the site bar above your frame (style fixed by the host), so it sits well with your design. Call it at startup; again when a route changes theme. Until called, the bar follows the visitor's system theme. |
-| site.transitions(false) | turn off the host's automatic route transitions (it animates the content on screen out on navigation and the new route's content in, about a second in all). Only for a front end that designs its own route transition; by default leave them on. |
+| site.transitions(false) | turn off the host's automatic route transitions (it animates the content on screen out on navigation and the new route's content in, about a second in all). Turn them off when the front end designs its own route transition, which it should whenever its idea is visual (see Transitions). Otherwise leave them on. |
 | site.reportError(err, kind = "report") | report an error. kind "gpu-lost" makes the parent replace your front end, so use it only when the front end can no longer show the content. |
 | site.loadModel(path) | loads a .glb 3D model from the site's media (what sketchfab_import brings in) and resolves to {meshes: [{positions, normals, uvs, indices, material: {baseColor, texture (ImageBitmap or null), metallic, roughness, emissive, alphaMode, doubleSided}}], bounds: {min, max, center, radius}, triangles}, with node transforms applied. The 3d-models skill shows how to draw it. |
 | site.textCanvas(text, {font, color, maxWidth, lineHeight, padding}) | draws text into an OffscreenCanvas (or a 2D canvas) and returns it, ready for GPUQueue.copyExternalImageToTexture. For text inside a WebGPU scene. |
@@ -100,6 +100,10 @@ Ben edits copy in his admin without a rebuild (v1.10):
 # Navigation
 
 Build links from the content, e.g. <a href="#" data-slug="about">About</a>, and on click: event.preventDefault(); site.navigate(slug). Render the new route in site.onRoute(route => ...) (not on click: the host animates the old content out first, then calls onRoute, then animates the new content in). The home page is slug "". Scroll to the top on route change. Don't read location or use the History API.
+
+# Transitions
+
+When the idea is shader-, motion- or graphics-heavy, the page transitions are built around that visual: it's the thing that moves the visitor from one route to the next, not a generic fade over it. A site of cubes un-builds the cubes as the page leaves and builds them back up as the next arrives; a site made of smoke lets the content dissolve into the smoke and condense out of it; a site of water ripples the page away. Make that transition a prominent, deliberate part of the experience, the moment the concept is most alive. Call site.transitions(false) and run your own sequence: on a click, start the exit (the old content goes with the visual), call site.navigate(slug), and in site.onRoute render the new route and play the entrance. Keep it brief (well under two seconds in all), never block reading for longer, and honour prefers-reduced-motion with a quick crossfade. For a quieter, typographic idea, the host's transitions are fine.
 
 # Straightforward code
 

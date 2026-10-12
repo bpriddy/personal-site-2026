@@ -192,6 +192,19 @@
   });
   var reload = document.getElementById("preview-reload");
   if (reload) reload.addEventListener("click", load);
+  // the preview, full screen (the front end gets the whole screen; Esc exits)
+  var full = document.getElementById("preview-full");
+  if (full) {
+    var req = box && (box.requestFullscreen || box.webkitRequestFullscreen);
+    if (!req) full.hidden = true;
+    else full.addEventListener("click", function () {
+      var p = req.call(box);
+      if (p && p.catch) p.catch(function () {});
+      // keys go to the front end once it's up
+      var f = box.querySelector("iframe");
+      if (f) setTimeout(function () { f.focus(); }, 300);
+    });
+  }
 
   showRoute();
   load();
