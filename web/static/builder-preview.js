@@ -192,17 +192,44 @@
   });
   var reload = document.getElementById("preview-reload");
   if (reload) reload.addEventListener("click", load);
-  // the preview, full screen (the front end gets the whole screen; Esc exits)
+  // the preview, full screen: the browser's own full screen where it's
+  // allowed, else (iPhone Safari allows it only for video) the preview fills
+  // the window, with an Exit button. Esc exits either way.
   var full = document.getElementById("preview-full");
-  if (full) {
-    var req = box && (box.requestFullscreen || box.webkitRequestFullscreen);
-    if (!req) full.hidden = true;
-    else full.addEventListener("click", function () {
-      var p = req.call(box);
-      if (p && p.catch) p.catch(function () {});
-      // keys go to the front end once it's up
+  if (full && box) {
+    var exitBtn = document.createElement("button");
+    exitBtn.type = "button";
+    exitBtn.className = "b-preview-exit";
+    exitBtn.textContent = "Exit full screen";
+    exitBtn.hidden = true;
+    box.appendChild(exitBtn);
+    var fsEl = function () { return document.fullscreenElement || document.webkitFullscreenElement || null; };
+    var focusFrame = function () {
       var f = box.querySelector("iframe");
       if (f) setTimeout(function () { f.focus(); }, 300);
+    };
+    var maximize = function (on) {
+      box.classList.toggle("b-preview-max", on);
+      document.documentElement.classList.toggle("b-preview-maxed", on);
+      exitBtn.hidden = !on;
+      if (on) focusFrame();
+    };
+    full.addEventListener("click", function () {
+      var req = box.requestFullscreen || box.webkitRequestFullscreen;
+      var fallback = function () { if (!fsEl()) maximize(true); };
+      if (!req) return fallback();
+      try {
+        var p = req.call(box);
+        if (p && p.then) p.then(focusFrame, fallback);
+        else setTimeout(fallback, 400); // old WebKit: no promise; check it took
+      } catch (e) { fallback(); }
+    });
+    exitBtn.addEventListener("click", function () {
+      if (fsEl()) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      maximize(false);
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && box.classList.contains("b-preview-max")) maximize(false);
     });
   }
 
