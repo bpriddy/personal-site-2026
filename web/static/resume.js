@@ -148,12 +148,22 @@
     rail.append(b);
   });
   stage.append(rail);
+  // a phone names the role you're at in a caption (CSS shows it on narrow screens)
+  var caption = span("rz-caption");
+  caption.setAttribute("aria-hidden", "true");
+  var capMeta = span("rz-caption-meta"), capTitle = span("rz-caption-title");
+  caption.append(capMeta, capTitle);
+  stage.append(caption);
+  var captionFor = null;
   var hero = stage.querySelector(".rz-hero");
   var hint = document.getElementById("rz-hint");
 
   // ── the space ──
   var W = 0, H = 0, F = 800, U = 800, VIEW = 600, narrow = false, dpr = 1;
   var zStart = 0, zEnd = 1, path = [], dust = [];
+  var nearRole = null; // the role nearest the camera (the last frame's)
+  var depthMax = 1;    // the deepest node (the fly-in reveal reaches it)
+  var heroUp = true;   // the title is still on screen (the last frame's)
   function smooth(e0, e1, x) { var t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); }
   function clamp(x, a, b) { return x < a ? a : x > b ? b : x; }
 
@@ -161,6 +171,9 @@
     W = Math.max(300, stage.clientWidth);
     H = Math.max(360, stage.clientHeight);
     narrow = W < 760;
+    // the phone caption sits just under the legend, wherever that ends up
+    var lg = document.querySelector(".rz-legend");
+    if (lg) caption.style.top = Math.round(lg.getBoundingClientRect().bottom - stage.getBoundingClientRect().top + 14) + "px";
     dpr = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
     F = clamp(H * 0.95, 520, 1000); // focal length, px
@@ -173,7 +186,8 @@
     // roles: down the corridor, newest first, each a little off the axis
     roles.forEach(function (r, i) {
       var a = 2.6 + i * 2.2;
-      r.z = 1.3 * U + i * 1.2 * U;
+      // on a phone roles sit further apart in depth, so two are never side by side
+      r.z = 1.3 * U + i * (narrow ? 2.1 : 1.2) * U;
       r.x = rx(narrow ? 0.1 : 0.17) * Math.cos(a); r.y = ry(0.12) * Math.sin(a); r.ang = a;
     });
     // projects: a half ring around their role, newest nearest
@@ -185,7 +199,7 @@
       ps.forEach(function (p, j) {
         var ang = r.ang + Math.PI + (j - (n - 1) / 2) * spread;
         p.x = r.x + rx(narrow ? 0.3 : 0.34) * Math.cos(ang);
-        p.y = r.y + ry(narrow ? 0.27 : 0.36) * Math.sin(ang);
+        p.y = r.y + ry(narrow ? 0.36 : 0.36) * Math.sin(ang);
         p.z = r.z + 0.12 * U + j * (0.75 * U / Math.max(n, 2));
         placed[p.d.id] = true;
       });
@@ -233,6 +247,7 @@
     // or under it on a phone), past each role, to the oldest work
     var maxZ = 0;
     nodes.forEach(function (n) { if (n.z > maxZ) maxZ = n.z; });
+    depthMax = maxZ;
     zStart = -VIEW;
     // the end: the oldest role's work around you
     zEnd = Math.max(zStart + U, Math.min(maxZ - 0.55 * U, (roles.length ? roles[roles.length - 1].z - VIEW : 0) + 0.25 * U));
@@ -353,7 +368,8 @@
     }
     NEAR = 0.16 * U;
     var cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw), cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
-    var fog0 = 0.55 * U, fogD = 2.6 * U, secs = (now - t0) / 1000;
+    // a phone's roles sit further apart, so its fog reaches further
+    var fog0 = 0.55 * U, fogD = (narrow ? 3.8 : 2.6) * U, secs = (now - t0) / 1000;
     function toCam(px, py, pz, out) {
       var x = px - cam.x, y = py - cam.y, z = pz - cam.z;
       var x1 = x * cy - z * sy, z1 = x * sy + z * cy;
@@ -384,7 +400,8 @@
         n.sy = H / 2 + F * c.y / c.z;
         n.fog = fogOf(c.z);
         var nearFade = smooth(NEAR, 0.42 * U, c.z);
-        var appear = reduce ? 1 : smooth(0, 1, (intro * 1.6) - Math.max(0, n.z) / (6 * U));
+        // the fly-in reveals the space front to back, all the way to its deepest node
+        var appear = reduce ? 1 : smooth(0, 1, (intro * 1.6) - Math.max(0, n.z) / Math.max(6 * U, depthMax * 1.05));
         op = n.fog * nearFade * appear;
         if (n.sx < -400 || n.sx > W + 400 || n.sy < -300 || n.sy > H + 300) op = 0;
       }
@@ -404,7 +421,7 @@
       if (n.txt) {
         var ls = clamp(n.s, narrow ? 0.86 : 0.8, narrow ? 1.05 : 1.3);
         var gap = (n.base / 2) * s + 8;
-        var left = !n.hub && (n.sideLeft != null ? n.sideLeft : n.sx > W * (narrow ? 0.56 : 0.64));
+        var left = !n.hub && (n.sideLeft != null ? n.sideLeft : n.sx > W * (narrow ? 0.5 : 0.64));
         if (left !== n.left) { n.left = left; n.el.classList.toggle("rz-left", left); }
         // a constellation's name sits over it; everything else is named beside its dot
         n.txt.style.transform = n.hub
@@ -414,6 +431,11 @@
           : "translate(" + gap.toFixed(1) + "px,-50%) scale(" + ls.toFixed(3) + ")";
         // small things are named when they're near enough to read, or traced
         var quiet = !n.on && (n.kind === "role" || n.hub ? n.s < 0.3 : n.fog < 0.35 || n.s < QUIET[n.kind] * (narrow ? 1.2 : 1));
+        // a phone names only the role you're at; the others wait for a tap
+        // a phone names roles in its caption instead, unless one is traced
+        if (narrow && n.kind === "role" && !n.on) quiet = true;
+        // and at the entrance, while the title is up, only Ben's photo shows
+        if (narrow && heroUp && !n.on && n.kind !== "me") quiet = true;
         if (quiet !== n.quiet) { n.quiet = quiet; n.el.classList.toggle("rz-quiet", quiet); }
       }
     }
@@ -475,6 +497,7 @@
     // the title leaves as the journey starts; the rail marks where you are
     var prog = reduce ? progressOf(cam.z) : scrollProgress();
     var heroOp = 1 - smooth(0.0, 0.06, prog);
+    heroUp = heroOp > 0.4;
     if (hero && heroOp !== hero.lastOp) {
       hero.lastOp = heroOp;
       hero.style.opacity = heroOp.toFixed(3);
@@ -485,6 +508,17 @@
     var nearest = null, best = Infinity;
     roles.forEach(function (r) { var d = Math.abs(r.z - VIEW - cam.z); if (d < best) { best = d; nearest = r; } });
     roles.forEach(function (r) { r.railEl.classList.toggle("rz-here", r === nearest && best < 0.6 * U); });
+    nearRole = nearest;
+    var capRole = narrow && !heroUp && nearest && best < 0.9 * U ? nearest : null;
+    if (capRole !== captionFor) {
+      captionFor = capRole;
+      caption.classList.toggle("rz-on", !!capRole);
+      if (capRole) {
+        var parts = String(capRole.d.sub || "").split(" \u00b7 ");
+        capMeta.textContent = (capRole.d.year ? capRole.d.year + " \u00b7 " : "") + (parts[0] || "");
+        capTitle.textContent = capRole.d.label;
+      }
+    }
     var cz = String(Math.round(cam.z - zStart));
     if (stage.dataset.depth !== cz) stage.dataset.depth = cz;
     return moving;
