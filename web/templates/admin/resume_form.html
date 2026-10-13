@@ -6,6 +6,12 @@
 {{if .Error}}<p class="notice problem" role="alert">{{.Error}}</p>{{end}}
 <form method="post" action="/admin/resume" class="stack">
   <label>Profile (blank line between paragraphs) <textarea name="profile" rows="8">{{.R.Profile}}</textarea></label>
+  <h2>Profile photo</h2>
+  <div class="resume-photo">
+    <img src="{{or .R.Photo "/static/resume/ben-480.jpg"}}" alt="" width="96" height="96">
+    <label>Picture in the centre of the system and by your name in the PDF: a path on this site, e.g. an upload's <code>/media/assets/uploads/….jpg</code> (square, face centred; JPEG or PNG for the PDF). Leave empty for the default crop.
+      <input name="photo" value="{{.R.Photo}}" placeholder="/static/resume/ben-480.jpg"></label>
+  </div>
   <h2>Currently solving</h2>
   <label>Headline (optional) <input name="solvingTitle" value="{{.R.SolvingTitle}}"></label>
   <label>Text (leave empty to use the home page bio after its first paragraph, kept in sync) <textarea name="solvingBody" rows="5">{{.R.SolvingBody}}</textarea></label>

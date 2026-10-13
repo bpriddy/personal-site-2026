@@ -34,6 +34,8 @@ func seedResume(t *testing.T, s *Server) {
 		{Slug: "ai-education", Title: "AI Education", Year: "2023-2026", Tags: []string{"Education", "Applied AI"}, Published: true},
 		{Slug: "nytimes", Title: "ad.nytimes.com", Year: "2022", Tags: []string{"Web"}, Published: true},
 		{Slug: "play-the-city", Title: "Play the City", Year: "2018", Tags: []string{"AR", "web"}, Published: true},
+		// 2019 is in Tool's years and Stink's: the agency decides
+		{Slug: "stink-reel", Title: "Stink Reel", Year: "2019", Agency: "Stink Studios", Tags: []string{"Web"}, Published: true},
 	} {
 		if err := ps.SaveProject(ctx, p); err != nil {
 			t.Fatal(err)
@@ -98,10 +100,71 @@ func TestResumePage(t *testing.T) {
 		{"project:play-the-city", "theme:web"}, // tags merge case-insensitively
 		{"project:nytimes", "theme:web"},
 		{"me", "role:anomaly-global-head-ai"},
+		{"role:stink-studios-technical-director", "project:stink-reel"}, // its agency, not the earliest role
+		// the skills: two constellations, a node per skill
+		{"me", "skill:do"}, {"me", "skill:review"},
+		{"skill:do", "skill:do/agentic-engineering"},
+		{"skill:review", "skill:review/three-js"},
+		// linked to the work they belong to (skillLinks)
+		{"skill:do/agentic-engineering", "role:anomaly-global-head-ai"},
+		{"skill:do/agentic-engineering", "theme:applied ai"},
+		{"skill:review/three-js", "theme:web"},
+		{"skill:review/three-js", "theme:ar"},
+		{"skill:review/javascript", "theme:web"},
+		{"skill:review/python", "theme:applied ai"},
 	} {
 		if !has(l[0], l[1]) {
 			t.Errorf("missing link %v", l)
 		}
+	}
+	for _, l := range [][2]string{
+		{"role:tool-creative-director-technology", "project:stink-reel"},
+		{"skill:review/typescript", "theme:ar"}, // conservative: TypeScript is Web only
+		{"skill:review/python", "theme:web"},    // nor is Python web work
+		{"skill:do/agentic-engineering", "theme:web"},
+	} {
+		if has(l[0], l[1]) {
+			t.Errorf("unexpected link %v", l)
+		}
+	}
+	nodes := map[string]graphNode{}
+	for _, n := range g.Nodes {
+		nodes[n.ID] = n
+	}
+	if n := nodes["me"]; n.Img != content.DefaultPhoto || !strings.Contains(n.ImgSet, "ben-960.webp 960w") {
+		t.Errorf("me: photo %q %q", n.Img, n.ImgSet)
+	}
+	skills := 0
+	for _, n := range g.Nodes {
+		if n.Kind == "skill" && !n.Hub {
+			skills++
+			if n.Group != "do" && n.Group != "review" {
+				t.Errorf("skill %s: group %q", n.ID, n.Group)
+			}
+		}
+	}
+	def := content.DefaultResume()
+	if want := len(content.Lines(def.SkillsDo)) + len(content.Lines(def.SkillsReview)); skills != want {
+		t.Errorf("skill nodes: %d, want %d", skills, want)
+	}
+	if h := nodes["skill:review"]; !h.Hub || h.Label != "What I can review" {
+		t.Errorf("review hub: %+v", h)
+	}
+	if r := nodes["role:stink-studios-technical-director"]; r.Year != 2019 {
+		t.Errorf("role year %d", r.Year)
+	}
+	// every link joins two nodes that exist
+	for _, l := range g.Links {
+		if _, ok := nodes[l[0]]; !ok {
+			t.Errorf("link from missing %s", l[0])
+		}
+		if _, ok := nodes[l[1]]; !ok {
+			t.Errorf("link to missing %s", l[1])
+		}
+	}
+	// the photo is served
+	if rec := get(s, content.DefaultPhoto); rec.Code != 200 {
+		t.Errorf("photo: %d", rec.Code)
 	}
 	if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'self'") {
 		t.Errorf("CSP %q", csp)
@@ -117,6 +180,21 @@ func TestResumePDF(t *testing.T) {
 	}
 	if !strings.Contains(rec.Header().Get("Content-Disposition"), "Ben_Priddy_Resume.pdf") {
 		t.Errorf("disposition %q", rec.Header().Get("Content-Disposition"))
+	}
+	// the photo by the name
+	if !strings.Contains(rec.Body.String(), "/Subtype /Image") {
+		t.Error("the PDF has no photo")
+	}
+	// a photo the PDF can't use (WebP, or missing) costs the photo, not the PDF
+	if p := s.resumePhoto(context.Background(), "/static/resume/ben-480.webp"); p != nil {
+		t.Error("WebP photo for the PDF")
+	}
+	if p := s.resumePhoto(context.Background(), "/media/assets/uploads/missing.jpg"); p != nil {
+		t.Error("missing photo for the PDF")
+	}
+	v, _ := s.resumeView(context.Background())
+	if b, err := renderResumePDF(v, &pdfPhoto{data: []byte("not a jpeg"), typ: "JPG"}); err != nil || !strings.HasPrefix(string(b), "%PDF-") {
+		t.Errorf("bad photo: %v", err)
 	}
 }
 
@@ -149,5 +227,59 @@ func TestAdminResume(t *testing.T) {
 	}
 	if strings.Contains(body, "Right now I'm focused") {
 		t.Error("own Currently solving text should replace the bio's")
+	}
+
+	// the profile photo: a path on this site (a full address here is cut to its path)
+	for _, bad := range []string{"https://example.com/me.jpg", "//example.com/me.jpg", "/media/../etc/passwd.jpg", "/static/resume/ben.svg", "javascript:alert(1)"} {
+		if rec := post(url.Values{"photo": {bad}}); rec.Code != http.StatusBadRequest {
+			t.Errorf("photo %q: %d", bad, rec.Code)
+		}
+	}
+	if rec := post(url.Values{"photo": {"http://localhost:8080/media/assets/uploads/abc123.jpg"}}); rec.Code != http.StatusSeeOther {
+		t.Fatalf("save photo: %d %s", rec.Code, rec.Body)
+	}
+	if r, _, _ := store.ResumeOf(s.store).Resume(context.Background()); r.Photo != "/media/assets/uploads/abc123.jpg" {
+		t.Errorf("stored photo %q", r.Photo)
+	}
+	page := get(s, "/resume").Body.String()
+	if !strings.Contains(page, `"img":"/media/assets/uploads/abc123.jpg"`) || strings.Contains(page, `"imgset"`) {
+		t.Error("the centre node should show the new photo, without the default's sizes")
+	}
+	req := httptest.NewRequest("GET", "/admin/resume", nil)
+	req.SetBasicAuth("admin", "pw")
+	form := httptest.NewRecorder()
+	s.ServeHTTP(form, req)
+	if !strings.Contains(form.Body.String(), `name="photo" value="/media/assets/uploads/abc123.jpg"`) {
+		t.Errorf("admin form: no photo field with the saved photo (%d)", form.Code)
+	}
+	// cleared, it's the default crop again
+	if rec := post(url.Values{"photo": {""}}); rec.Code != http.StatusSeeOther {
+		t.Fatalf("clear photo: %d", rec.Code)
+	}
+	if !strings.Contains(get(s, "/resume").Body.String(), `"img":"/static/resume/ben-480.jpg"`) {
+		t.Error("a cleared photo should fall back to the default")
+	}
+}
+
+func TestValidPhotoPath(t *testing.T) {
+	for p, want := range map[string]bool{
+		"/static/resume/ben-480.jpg":                         true,
+		"/static/resume/ben-960.webp":                        true,
+		"/media/assets/uploads/d20994ceb1e7aa05e54c7def.jpg": true,
+		"/media/projects/x/hero.png":                         true,
+		"":                                                   false,
+		"ben.jpg":                                            false,
+		"/static/../secret.jpg":                              false,
+		"/static/resume/.hidden.jpg":                         false,
+		"/static/resume/ben.svg":                             false,
+		"/static/resume/ben.jpg?x=1":                         false,
+		"https://benpriddy.com/static/resume/ben-480.jpg":    false,
+		"//evil.example/x.jpg":                               false,
+		"/other/x.jpg":                                       false,
+		"/media/x.mp4":                                       false,
+	} {
+		if got := content.ValidPhotoPath(p); got != want {
+			t.Errorf("ValidPhotoPath(%q) = %v, want %v", p, got, want)
+		}
 	}
 }

@@ -151,3 +151,8 @@ body.admin * { transition-duration: var(--d-1) !important; }
   width: 100%; height: auto; aspect-ratio: 16 / 10; object-fit: cover; border-radius: var(--r-1); background: var(--bg-raised);
 }
 .admin .media-grid code { overflow-wrap: anywhere; font-size: .75rem; }
+
+/* /admin/resume: the profile photo beside its field */
+.admin .resume-photo { display: flex; gap: var(--s-4); align-items: flex-start; }
+.admin .resume-photo img { flex: none; width: 96px; height: 96px; border-radius: 50%; object-fit: cover; background: var(--bg-raised); }
+.admin .resume-photo label { flex: 1; }

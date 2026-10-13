@@ -2,6 +2,8 @@ package content
 
 import (
 	"fmt"
+	"path"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 )
@@ -19,6 +21,51 @@ type Resume struct {
 	Email        string            `json:"email"`
 	LinkedIn     string            `json:"linkedin"` // a full https:// URL
 	Location     string            `json:"location"`
+	// Photo is the picture in the system's centre node (and by the name in
+	// the PDF): a path on this site, "/static/..." or "/media/...". ""
+	// (resumes saved before it existed, or a cleared field) is DefaultPhoto.
+	Photo string `json:"photo,omitempty"`
+}
+
+// DefaultPhoto is Ben's portrait, cropped square around his face from his
+// 1536x2048 selfie (uploads/d20994ceb1e7aa05e54c7def.jpg): 480 and 960px,
+// JPEG and WebP, in web/static/resume/.
+const DefaultPhoto = "/static/resume/ben-480.jpg"
+
+var (
+	staticSeg = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+	photoExts = map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".webp": true}
+)
+
+// ValidPhotoPath reports whether p can be the resume photo: a same-origin
+// image path, either a media file ("/media/assets/uploads/<id>.jpg") or one
+// of the site's own static files ("/static/resume/ben-480.jpg"). Nothing
+// external, no query, no "..": the public CSP only allows 'self' images.
+func ValidPhotoPath(p string) bool {
+	if len(p) > 200 || path.Clean(p) != p || !photoExts[strings.ToLower(path.Ext(p))] {
+		return false
+	}
+	if MediaPath(p) {
+		return true
+	}
+	rest, ok := strings.CutPrefix(p, "/static/")
+	if !ok || rest == "" {
+		return false
+	}
+	for _, seg := range strings.Split(rest, "/") {
+		if !staticSeg.MatchString(seg) {
+			return false
+		}
+	}
+	return true
+}
+
+// PhotoOrDefault is r's photo, or DefaultPhoto.
+func (r Resume) PhotoOrDefault() string {
+	if r.Photo == "" {
+		return DefaultPhoto
+	}
+	return r.Photo
 }
 
 // MaxResumeField caps any one text field.
@@ -39,6 +86,9 @@ func (r Resume) Validate() error {
 	}
 	if r.LinkedIn != "" && !strings.HasPrefix(r.LinkedIn, "https://") {
 		return fmt.Errorf("LinkedIn must be a full https:// address")
+	}
+	if r.Photo != "" && !ValidPhotoPath(r.Photo) {
+		return fmt.Errorf("the photo must be an image on this site: a path like /media/assets/uploads/….jpg or /static/….jpg")
 	}
 	if r.Email != "" && (!strings.Contains(r.Email, "@") || strings.ContainsAny(r.Email, " <>")) {
 		return fmt.Errorf("email doesn't look like an address")
@@ -90,5 +140,6 @@ func DefaultResume() Resume {
 		Email:        "colorandsound@gmail.com",
 		LinkedIn:     "https://www.linkedin.com/in/ben-priddy-9673a016",
 		Location:     "New York, NY",
+		Photo:        DefaultPhoto,
 	}
 }

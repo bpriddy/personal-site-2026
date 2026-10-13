@@ -981,3 +981,50 @@ front end over it (`templates/fixed/`, the `fixed` layout).
   no-JS get); consecutive roles at one company read as one entry.
 - **PDF.** `/resume.pdf`, made on request from the same data (go-pdf/fpdf,
   core fonts), one Letter page.
+
+# v1.15 (2026-10-13): /resume, a space to travel through
+
+Ben: "make the node graph progress through a space with a distance fog", his
+photo in the first circle, and what he can do and review in the space, "not
+just a list". The page stays fixed and outside the rotation; the resume text
+under the space is unchanged (still what search, readers and no-JS get).
+
+- **The space** (`static/resume.js`, no library). Every node gets a 3D place:
+  Ben at the entrance (z 0), his roles receding down the depth axis newest
+  first (a step per role), each role's projects on a half ring around it,
+  newest nearest, themes on an outer ring at the mean depth of their projects,
+  and the two skill constellations near the entrance. A perspective camera
+  (yaw/pitch, hand-written projection) puts each node on screen: nodes are
+  HTML buttons moved with CSS transforms (crisp text, focusable), links and
+  drifting dust are drawn on one canvas behind them. Distance fog is
+  exponential squared (`exp(-((z - z0)/d)^2)`) on opacity, so far things fade
+  into the background colour in both themes; very near things fade too as
+  the camera passes through them. Labels of small things wait until near.
+- **Travel.** The stage is sticky while its section (a screen per role or so)
+  scrolls by; the scroll maps to depth through stops (the entrance, each
+  role's viewpoint, the end), eased so the camera lingers at each. A rail of
+  years on the right shows where you are and travels there. Dragging looks
+  around a little (yaw/pitch, eases back; horizontal only on touch, where
+  vertical is the scroll). Clicking a node scrolls (flies) to it, frames it
+  beside the panel (above it on a phone) and opens the panel; hover, focus or
+  tap traces its links in the accent. Tabbing to a node travels to it.
+  `#rz-stage[data-depth]` is the camera's depth (for tests).
+- **Reduced motion.** No scroll-driven travel, no flight, no sway, no way in:
+  a still view of the entrance; choosing a node or a year cuts to it.
+- **Photo.** `content.Resume.Photo`, a same-origin path (`/static/...` or
+  `/media/...`, an image; `content.ValidPhotoPath`), edited at
+  `/admin/resume` (a full address on this site is cut to its path); empty is
+  `content.DefaultPhoto`, a square crop of Ben's selfie in
+  `static/resume/` (480/960, JPEG and WebP; the page uses the WebP sizes for
+  the default). The PDF puts it in a small circle by the name when it's a
+  JPEG or PNG it can read, else leaves it out.
+- **Skills as nodes.** Each "What I can do" / "What I can review" line is a
+  node in its constellation (a hub per list). Links, server side
+  (`skillLinks` in `server/resume.go`), conservative: every do-skill links to
+  the current role and the Applied AI and Tooling themes; a review-skill links
+  by keyword to the themes whose work used it (web stack to Web, Three.js and
+  GLSL to Web, AR, Experiential, and so on), never to single projects, since
+  the CMS doesn't say which project used which language.
+- **Projects to roles.** Of the roles whose years cover a project's start, one
+  at the project's agency or client wins, else the earliest-starting (years
+  are coarse: Anomaly's 2023 work isn't Active Theory's).

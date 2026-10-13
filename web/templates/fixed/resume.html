@@ -1,5 +1,5 @@
 {{define "title"}}Resume · {{.R.Name}}{{end}}
-{{define "description"}}{{with index .R.Profile 0}}{{excerpt . 160}}{{end}}{{end}}
+{{define "description"}}{{with .R.Profile}}{{excerpt (index . 0) 160}}{{else}}Resume of {{.R.Name}}{{end}}{{end}}
 {{define "head"}}<link rel="stylesheet" href="/static/resume.css">
 <script src="/static/resume.js" defer></script>{{end}}
 {{define "main"}}
@@ -9,32 +9,37 @@
   <a class="rz-pdf" href="/resume.pdf" download>Download PDF</a>
 </header>
 
-<section class="rz-hero">
-  <p class="rz-kicker">Resume</p>
-  <h1 class="rz-name">{{.R.Name}}</h1>
-  <p class="rz-meta">{{with .R.Groups}}{{with index . 0}}{{with index .Roles 0}}{{.Title}}{{end}} · {{.Company}}{{end}}{{end}}{{with .R.Location}} · {{.}}{{end}}</p>
-  <p class="rz-contact">{{with .R.Email}}<a href="mailto:{{.}}">{{.}}</a>{{end}}{{with .R.LinkedIn}}<a href="{{.}}" rel="me noopener" target="_blank">LinkedIn</a>{{end}}</p>
-</section>
-
-{{/* the system: drawn by resume.js from the JSON below; the resume under it
-     is the same content for readers, search and anyone without JavaScript */}}
-<section class="rz-system" aria-label="Career as a system: roles, projects, themes and skills, connected">
-  <div class="rz-legend" role="group" aria-label="Show">
-    <button type="button" data-kind="role" aria-pressed="true"><i class="rz-dot rz-dot-role"></i>Roles</button>
-    <button type="button" data-kind="project" aria-pressed="true"><i class="rz-dot rz-dot-project"></i>Projects</button>
-    <button type="button" data-kind="theme" aria-pressed="true"><i class="rz-dot rz-dot-theme"></i>Themes</button>
-    <button type="button" data-kind="skill" aria-pressed="true"><i class="rz-dot rz-dot-skill"></i>Skills</button>
+{{/* the system (v1.15): a space resume.js builds from the JSON below and
+     the page's scroll travels through, Ben at the entrance and his career
+     receding in time. The hero is its first frame. The resume under it is
+     the same content for readers, search and anyone without JavaScript. */}}
+<section class="rz-system" id="rz-system" aria-label="Career as a space: roles, projects, themes and skills, connected">
+  <div class="rz-travel" id="rz-travel">
+    <div class="rz-stage" id="rz-stage">
+      <div class="rz-hero">
+        <p class="rz-kicker">Resume</p>
+        <h1 class="rz-name">{{.R.Name}}</h1>
+        <p class="rz-meta">{{with .R.Groups}}{{with index . 0}}{{with index .Roles 0}}{{.Title}}{{end}} · {{.Company}}{{end}}{{end}}{{with .R.Location}} · {{.}}{{end}}</p>
+        <p class="rz-contact">{{with .R.Email}}<a href="mailto:{{.}}">{{.}}</a>{{end}}{{with .R.LinkedIn}}<a href="{{.}}" rel="me noopener" target="_blank">LinkedIn</a>{{end}}</p>
+      </div>
+      <div class="rz-legend" role="group" aria-label="Show">
+        <button type="button" data-kind="role" aria-pressed="true"><i class="rz-dot rz-dot-role"></i>Roles</button>
+        <button type="button" data-kind="project" aria-pressed="true"><i class="rz-dot rz-dot-project"></i>Projects</button>
+        <button type="button" data-kind="theme" aria-pressed="true"><i class="rz-dot rz-dot-theme"></i>Themes</button>
+        <button type="button" data-kind="skill" aria-pressed="true"><i class="rz-dot rz-dot-skill"></i>Skills</button>
+      </div>
+      <noscript><p class="rz-noscript">The connected view needs JavaScript. Everything it shows is in the resume below.</p></noscript>
+      <p class="rz-hint" id="rz-hint">Scroll to travel back through the years. Hover or tap anything to trace its connections; click to open it. Drag to look around.</p>
+      <aside class="rz-panel" id="rz-panel" hidden aria-live="polite">
+        <button type="button" class="rz-close" aria-label="Close">&times;</button>
+        <p class="rz-panel-kind"></p>
+        <h2 class="rz-panel-title"></h2>
+        <p class="rz-panel-sub"></p>
+        <div class="rz-panel-body"></div>
+        <div class="rz-panel-links"></div>
+      </aside>
+    </div>
   </div>
-  <div class="rz-stage" id="rz-stage"><noscript><p class="rz-noscript">The connected view needs JavaScript. Everything it shows is in the resume below.</p></noscript></div>
-  <p class="rz-hint">Hover or tap anything to trace its connections and open it. Drag to pull the system around.</p>
-  <aside class="rz-panel" id="rz-panel" hidden aria-live="polite">
-    <button type="button" class="rz-close" aria-label="Close">&times;</button>
-    <p class="rz-panel-kind"></p>
-    <h2 class="rz-panel-title"></h2>
-    <p class="rz-panel-sub"></p>
-    <div class="rz-panel-body"></div>
-    <div class="rz-panel-links"></div>
-  </aside>
   <script type="application/json" id="rz-graph">{{.GraphJSON}}</script>
 </section>
 

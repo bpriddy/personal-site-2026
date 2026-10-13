@@ -2,10 +2,17 @@ package server
 
 import (
 	"bytes"
+	"context"
+	"io"
+	"io/fs"
 	"net/http"
+	"path"
 	"strings"
 
 	"github.com/go-pdf/fpdf"
+
+	"github.com/bpriddy/personal-site-2026/internal/media"
+	"github.com/bpriddy/personal-site-2026/web"
 )
 
 // resumePDF is /resume.pdf: the resume as a one- or two-page Letter PDF,
@@ -16,7 +23,7 @@ func (s *Server) resumePDF(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, "resume pdf", err)
 		return
 	}
-	b, err := renderResumePDF(v)
+	b, err := renderResumePDF(v, s.resumePhoto(r.Context(), v.Photo))
 	if err != nil {
 		s.fail(w, "resume pdf", err)
 		return
@@ -28,6 +35,37 @@ func (s *Server) resumePDF(w http.ResponseWriter, r *http.Request) {
 	w.Write(b)
 }
 
+// pdfPhoto is the picture for the PDF: JPEG or PNG bytes (fpdf has no WebP).
+type pdfPhoto struct {
+	data []byte
+	typ  string // "JPG" | "PNG"
+}
+
+// resumePhoto reads the resume photo for the PDF, from the embedded static
+// files or the media store; nil (no photo, which is fine) if it isn't a
+// JPEG or PNG or can't be read.
+func (s *Server) resumePhoto(ctx context.Context, p string) *pdfPhoto {
+	typ := map[string]string{".jpg": "JPG", ".jpeg": "JPG", ".png": "PNG"}[strings.ToLower(path.Ext(p))]
+	if typ == "" {
+		return nil
+	}
+	var data []byte
+	if rest, ok := strings.CutPrefix(p, "/static/"); ok {
+		data, _ = fs.ReadFile(web.FS, "static/"+rest)
+	} else if name, ok := strings.CutPrefix(p, "/media/"); ok && s.media != nil {
+		f, err := s.media.Open(ctx, name)
+		if err != nil {
+			return nil
+		}
+		defer f.Close()
+		data, _ = io.ReadAll(io.LimitReader(f.Body, media.MaxBytes))
+	}
+	if len(data) == 0 {
+		return nil
+	}
+	return &pdfPhoto{data, typ}
+}
+
 // the house palette, in print: ink on white, the accent for labels
 var (
 	pdfInk    = [3]int{21, 21, 19}
@@ -36,7 +74,7 @@ var (
 	pdfRule   = [3]int{210, 206, 198}
 )
 
-func renderResumePDF(v resumeView) ([]byte, error) {
+func renderResumePDF(v resumeView, photo *pdfPhoto) ([]byte, error) {
 	pdf := fpdf.New("P", "pt", "Letter", "")
 	pdf.SetTitle(v.Name+" Resume", true)
 	pdf.SetAuthor(v.Name, true)
@@ -51,10 +89,32 @@ func renderResumePDF(v resumeView) ([]byte, error) {
 	width := pageW - 2*margin
 	color := func(c [3]int) { pdf.SetTextColor(c[0], c[1], c[2]) }
 
+	// the photo: a small circle at the right of the name, cropped to cover
+	const photoD = 58.0
+	textW := width
+	if photo != nil {
+		info := pdf.RegisterImageOptionsReader("photo", fpdf.ImageOptions{ImageType: photo.typ}, bytes.NewReader(photo.data))
+		if pdf.Ok() && info != nil && info.Width() > 0 && info.Height() > 0 {
+			iw, ih := photoD, photoD
+			if r := info.Width() / info.Height(); r > 1 {
+				iw = photoD * r
+			} else {
+				ih = photoD / r
+			}
+			cx, cy := margin+width-photoD/2, margin+photoD/2-4
+			pdf.ClipCircle(cx, cy, photoD/2, false)
+			pdf.ImageOptions("photo", cx-iw/2, cy-ih/2, iw, ih, false, fpdf.ImageOptions{ImageType: photo.typ}, 0, "")
+			pdf.ClipEnd()
+			textW = width - photoD - 16
+		} else {
+			pdf.ClearError() // a bad photo costs the photo, not the PDF
+		}
+	}
+
 	// name and contact
 	color(pdfInk)
 	pdf.SetFont("Times", "", 28)
-	pdf.CellFormat(width, 30, t(v.Name), "", 1, "L", false, 0, "")
+	pdf.CellFormat(textW, 30, t(v.Name), "", 1, "L", false, 0, "")
 	var line []string
 	if len(v.Groups) > 0 {
 		line = append(line, v.Groups[0].Roles[0].Title+", "+v.Groups[0].Company)
@@ -66,8 +126,11 @@ func renderResumePDF(v resumeView) ([]byte, error) {
 	}
 	color(pdfMuted)
 	pdf.SetFont("Helvetica", "", 9)
-	pdf.MultiCell(width, 13, t(strings.Join(line, "  ·  ")), "", "L", false)
+	pdf.MultiCell(textW, 13, t(strings.Join(line, "  ·  ")), "", "L", false)
 	pdf.Ln(4)
+	if y := margin + photoD - 4; photo != nil && pdf.GetY() < y {
+		pdf.SetY(y) // the first rule clears the photo
+	}
 
 	section := func(title string) {
 		pdf.Ln(4)
