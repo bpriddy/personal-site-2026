@@ -1,0 +1,23 @@
+{{define "base"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>{{block "title" .}}Ben Priddy{{end}}</title>
+  <meta name="description" content="{{block "description" .}}Ben Priddy{{end}}">
+  {{with .Canonical}}<link rel="canonical" href="{{.}}">
+  <meta property="og:url" content="{{.}}">{{end}}
+  <meta property="og:site_name" content="Ben Priddy">
+  <meta property="og:title" content="{{template "title" .}}">
+  <meta property="og:description" content="{{template "description" .}}">
+  <meta property="og:type" content="profile">
+  <meta name="theme-color" content="#0F0F0D" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#F1EEE7" media="(prefers-color-scheme: light)">
+  <link rel="preload" href="/static/fonts/newsreader-roman.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/fonts/instrument-sans-roman.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/static/base.css">
+  {{block "head" .}}{{end}}
+</head>
+{{/* fixed pages (v1.14): the same for every visitor, outside the rotation */}}
+<body class="fixed">{{block "main" .}}{{end}}</body>
+</html>{{end}}

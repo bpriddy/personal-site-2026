@@ -2,6 +2,7 @@
 {{define "main"}}
 <h1>Content</h1>
 <p><a class="b-primary button-link" href="/admin/builder/#new-prompt">Prompt a new front end</a></p>
+<p><a href="/admin/resume">Edit the resume</a> · <a href="/resume">/resume</a> · <a href="/resume.pdf">PDF</a></p>
 {{range .Pages}}{{if eq .Slug ""}}<section class="site-copy" id="site-copy">
   <h2>Site copy</h2>
   <p class="muted">What every front end shows on the home page. Saving updates the live site right away.</p>

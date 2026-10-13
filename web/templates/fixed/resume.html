@@ -1,0 +1,77 @@
+{{define "title"}}Resume · {{.R.Name}}{{end}}
+{{define "description"}}{{with index .R.Profile 0}}{{excerpt . 160}}{{end}}{{end}}
+{{define "head"}}<link rel="stylesheet" href="/static/resume.css">
+<script src="/static/resume.js" defer></script>{{end}}
+{{define "main"}}
+<header class="rz-bar">
+  <a class="rz-home" href="/">{{.R.Name}}</a>
+  <span class="rz-crumb">Resume</span>
+  <a class="rz-pdf" href="/resume.pdf" download>Download PDF</a>
+</header>
+
+<section class="rz-hero">
+  <p class="rz-kicker">Resume</p>
+  <h1 class="rz-name">{{.R.Name}}</h1>
+  <p class="rz-meta">{{with .R.Groups}}{{with index . 0}}{{with index .Roles 0}}{{.Title}}{{end}} · {{.Company}}{{end}}{{end}}{{with .R.Location}} · {{.}}{{end}}</p>
+  <p class="rz-contact">{{with .R.Email}}<a href="mailto:{{.}}">{{.}}</a>{{end}}{{with .R.LinkedIn}}<a href="{{.}}" rel="me noopener" target="_blank">LinkedIn</a>{{end}}</p>
+</section>
+
+{{/* the system: drawn by resume.js from the JSON below; the resume under it
+     is the same content for readers, search and anyone without JavaScript */}}
+<section class="rz-system" aria-label="Career as a system: roles, projects, themes and skills, connected">
+  <div class="rz-legend" role="group" aria-label="Show">
+    <button type="button" data-kind="role" aria-pressed="true"><i class="rz-dot rz-dot-role"></i>Roles</button>
+    <button type="button" data-kind="project" aria-pressed="true"><i class="rz-dot rz-dot-project"></i>Projects</button>
+    <button type="button" data-kind="theme" aria-pressed="true"><i class="rz-dot rz-dot-theme"></i>Themes</button>
+    <button type="button" data-kind="skill" aria-pressed="true"><i class="rz-dot rz-dot-skill"></i>Skills</button>
+  </div>
+  <div class="rz-stage" id="rz-stage"><noscript><p class="rz-noscript">The connected view needs JavaScript. Everything it shows is in the resume below.</p></noscript></div>
+  <p class="rz-hint">Hover or tap anything to trace its connections and open it. Drag to pull the system around.</p>
+  <aside class="rz-panel" id="rz-panel" hidden aria-live="polite">
+    <button type="button" class="rz-close" aria-label="Close">&times;</button>
+    <p class="rz-panel-kind"></p>
+    <h2 class="rz-panel-title"></h2>
+    <p class="rz-panel-sub"></p>
+    <div class="rz-panel-body"></div>
+    <div class="rz-panel-links"></div>
+  </aside>
+  <script type="application/json" id="rz-graph">{{.GraphJSON}}</script>
+</section>
+
+<article class="rz-doc">
+  <section class="rz-section">
+    <h2 class="rz-label">Profile</h2>
+    <div class="rz-prose">{{range .R.Profile}}<p>{{.}}</p>{{end}}</div>
+  </section>
+
+  {{if .R.Solving}}<section class="rz-section rz-solving">
+    <h2 class="rz-label">Currently solving</h2>
+    {{with .R.SolvingTitle}}<p class="rz-solving-title">{{.}}</p>{{end}}
+    <div class="rz-prose">{{range .R.Solving}}<p>{{.}}</p>{{end}}</div>
+  </section>{{end}}
+
+  <section class="rz-section">
+    <h2 class="rz-label">Experience</h2>
+    <ol class="rz-xp">
+      {{range .R.Groups}}<li class="rz-xp-group">
+        <p class="rz-company">{{.Company}}</p>
+        {{range .Roles}}<h3 class="rz-role" id="role-{{.Slug}}">{{.Title}} <span class="rz-dates">{{.Dates}}</span></h3>{{end}}
+        {{with .Bullets}}<ul class="rz-bullets">{{range .}}<li>{{.}}</li>{{end}}</ul>{{end}}
+      </li>{{end}}
+    </ol>
+  </section>
+
+  {{if or .R.SkillsDo .R.SkillsReview}}<section class="rz-section">
+    <h2 class="rz-label">Technical skills</h2>
+    <dl class="rz-skills">
+      {{with .R.SkillsDo}}<div><dt>What I can do</dt><dd>{{range $i, $s := .}}{{if $i}} · {{end}}{{$s}}{{end}}</dd></div>{{end}}
+      {{with .R.SkillsReview}}<div><dt>What I can review</dt><dd>{{range $i, $s := .}}{{if $i}} · {{end}}{{$s}}{{end}}</dd></div>{{end}}
+    </dl>
+  </section>{{end}}
+
+  <footer class="rz-foot">
+    <a href="/resume.pdf" download>Download PDF</a>
+    <a href="/">benpriddy.com</a>
+  </footer>
+</article>
+{{end}}

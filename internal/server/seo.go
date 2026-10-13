@@ -39,7 +39,7 @@ func (s *Server) robots(w http.ResponseWriter, r *http.Request) {
 		strings.TrimRight(s.cfg.MainOrigin, "/"))
 }
 
-// sitemap lists the published routes: home, pages, work, each project, experiments.
+// sitemap lists the published routes: home, pages, work, each project, experiments, the resume.
 func (s *Server) sitemap(w http.ResponseWriter, r *http.Request) {
 	base := strings.TrimRight(s.cfg.MainOrigin, "/")
 	type url struct {
@@ -75,6 +75,7 @@ func (s *Server) sitemap(w http.ResponseWriter, r *http.Request) {
 	if exps, err := s.publishedExperiments(r); err == nil && len(exps) > 0 {
 		urls = append(urls, url{base + "/experiments", time.Time{}})
 	}
+	urls = append(urls, url{base + "/resume", time.Time{}})
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	var sb strings.Builder

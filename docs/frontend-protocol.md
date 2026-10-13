@@ -957,3 +957,27 @@ constant); the admin builder shows the same countdown next to its run status.
   `benpriddy.com`), click and open tracking off. Without a key the offer is
   hidden; in dev an outbox only logs, and `GET /dev/outbox` lists what it
   "sent" (for e2e).
+
+# v1.14 (2026-10-13): /resume
+
+One fixed page, outside the rotation: the same for every visitor, with no
+front end over it (`templates/fixed/`, the `fixed` layout).
+
+- **Content.** Roles and projects come from the CMS (Experience and Work). The
+  rest is `content.Resume` (profile, an optional "Currently solving" headline
+  and text, bullets per role, skills, public contact), stored in `site_resume`
+  (migration 0015) and edited at `/admin/resume`. Until saved, it's Ben's CV
+  (Google Doc "Ben_Priddy_CV", 2026-08-17) with his corrections: the profile
+  opens with the "love" framing, no phone number. "Currently solving" left
+  empty uses the home bio after its first paragraph, read live.
+- **The system** (`static/resume.js`). The page embeds a graph as JSON: Ben,
+  his roles, each role's projects (a project goes to the earliest role whose
+  years cover its start), the themes from project tags (merged
+  case-insensitively), and two skill nodes. Drawn as SVG in columns (rows on
+  narrow screens), each node springs out of Ben into place; hover or tap traces
+  a node's connections, click opens it in a panel, drag pulls it and it snaps
+  back; the legend shows or hides a kind. Reduced motion: no burst, no sway.
+- **The resume** under it is plain semantic HTML (what search, readers and
+  no-JS get); consecutive roles at one company read as one entry.
+- **PDF.** `/resume.pdf`, made on request from the same data (go-pdf/fpdf,
+  core fonts), one Letter page.

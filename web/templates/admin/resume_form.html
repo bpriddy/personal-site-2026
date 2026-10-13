@@ -1,0 +1,29 @@
+{{define "title"}}Resume · Admin{{end}}
+{{define "main"}}
+<p><a href="/admin/">← Admin</a></p>
+<h1>Resume</h1>
+<p class="muted">What <a href="/resume">/resume</a> and <a href="/resume.pdf">its PDF</a> say beyond your roles and projects, which come from Experience and Work. Saving updates both right away.</p>
+{{if .Error}}<p class="notice problem" role="alert">{{.Error}}</p>{{end}}
+<form method="post" action="/admin/resume" class="stack">
+  <label>Profile (blank line between paragraphs) <textarea name="profile" rows="8">{{.R.Profile}}</textarea></label>
+  <h2>Currently solving</h2>
+  <label>Headline (optional) <input name="solvingTitle" value="{{.R.SolvingTitle}}"></label>
+  <label>Text (leave empty to use the home page bio after its first paragraph, kept in sync) <textarea name="solvingBody" rows="5">{{.R.SolvingBody}}</textarea></label>
+  <h2>Experience bullets</h2>
+  <p class="muted">One bullet per line. Consecutive roles at the same company are shown together, so their bullets run as one list.</p>
+  {{range .Roles}}<label>{{.Role}} · {{.Company}} <textarea name="bullets.{{.Slug}}" rows="4">{{index $.R.Bullets .Slug}}</textarea></label>
+  {{end}}
+  <h2>Technical skills</h2>
+  <div class="cols">
+    <label>What I can do (one per line) <textarea name="skillsDo" rows="5">{{.R.SkillsDo}}</textarea></label>
+    <label>What I can review (one per line) <textarea name="skillsReview" rows="5">{{.R.SkillsReview}}</textarea></label>
+  </div>
+  <h2>Contact (public)</h2>
+  <div class="cols">
+    <label>Email <input name="email" type="email" value="{{.R.Email}}"></label>
+    <label>LinkedIn (https://…) <input name="linkedin" type="url" value="{{.R.LinkedIn}}"></label>
+    <label>Location <input name="location" value="{{.R.Location}}"></label>
+  </div>
+  <button class="b-primary">Save</button>
+</form>
+{{end}}

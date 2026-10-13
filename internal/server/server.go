@@ -137,6 +137,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /work", s.work)
 	s.mux.HandleFunc("GET /work/{$}", s.work)
 	s.mux.HandleFunc("GET /work/{slug}", s.project)
+	s.mux.HandleFunc("GET /resume", s.resume)
+	s.mux.HandleFunc("GET /resume/{$}", s.resume)
+	s.mux.HandleFunc("GET /resume.pdf", s.resumePDF)
 	s.mux.HandleFunc("GET /{slug}", s.page)
 
 	admin := http.NewServeMux()
@@ -144,6 +147,8 @@ func (s *Server) routes() {
 	admin.HandleFunc("GET /admin/pages/edit", s.adminPageForm)
 	admin.HandleFunc("POST /admin/pages/edit", s.adminPageSave)
 	admin.HandleFunc("POST /admin/copy", s.adminSiteCopy)
+	admin.HandleFunc("GET /admin/resume", s.adminResumeForm)
+	admin.HandleFunc("POST /admin/resume", s.adminResume)
 	admin.HandleFunc("GET /admin/experiments/{slug}", s.adminExperimentForm)
 	admin.HandleFunc("POST /admin/experiments/{slug}", s.adminExperimentSave)
 	admin.HandleFunc("POST /admin/frontends", s.adminFrontendRotation)
@@ -172,6 +177,7 @@ func (s *Server) routes() {
 var layouts = map[string]string{
 	"public": "templates/public/shell.html",
 	"admin":  "templates/admin/base.html",
+	"fixed":  "templates/fixed/base.html", // pages outside the rotation (/resume)
 }
 
 // parseTemplates builds one template set per page: its layout + that page.
